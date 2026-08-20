@@ -3,6 +3,9 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
+    // What a power up does, filled in on the pickup in the inspector. No script per power up:
+    // a feather is fallSpeedMultiplier 0.5, boots are speedMultiplier 1.5, a potion is
+    // healAmount 2 with duration 0.
     [Serializable]
     public class PowerUpEffect
     {

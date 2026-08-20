@@ -13,10 +13,39 @@ using UnityEngine.UI;
 
 namespace FallingWizard.EditorTools
 {
+    // One-shot commands under Tools > Falling Wizard that build the menu hierarchy and a starter
+    // player, wired up and ready to press Play. Everything they create is ordinary scene objects,
+    // so this folder can be deleted once the commands have been run.
     static class FallingWizardSetup
     {
-        const string PrefabFolder = "Assets/Prefabs";
+        const string AssetsFolder = "Assets";
+        const string PrefabFolderName = "Prefabs";
+        const string PrefabFolder = AssetsFolder + "/" + PrefabFolderName;
         const string PauseMenuPrefabPath = PrefabFolder + "/Pause Menu.prefab";
+        const string ScenesFolder = AssetsFolder + "/Scenes";
+        const string SceneExtension = ".unity";
+
+        const string GroundLayerName = "Ground";
+        const string PlayerLayerName = "Player";
+
+        const string BoxSpritePath = "UI/Skin/UISprite.psd";
+
+        const int MenuCanvasSortingOrder = 0;
+        const int PauseCanvasSortingOrder = 100;
+
+        static readonly Vector2 PlayerSize = new Vector2(0.8f, 1.6f);
+        static readonly Vector3 PlayerSpawnPosition = new Vector3(0f, 1f, 0f);
+        static readonly Color PlayerColor = new Color(0.58f, 0.45f, 0.88f);
+        const float PlayerGravityScale = 3f;
+        const int PlayerSortingOrder = 1;
+
+        static readonly Vector2 PlatformSize = new Vector2(10f, 1f);
+        static readonly Color PlatformColor = new Color(0.24f, 0.22f, 0.30f);
+        const int PlatformSortingOrder = 0;
+
+        const float GroundCheckSkin = 0.05f;
+        const float GroundCheckThickness = 0.1f;
+        const float GroundCheckWidthFactor = 0.9f;
 
         [MenuItem("Tools/Falling Wizard/Build Main Menu In Open Scene", false, 10)]
         static void BuildMainMenu()
@@ -26,11 +55,11 @@ namespace FallingWizard.EditorTools
 
             EnsureEventSystem();
 
-            GameObject canvas = UiFactory.CreateCanvas("Menu Canvas", 0);
+            GameObject canvas = UiFactory.CreateCanvas("Menu Canvas", MenuCanvasSortingOrder);
             Undo.RegisterCreatedObjectUndo(canvas, "Build Main Menu");
 
             GameObject mainPanel = UiFactory.CreatePanel("Main Panel", canvas.transform);
-            UiFactory.CreateLabel("Falling Wizard", mainPanel.transform, 86f, 1000f, 130f);
+            UiFactory.CreateTitle("Falling Wizard", mainPanel.transform);
             Button play = UiFactory.CreateButton("Play", mainPanel.transform);
             Button settings = UiFactory.CreateButton("Settings", mainPanel.transform);
             Button exit = UiFactory.CreateButton("Exit", mainPanel.transform);
@@ -62,10 +91,10 @@ namespace FallingWizard.EditorTools
                     "Replace", "Cancel"))
                 return;
 
-            GameObject canvas = UiFactory.CreateCanvas("Pause Menu", 100);
+            GameObject canvas = UiFactory.CreateCanvas("Pause Menu", PauseCanvasSortingOrder);
 
             GameObject pausePanel = UiFactory.CreatePanel("Pause Panel", canvas.transform);
-            UiFactory.CreateLabel("Paused", pausePanel.transform, 68f, 1000f, 110f);
+            UiFactory.CreateHeading("Paused", pausePanel.transform);
             Button resume = UiFactory.CreateButton("Resume", pausePanel.transform);
             Button settings = UiFactory.CreateButton("Settings", pausePanel.transform);
             Button mainMenu = UiFactory.CreateButton("Main Menu", pausePanel.transform);
@@ -83,7 +112,7 @@ namespace FallingWizard.EditorTools
                 ("quitButton", quit));
 
             if (!AssetDatabase.IsValidFolder(PrefabFolder))
-                AssetDatabase.CreateFolder("Assets", "Prefabs");
+                AssetDatabase.CreateFolder(AssetsFolder, PrefabFolderName);
 
             PrefabUtility.SaveAsPrefabAsset(canvas, PauseMenuPrefabPath);
             Object.DestroyImmediate(canvas);
@@ -116,18 +145,18 @@ namespace FallingWizard.EditorTools
         static void CreatePlayer()
         {
             var root = new GameObject("Wizard");
-            root.layer = LayerOrDefault("Player");
+            root.layer = LayerOrDefault(PlayerLayerName);
             Undo.RegisterCreatedObjectUndo(root, "Create Player");
 
             var body = root.AddComponent<Rigidbody2D>();
             body.freezeRotation = true;
-            body.gravityScale = 3f;
+            body.gravityScale = PlayerGravityScale;
             body.interpolation = RigidbodyInterpolation2D.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
             var collider = root.AddComponent<CapsuleCollider2D>();
             collider.direction = CapsuleDirection2D.Vertical;
-            collider.size = new Vector2(0.8f, 1.6f);
+            collider.size = PlayerSize;
 
             root.AddComponent<PlayerInputReader>();
             root.AddComponent<PlayerPowerUps>();
@@ -138,15 +167,16 @@ namespace FallingWizard.EditorTools
 
             // AddComponent does not run Reset, so the ground check is set up here instead.
             var serialized = new SerializedObject(motor);
-            serialized.FindProperty("groundLayers").intValue = LayerMask.GetMask("Ground");
-            serialized.FindProperty("groundCheckOffset").vector2Value = new Vector2(0f, -0.85f);
-            serialized.FindProperty("groundCheckSize").vector2Value = new Vector2(0.72f, 0.1f);
+            serialized.FindProperty("groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
+            serialized.FindProperty("groundCheckOffset").vector2Value =
+                new Vector2(0f, -(PlayerSize.y / 2f) - GroundCheckSkin);
+            serialized.FindProperty("groundCheckSize").vector2Value =
+                new Vector2(PlayerSize.x * GroundCheckWidthFactor, GroundCheckThickness);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
-            CreateSpriteBox("Visual", root.transform, new Vector2(0.8f, 1.6f),
-                new Color(0.58f, 0.45f, 0.88f), sortingOrder: 1);
+            CreateSpriteBox("Visual", root.transform, PlayerSize, PlayerColor, PlayerSortingOrder);
 
-            root.transform.position = new Vector3(0f, 1f, 0f);
+            root.transform.position = PlayerSpawnPosition;
             Selection.activeGameObject = root;
             MarkSceneDirty();
         }
@@ -155,12 +185,11 @@ namespace FallingWizard.EditorTools
         static void CreateGroundPlatform()
         {
             var platform = new GameObject("Platform");
-            platform.layer = LayerOrDefault("Ground");
+            platform.layer = LayerOrDefault(GroundLayerName);
             Undo.RegisterCreatedObjectUndo(platform, "Create Platform");
 
-            var size = new Vector2(10f, 1f);
-            platform.AddComponent<BoxCollider2D>().size = size;
-            CreateSpriteBox("Visual", platform.transform, size, new Color(0.24f, 0.22f, 0.30f), sortingOrder: 0);
+            platform.AddComponent<BoxCollider2D>().size = PlatformSize;
+            CreateSpriteBox("Visual", platform.transform, PlatformSize, PlatformColor, PlatformSortingOrder);
 
             Selection.activeGameObject = platform;
             MarkSceneDirty();
@@ -171,9 +200,9 @@ namespace FallingWizard.EditorTools
         {
             string[] wanted =
             {
-                "Assets/Scenes/" + GameScenes.MainMenu + ".unity",
-                "Assets/Scenes/" + GameScenes.Cutscene + ".unity",
-                "Assets/Scenes/" + GameScenes.Level1 + ".unity",
+                ScenePath(GameScenes.MainMenu),
+                ScenePath(GameScenes.Cutscene),
+                ScenePath(GameScenes.Level1),
             };
 
             var scenes = new List<EditorBuildSettingsScene>();
@@ -192,10 +221,12 @@ namespace FallingWizard.EditorTools
             Debug.Log($"Build Settings now lists {scenes.Count} scene(s), starting with the main menu.");
         }
 
+        static string ScenePath(string sceneName) => ScenesFolder + "/" + sceneName + SceneExtension;
+
         static SettingsPanel BuildSettingsPanel(Transform parent)
         {
             GameObject panel = UiFactory.CreatePanel("Settings Panel", parent);
-            UiFactory.CreateLabel("Settings", panel.transform, 68f, 1000f, 110f);
+            UiFactory.CreateHeading("Settings", panel.transform);
 
             GameObject resolutionRow = UiFactory.CreateRow("Resolution", panel.transform);
             TMP_Dropdown resolution = UiFactory.CreateDropdown(resolutionRow.transform);
@@ -208,8 +239,7 @@ namespace FallingWizard.EditorTools
 
             GameObject volumeRow = UiFactory.CreateRow("Volume", panel.transform);
             Slider volume = UiFactory.CreateSlider(volumeRow.transform);
-            TextMeshProUGUI volumeValue =
-                UiFactory.CreateLabel("100%", volumeRow.transform, 26f, 100f, 44f);
+            TextMeshProUGUI volumeValue = UiFactory.CreateValueLabel("100%", volumeRow.transform);
             volumeValue.gameObject.name = "Volume Value";
 
             Button back = UiFactory.CreateButton("Back", panel.transform);
@@ -235,7 +265,7 @@ namespace FallingWizard.EditorTools
             go.transform.SetParent(parent, false);
 
             var renderer = go.AddComponent<SpriteRenderer>();
-            renderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            renderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>(BoxSpritePath);
             renderer.drawMode = SpriteDrawMode.Sliced;   // lets the sprite be sized in world units
             renderer.size = size;
             renderer.color = color;
@@ -277,6 +307,7 @@ namespace FallingWizard.EditorTools
             return 0;
         }
 
+        // Fills in private [SerializeField] references the same way the inspector would.
         static void Wire(Object target, params (string field, Object value)[] links)
         {
             var serialized = new SerializedObject(target);

@@ -56,6 +56,7 @@ namespace FallingWizard.Menus
             qualityDropdown.AddOptions(new List<string>(QualitySettings.names));
         }
 
+        // SetValueWithoutNotify is what keeps this from looping straight back into the callbacks.
         void ShowCurrentSettings()
         {
             resolutionDropdown.SetValueWithoutNotify(GameSettings.ResolutionIndex);

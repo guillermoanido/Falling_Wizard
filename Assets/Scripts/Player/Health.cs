@@ -17,6 +17,7 @@ namespace FallingWizard.Player
         public bool IsAlive => Current > 0;
         public bool IsInvulnerable => Time.time < invulnerableUntil;
 
+        // Raised with (current, max) whenever the value changes. Hook a health bar here.
         public event Action<int, int> Changed;
 
         public event Action Died;

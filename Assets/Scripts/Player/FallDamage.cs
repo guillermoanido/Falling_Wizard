@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
+    // The core rule: short drops are free, long ones hurt. Turns PlayerMotor.Landed into damage.
     [RequireComponent(typeof(PlayerMotor))]
     [RequireComponent(typeof(Health))]
     [RequireComponent(typeof(PlayerPowerUps))]

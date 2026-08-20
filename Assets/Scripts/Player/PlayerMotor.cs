@@ -3,11 +3,21 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
+    // Momentum based 2D movement. Horizontal velocity is nudged towards a target every physics
+    // step rather than snapping, so the wizard builds up speed and keeps sliding when you let go.
+    // Falling is heavier than rising, and every landing reports the distance fallen.
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(PlayerInputReader))]
     [RequireComponent(typeof(PlayerPowerUps))]
     public class PlayerMotor : MonoBehaviour
     {
+        const float InputDeadzone = 0.01f;
+        const float MinGravityScale = 0.01f;
+        const float DefaultGravityScale = 3f;
+        const float GroundCheckSkin = 0.05f;
+        const float GroundCheckThickness = 0.1f;
+        const float GroundCheckWidthFactor = 0.9f;
+
         [Header("Running")]
         [Tooltip("Top running speed, in units per second.")]
         [SerializeField] float maxSpeed = 8f;
@@ -67,6 +77,7 @@ namespace FallingWizard.Player
 
         public Vector2 Velocity => body.linearVelocity;
 
+        // Raised on touchdown; the argument is how far the wizard fell, in units.
         public event Action<float> Landed;
 
         // Sensible rigidbody defaults the first time the component is added in the editor.
@@ -74,7 +85,7 @@ namespace FallingWizard.Player
         {
             var rigidbody2d = GetComponent<Rigidbody2D>();
             rigidbody2d.freezeRotation = true;
-            rigidbody2d.gravityScale = 3f;
+            rigidbody2d.gravityScale = DefaultGravityScale;
             rigidbody2d.interpolation = RigidbodyInterpolation2D.Interpolate;
             rigidbody2d.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
@@ -82,8 +93,8 @@ namespace FallingWizard.Player
             var body2d = GetComponent<Collider2D>();
             if (body2d != null)
             {
-                groundCheckOffset = new Vector2(0f, -body2d.bounds.extents.y - 0.05f);
-                groundCheckSize = new Vector2(body2d.bounds.size.x * 0.9f, 0.1f);
+                groundCheckOffset = new Vector2(0f, -body2d.bounds.extents.y - GroundCheckSkin);
+                groundCheckSize = new Vector2(body2d.bounds.size.x * GroundCheckWidthFactor, GroundCheckThickness);
             }
         }
 
@@ -94,7 +105,7 @@ namespace FallingWizard.Player
             powerUps = GetComponent<PlayerPowerUps>();
             sprite = GetComponentInChildren<SpriteRenderer>();
 
-            baseGravityScale = Mathf.Max(0.01f, body.gravityScale);
+            baseGravityScale = Mathf.Max(MinGravityScale, body.gravityScale);
             highestPoint = transform.position.y;
         }
 
@@ -150,13 +161,13 @@ namespace FallingWizard.Player
             float targetSpeed = steer * maxSpeed * powerUps.SpeedMultiplier;
 
             // Climb towards the target speed while there is input, coast to a stop when there is not.
-            float rate = Mathf.Abs(steer) > 0.01f ? acceleration : groundFriction;
+            float rate = Mathf.Abs(steer) > InputDeadzone ? acceleration : groundFriction;
             if (!IsGrounded)
                 rate *= airControl;
 
             body.linearVelocityX = Mathf.MoveTowards(body.linearVelocityX, targetSpeed, rate * Time.fixedDeltaTime);
 
-            if (sprite != null && Mathf.Abs(steer) > 0.01f)
+            if (sprite != null && Mathf.Abs(steer) > InputDeadzone)
                 sprite.flipX = steer < 0f;
         }
 
@@ -203,6 +214,7 @@ namespace FallingWizard.Player
                 body.linearVelocityY = -terminalSpeed;
         }
 
+        // v = sqrt(2 * g * h), so the jump height set above is the height actually reached.
         float JumpVelocity
         {
             get

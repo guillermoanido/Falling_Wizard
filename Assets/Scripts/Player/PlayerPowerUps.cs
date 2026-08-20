@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
+    // Holds the power ups the wizard is carrying and boils them down to the multipliers that
+    // PlayerMotor and FallDamage read. With nothing active every multiplier is 1.
     [DisallowMultipleComponent]
     public class PlayerPowerUps : MonoBehaviour
     {

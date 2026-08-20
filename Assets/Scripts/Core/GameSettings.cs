@@ -16,6 +16,7 @@ namespace FallingWizard.Core
         static int resolutionIndex;
         static List<Resolution> resolutions;
 
+        // Consoles pick their own output mode, so those rows are hidden there.
         public static bool DisplaySettingsSupported =>
             Application.isEditor || Application.platform == RuntimePlatform.WindowsPlayer ||
             Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.LinuxPlayer;
@@ -104,6 +105,7 @@ namespace FallingWizard.Core
             return Resolutions.Count - 1;
         }
 
+        // Screen.resolutions lists the same size once per refresh rate; keep the fastest of each.
         static List<Resolution> BuildResolutionList()
         {
             var best = new Dictionary<(int, int), Resolution>();

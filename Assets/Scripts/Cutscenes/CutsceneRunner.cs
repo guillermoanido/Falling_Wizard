@@ -4,6 +4,8 @@ using UnityEngine.Playables;
 
 namespace FallingWizard.Cutscenes
 {
+    // Plays the intro and then loads the first level. With no Timeline assigned it just waits
+    // for placeholderDuration, which is enough to test the flow end to end.
     public class CutsceneRunner : MonoBehaviour
     {
         [Tooltip("Timeline to play. Leave empty to simply wait for the placeholder duration.")]

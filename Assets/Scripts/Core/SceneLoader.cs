@@ -7,6 +7,8 @@ namespace FallingWizard.Core
     {
         public static void LoadMainMenu() => Load(GameScenes.MainMenu);
 
+        // Play button. Change this to LoadCutscene() once the intro exists and the cutscene
+        // will play first, then hand off to level 1 by itself.
         public static void StartNewGame() => LoadFirstLevel();
 
         public static void LoadCutscene() => Load(GameScenes.Cutscene);
