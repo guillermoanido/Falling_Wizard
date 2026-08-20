@@ -100,8 +100,9 @@ below. Under **Ragdoll**: `tripSpeed`, `spinSpeed`, `fallKick`, `minimumDuration
 - **Run off a ledge and you fall.** Normal running does nothing to stop you.
 - **Walk stops at edges.** Holding Walk caps speed at `walkSpeed`, and `PlayerMovement.Run`
   zeroes the target speed when `IsAtEdge` and you are pushing toward the drop.
-- **Look down.** Grounded at an edge, or hanging, hold **S / Down**: `IsPeeking` goes true and
-  `FollowCamera` slides the view down by `peekDistance`.
+- **Look down.** Hold **S / Down** anywhere you have control — standing, running, mid-air or
+  hanging: `IsPeeking` goes true and `FollowCamera` slides the view down by `peekDistance`.
+  It is off during a ragdoll or while the staff is moving, since you have no control there.
 - **The staff.** At an edge, hold **E**. The `Staff` lowers its wielder by its own `length` and
   holds there. Release E to drop the rest, or push **Up** to climb back. The drop is measured
   from the hang point via `movement.BeginFallFrom`, which is exactly why it turns a killing fall

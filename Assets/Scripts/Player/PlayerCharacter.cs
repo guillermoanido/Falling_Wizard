@@ -177,8 +177,7 @@ namespace FallingWizard.Player
         void UpdatePeeking()
         {
             IsPeeking = State == PlayerState.Hanging ||
-                        (State == PlayerState.Normal && movement.IsGrounded &&
-                         movement.IsAtEdge && LookingDown);
+                        (State == PlayerState.Normal && LookingDown);
         }
 
         void CheckForTrip()
