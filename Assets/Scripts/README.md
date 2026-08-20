@@ -11,7 +11,8 @@ consoles work from the same code.
 | `Core/` | `Game` (pause state, scene flow, quit), `GameSettings`, `MenuInput` |
 | `Menus/` | `MenuScreen` base class, `MainMenuController`, `PauseMenuController`, `SettingsPanel` |
 | `Cutscenes/` | `CutsceneRunner` — plays the intro, then loads Level 1 |
-| `Player/` | `PlayerCharacter.cs` (the wizard + `PlayerMovement` + `Health`), `PowerUpPickup.cs` (the pickup + `PowerUp` + `ActivePowerUps`) |
+| `Player/` | `PlayerCharacter` (the wizard, its state machine, `PlayerStats`, `Health`), `PlayerMovement`, `StaffDescent`, `Ragdoll`, `PowerUp`, `PowerUpPickup` |
+| `World/` | `RoughGround` (marks stairs and rocks), `FollowCamera` |
 
 The wizard is **one** component. `PlayerMovement`, `Health` and `ActivePowerUps` are plain classes
 that `PlayerCharacter` owns and drives, and they live in the same file as their owner so Unity does
@@ -34,8 +35,9 @@ delete that folder once you have run them if you want it gone.
 4. Optional, for later: open `Assets/Scenes/Cutscene.unity` and add an empty object with
    `CutsceneRunner` on it. With no Timeline assigned it waits a few seconds and moves on.
    Play skips straight to Level 1 until you switch `Game.StartNewGame()` over.
-5. Open `Assets/Scenes/Level 1.unity` and run **Create Player In Open Scene**,
-   **Create Ground Platform In Open Scene** and **Add Pause Menu To Open Scene**. Save.
+5. Open `Assets/Scenes/Level 1.unity`, delete anything already in it except the camera and light,
+   then run **Build Test Level In Open Scene** and **Add Pause Menu To Open Scene**. Save.
+   The test level lays out flat ground, a staircase, and two drops sized around the staff.
 
 The three scenes are already listed in Build Settings, main menu first.
 **Add Game Scenes To Build Settings** puts them back if they ever get out of order.
@@ -49,11 +51,17 @@ so rebinding is done in the Input Actions editor, not in code:
 | --- | --- | --- |
 | `Player/Move` | `PlayerCharacter` | WASD, arrows, left stick |
 | `Player/Jump` | `PlayerCharacter` | Space, gamepad south |
+| `Player/Walk` | `PlayerCharacter` | Left Shift, gamepad left trigger |
+| `Player/Staff` | `PlayerCharacter` | E, gamepad west |
 | `UI/Pause` | `MenuInput` | Esc, gamepad start |
 | `UI/Skip` | `MenuInput` | Space, Enter, left click, gamepad south, gamepad start |
 
-`UI/Pause` and `UI/Skip` were added to the UI map for this project; the rest ship with Unity's
-default asset. Add or change bindings there and the code picks them up with no edits.
+Looking down, lowering onto the staff, dropping off it and climbing back all read `Move`'s Y
+(S / Down and W / Up), so they need no action of their own. `Player/Staff` is only a shortcut
+that skips the hold.
+`Player/Walk`, `Player/Staff`, `UI/Pause` and `UI/Skip` were added for this project; the rest ship
+with Unity's default asset. Add or change bindings there and the code picks them up with no edits.
+The stock `Sprint` action is unused — delete it if you like.
 
 ## How it fits together
 
@@ -68,25 +76,66 @@ default asset. Add or change bindings there and the code picks them up with no e
 - Every scene change goes through `Game`, which clears the pause state first, so a paused
   game can never carry a frozen time scale into the next scene.
 
-## Movement
+## Tuning the wizard
 
-`PlayerMovement` never snaps to full speed. Each physics step the horizontal velocity is moved
-towards a target, so the wizard builds up speed and keeps sliding when you let go:
+Everything is on the **PlayerCharacter** component of the Wizard, grouped into foldouts.
+Speed and jump height live under **Movement**:
 
-- `acceleration` — how quickly speed builds. Lower = heavier, slower to get going.
-- `groundFriction` — how quickly they coast to a stop with no input.
-- `airControl` — scales both while airborne. 0.45 means you commit to a jump but can still steer.
-- `fallGravityMultiplier` / `maxFallSpeed` — falls are heavier than the rise and cap out.
+| Field | What it does |
+| --- | --- |
+| `runSpeed` | Top speed at a normal run. Running off a ledge drops you. |
+| `walkSpeed` | Top speed holding Walk. Walking also refuses to step off a ledge. |
+| `jumpHeight` | Height of a full jump, in units. Literal — see the gravity note below. |
+| `acceleration` | How quickly speed builds. Lower = heavier, slower to get going. |
+| `groundFriction` | How quickly they coast to a stop with no input. |
+| `airControl` | Scales both while airborne. 0.45 = committed to your jump but still steerable. |
+| `fallGravityMultiplier` / `maxFallSpeed` | Falls are heavier than the rise, and cap out. |
+| `ledgeCheckAhead` / `ledgeCheckDepth` | How far ahead and down to look for a missing floor. |
 
-`PlayerMovement` records the distance fallen since the last apex; `PlayerCharacter` reads it with
-`TryGetLanding` each physics step and turns anything past `safeFallDistance` into damage.
+Under **Staff**: `staffLength` is the whole mechanic — how far down the wizard can lower
+themselves, and therefore how much of a drop it removes — plus `holdToDescend`, how long you
+must hold Down before looking becomes lowering. Under **Ragdoll**: `tripSpeed`, `spinSpeed`,
+`fallKick`, `minimumDuration`, `recoverSpeed`, `standUpDuration`.
+
+## The five mechanics
+
+- **Run off a ledge and you fall.** Normal running does nothing to stop you.
+- **Walk stops at edges.** Holding Walk caps speed at `walkSpeed`, and `PlayerMovement.Run`
+  zeroes the target speed when `IsAtEdge` and you are pushing toward the drop.
+- **Look down, then go down.** Hold **S / Down** at an edge. `IsPeeking` goes true straight away
+  and `FollowCamera` slides the view down by `peekDistance`; keep holding past
+  `holdToDescend` and the wizard commits to the staff. A quick tap is just a look.
+- **The staff.** `StaffDescent` takes the body kinematic and lowers it `staffLength` below the
+  lip, then holds. Press **Down** again to drop the rest, **Up** to climb back. The drop is
+  measured from the hang point via `movement.BeginFallFrom`, which is exactly why it turns a
+  killing fall into a survivable one. The Staff button is an instant alternative to the hold.
+- **Rough ground → ragdoll.** Put `RoughGround` on stairs and rocks. Cross one faster than
+  `tripSpeed` and `PlayerCharacter` enters `Ragdoll`: the body unfreezes its rotation, takes a
+  spin and a downward kick, and physics owns it until it is grounded, slow, and past
+  `minimumDuration`. Then it stands back up over `standUpDuration`.
+
+`PlayerState` is the whole state machine — `Normal`, `Descending`, `Hanging`, `Climbing`,
+`Ragdoll` — and `PlayerCharacter.FixedUpdate` is a single switch over it. New state, new case.
+`State` is public, so an Animator can drive clips straight off it when you add sprites.
 
 ## Power-ups
 
-No script per power-up. Put `PowerUpPickup` on an object with a trigger collider and fill in the
-`PowerUp` in the inspector: `fallSpeedMultiplier` 0.5 is a feather, `speedMultiplier` 1.5 is boots,
-`healAmount` 2 with `duration` 0 is a potion. A `PowerUp` runs its own timer; `ActivePowerUps`
-holds the live ones and multiplies them together. With nothing active every multiplier is 1.
+A power-up is a ScriptableObject you subclass, so nothing is assumed about what any of them do:
+
+```csharp
+[CreateAssetMenu(menuName = "Falling Wizard/Power Ups/Feather Fall")]
+public class FeatherFall : PowerUp
+{
+    [SerializeField] float fallSpeedMultiplier = 0.5f;
+
+    public override void ModifyStats(PlayerStats stats) =>
+        stats.FallSpeedMultiplier *= fallSpeedMultiplier;
+}
+```
+
+Three hooks: `OnCollected` for instant effects, `ModifyStats` for continuous ones,
+`OnExpired` for cleanup. `ActivePowerUps` holds the live ones and rebuilds `PlayerStats`
+from scratch whenever the set changes. Drop the asset on a `PowerUpPickup`.
 
 ## Worth knowing
 

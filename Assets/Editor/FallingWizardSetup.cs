@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using FallingWizard.Core;
 using FallingWizard.Menus;
 using FallingWizard.Player;
+using FallingWizard.World;
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -38,7 +39,13 @@ namespace FallingWizard.EditorTools
 
         static readonly Vector2 PlatformSize = new Vector2(10f, 1f);
         static readonly Color PlatformColor = new Color(0.24f, 0.22f, 0.30f);
+        static readonly Color RoughColor = new Color(0.42f, 0.29f, 0.22f);
         const int PlatformSortingOrder = 0;
+
+        const int StairStepCount = 5;
+        const float StairStepWidth = 0.7f;
+        const float StairStepHeight = 0.5f;
+        const float StairStartX = -3f;
 
         const float GroundCheckSkin = 0.05f;
         const float GroundCheckThickness = 0.1f;
@@ -141,6 +148,12 @@ namespace FallingWizard.EditorTools
         [MenuItem("Tools/Falling Wizard/Create Player In Open Scene", false, 30)]
         static void CreatePlayer()
         {
+            Selection.activeGameObject = SpawnPlayer(PlayerSpawnPosition);
+            MarkSceneDirty();
+        }
+
+        static GameObject SpawnPlayer(Vector3 position)
+        {
             var root = new GameObject("Wizard");
             root.layer = LayerOrDefault(PlayerLayerName);
             Undo.RegisterCreatedObjectUndo(root, "Create Player");
@@ -167,23 +180,110 @@ namespace FallingWizard.EditorTools
 
             CreateSpriteBox("Visual", root.transform, PlayerSize, PlayerColor, PlayerSortingOrder);
 
-            root.transform.position = PlayerSpawnPosition;
-            Selection.activeGameObject = root;
-            MarkSceneDirty();
+            root.transform.position = position;
+            return root;
         }
 
         [MenuItem("Tools/Falling Wizard/Create Ground Platform In Open Scene", false, 31)]
         static void CreateGroundPlatform()
         {
-            var platform = new GameObject("Platform");
+            Selection.activeGameObject = CreatePlatform("Platform", Vector2.zero, PlatformSize, false);
+            MarkSceneDirty();
+        }
+
+        [MenuItem("Tools/Falling Wizard/Build Test Level In Open Scene", false, 32)]
+        static void BuildTestLevel()
+        {
+            // A run of flat ground, then stairs, then two drops sized around the staff.
+            CreatePlatform("Start Ledge", new Vector2(-9f, -0.5f), new Vector2(12f, 1f), false);
+
+            CreateStaircase(new Vector2(StairStartX, 0f));
+
+            CreatePlatform("Mid Ledge", new Vector2(4.5f, -3f), new Vector2(9f, 1f), false);
+            CreatePlatform("Lower Ledge", new Vector2(14f, -10f), new Vector2(10f, 1f), false);
+            CreatePlatform("Rock", new Vector2(14f, -9f), new Vector2(1.6f, 1f), true);
+            CreatePlatform("Bottom", new Vector2(25f, -24.5f), new Vector2(12f, 1f), false);
+
+            GameObject player = SpawnPlayer(new Vector3(-13f, 1f, 0f));
+            AttachFollowCamera(player);
+
+            Selection.activeGameObject = player;
+            MarkSceneDirty();
+            Debug.Log("Test level built. Save the scene to keep it.");
+        }
+
+        // One GameObject, one PolygonCollider2D tracing the steps. The child sprites are
+        // renderers only, so the whole staircase is a single entity with a single hitbox.
+        static GameObject CreateStaircase(Vector2 topLeft)
+        {
+            var stairs = new GameObject("Staircase");
+            stairs.layer = LayerOrDefault(GroundLayerName);
+            stairs.transform.position = topLeft;
+            Undo.RegisterCreatedObjectUndo(stairs, "Create Staircase");
+
+            float depth = StairStepCount * StairStepHeight + 1f;
+            var outline = new List<Vector2> { Vector2.zero };
+
+            for (int step = 0; step < StairStepCount; step++)
+            {
+                float right = (step + 1) * StairStepWidth;
+                float top = -step * StairStepHeight;
+                outline.Add(new Vector2(right, top));                          // along the tread
+                outline.Add(new Vector2(right, top - StairStepHeight));        // down the riser
+            }
+
+            outline.Add(new Vector2(StairStepCount * StairStepWidth, -depth)); // down the far side
+            outline.Add(new Vector2(0f, -depth));                              // back along the base
+
+            stairs.AddComponent<PolygonCollider2D>().points = outline.ToArray();
+            stairs.AddComponent<RoughGround>();
+
+            for (int step = 0; step < StairStepCount; step++)
+            {
+                float top = -step * StairStepHeight;
+                float height = depth + top;
+                var visual = CreateSpriteBox($"Step {step + 1}", stairs.transform,
+                    new Vector2(StairStepWidth, height), RoughColor, PlatformSortingOrder);
+                visual.transform.localPosition =
+                    new Vector3((step + 0.5f) * StairStepWidth, top - height / 2f, 0f);
+            }
+
+            return stairs;
+        }
+
+        static GameObject CreatePlatform(string name, Vector2 center, Vector2 size, bool rough)
+        {
+            var platform = new GameObject(name);
             platform.layer = LayerOrDefault(GroundLayerName);
+            platform.transform.position = center;
             Undo.RegisterCreatedObjectUndo(platform, "Create Platform");
 
-            platform.AddComponent<BoxCollider2D>().size = PlatformSize;
-            CreateSpriteBox("Visual", platform.transform, PlatformSize, PlatformColor, PlatformSortingOrder);
+            platform.AddComponent<BoxCollider2D>().size = size;
+            CreateSpriteBox("Visual", platform.transform, size,
+                rough ? RoughColor : PlatformColor, PlatformSortingOrder);
 
-            Selection.activeGameObject = platform;
-            MarkSceneDirty();
+            if (rough)
+                platform.AddComponent<RoughGround>();
+
+            return platform;
+        }
+
+        static void AttachFollowCamera(GameObject player)
+        {
+            Camera camera = Camera.main;
+            if (camera == null)
+            {
+                Debug.LogWarning("No Main Camera in this scene, so no follow camera was added.");
+                return;
+            }
+
+            var follow = camera.GetComponent<FollowCamera>();
+            if (follow == null)
+                follow = Undo.AddComponent<FollowCamera>(camera.gameObject);
+
+            var serialized = new SerializedObject(follow);
+            serialized.FindProperty("target").objectReferenceValue = player.GetComponent<PlayerCharacter>();
+            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         [MenuItem("Tools/Falling Wizard/Add Game Scenes To Build Settings", false, 40)]
@@ -246,7 +346,8 @@ namespace FallingWizard.EditorTools
             return settingsPanel;
         }
 
-        static void CreateSpriteBox(string name, Transform parent, Vector2 size, Color color, int sortingOrder)
+        static GameObject CreateSpriteBox(string name, Transform parent, Vector2 size, Color color,
+            int sortingOrder)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -257,6 +358,7 @@ namespace FallingWizard.EditorTools
             renderer.size = size;
             renderer.color = color;
             renderer.sortingOrder = sortingOrder;
+            return go;
         }
 
         static bool EnsureTextMeshProResources()

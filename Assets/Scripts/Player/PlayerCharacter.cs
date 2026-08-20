@@ -5,14 +5,29 @@ using UnityEngine.InputSystem;
 
 namespace FallingWizard.Player
 {
+    public enum PlayerState
+    {
+        Normal,
+        Descending,
+        Hanging,
+        Climbing,
+        Ragdoll,
+    }
+
     [RequireComponent(typeof(Rigidbody2D))]
     public class PlayerCharacter : MonoBehaviour
     {
         const string MoveActionPath = "Player/Move";
         const string JumpActionPath = "Player/Jump";
+        const string WalkActionPath = "Player/Walk";
+        const string StaffActionPath = "Player/Staff";
+
         const float DefaultGravityScale = 3f;
+        const float StickThreshold = 0.5f;
 
         [SerializeField] PlayerMovement movement = new PlayerMovement();
+        [SerializeField] StaffDescent staff = new StaffDescent();
+        [SerializeField] Ragdoll ragdoll = new Ragdoll();
         [SerializeField] Health health = new Health();
 
         [Header("Fall Damage")]
@@ -31,9 +46,15 @@ namespace FallingWizard.Player
         ActivePowerUps powerUps;
         InputAction moveAction;
         InputAction jumpAction;
+        InputAction walkAction;
+        InputAction staffAction;
+        float edgeHoldTimer;
+        bool dropArmed;
 
         public Health Health => health;
         public PlayerStats Stats => powerUps.Stats;
+        public PlayerState State { get; private set; }
+        public bool IsPeeking { get; private set; }
 
         void Reset()
         {
@@ -50,12 +71,18 @@ namespace FallingWizard.Player
 
         void Awake()
         {
+            var body = GetComponent<Rigidbody2D>();
+
             powerUps = new ActivePowerUps(this);
-            movement.Attach(GetComponent<Rigidbody2D>(), GetComponentInChildren<SpriteRenderer>());
+            movement.Attach(body, GetComponentInChildren<SpriteRenderer>());
+            staff.Attach(body, GetComponent<Collider2D>(), movement.GroundLayers);
+            ragdoll.Attach(body);
             health.RestoreToFull();
 
             moveAction = FindAction(MoveActionPath);
             jumpAction = FindAction(JumpActionPath);
+            walkAction = FindAction(WalkActionPath);
+            staffAction = FindAction(StaffActionPath);
         }
 
         void Update()
@@ -65,6 +92,8 @@ namespace FallingWizard.Player
 
             movement.Tick(JumpPressedThisFrame, Time.deltaTime);
             powerUps.Tick(Time.deltaTime);
+
+            UpdateEdgeIntent(Time.deltaTime);
         }
 
         void FixedUpdate()
@@ -72,13 +101,117 @@ namespace FallingWizard.Player
             if (!health.IsAlive)
                 return;
 
-            movement.FixedTick(MoveInput.x, JumpHeld, powerUps.Stats, Time.fixedDeltaTime);
+            switch (State)
+            {
+                case PlayerState.Descending:
+                    if (staff.Tick(Time.fixedDeltaTime))
+                        State = PlayerState.Hanging;
+                    break;
 
-            if (movement.TryGetLanding(out float fallDistance))
-                TakeFallDamage(fallDistance);
+                case PlayerState.Hanging:
+                    UpdateHanging();
+                    break;
+
+                case PlayerState.Climbing:
+                    if (staff.Tick(Time.fixedDeltaTime))
+                    {
+                        staff.Release();
+                        State = PlayerState.Normal;
+                    }
+                    break;
+
+                case PlayerState.Ragdoll:
+                    // No control at all here: physics owns the body until they get back up.
+                    movement.SenseGround(Time.fixedDeltaTime);
+                    CheckLanding();
+
+                    if (ragdoll.Tick(Time.fixedDeltaTime, movement.IsGrounded, movement.HorizontalSpeed))
+                        State = PlayerState.Normal;
+                    break;
+
+                default:
+                    movement.FixedTick(BuildCommand(), powerUps.Stats, Time.fixedDeltaTime);
+                    CheckLanding();
+                    CheckForTrip();
+                    break;
+            }
         }
 
         public void Collect(PowerUp powerUp) => powerUps.Add(powerUp);
+
+        MoveCommand BuildCommand() => new MoveCommand
+        {
+            Steer = MoveInput.x,
+            JumpHeld = JumpHeld,
+            Walk = WalkHeld,
+        };
+
+        // Holding Down at an edge looks over it first, then commits to the descent.
+        void UpdateEdgeIntent(float deltaTime)
+        {
+            bool atLedge = State == PlayerState.Normal && movement.IsGrounded && movement.IsAtEdge;
+            bool lookingDown = LookingDown;
+
+            IsPeeking = State == PlayerState.Hanging || (atLedge && lookingDown);
+
+            if (!atLedge)
+            {
+                edgeHoldTimer = 0f;
+                return;
+            }
+
+            edgeHoldTimer = lookingDown ? edgeHoldTimer + deltaTime : 0f;
+
+            if (edgeHoldTimer >= staff.HoldToDescend || StaffPressedThisFrame)
+                BeginDescent();
+        }
+
+        void BeginDescent()
+        {
+            staff.BeginDescent(movement.Facing);
+            State = PlayerState.Descending;
+            edgeHoldTimer = 0f;
+            dropArmed = false;
+        }
+
+        void UpdateHanging()
+        {
+            if (LookingUp)
+            {
+                staff.BeginClimb();
+                State = PlayerState.Climbing;
+                return;
+            }
+
+            // They are still holding Down from the descent, so wait for a fresh press.
+            if (!LookingDown)
+                dropArmed = true;
+            else if (dropArmed)
+                DropFromHang();
+        }
+
+        void DropFromHang()
+        {
+            staff.Release();
+            movement.BeginFallFrom(transform.position.y);
+            State = PlayerState.Normal;
+        }
+
+        void CheckForTrip()
+        {
+            if (!movement.IsGrounded || !movement.GroundIsRough ||
+                movement.HorizontalSpeed <= ragdoll.TripSpeed)
+                return;
+
+            ragdoll.Begin(movement.Facing);
+            State = PlayerState.Ragdoll;
+        }
+
+        void CheckLanding()
+        {
+            if (movement.TryGetLanding(out float fallDistance))
+                TakeFallDamage(fallDistance);
+        }
 
         void TakeFallDamage(float fallDistance)
         {
@@ -113,8 +246,16 @@ namespace FallingWizard.Player
         bool JumpPressedThisFrame =>
             jumpAction != null && !Game.IsPaused && jumpAction.WasPressedThisFrame();
 
-        bool JumpHeld =>
-            jumpAction != null && !Game.IsPaused && jumpAction.IsPressed();
+        bool JumpHeld => jumpAction != null && !Game.IsPaused && jumpAction.IsPressed();
+
+        bool WalkHeld => walkAction != null && !Game.IsPaused && walkAction.IsPressed();
+
+        bool LookingDown => MoveInput.y < -StickThreshold;
+
+        bool LookingUp => MoveInput.y > StickThreshold;
+
+        bool StaffPressedThisFrame =>
+            staffAction != null && !Game.IsPaused && staffAction.WasPressedThisFrame();
 
         static InputAction FindAction(string path)
         {
@@ -149,203 +290,6 @@ namespace FallingWizard.Player
             FallSpeedMultiplier = 1f;
             FallDamageMultiplier = 1f;
             ExtraJumps = 0;
-        }
-    }
-
-    [Serializable]
-    public class PlayerMovement
-    {
-        const float InputDeadzone = 0.01f;
-        const float MinGravityScale = 0.01f;
-        const float GroundCheckSkin = 0.05f;
-        const float GroundCheckThickness = 0.1f;
-        const float GroundCheckWidthFactor = 0.9f;
-
-        [Header("Running")]
-        [Tooltip("Top running speed, in units per second.")]
-        [SerializeField] float maxSpeed = 8f;
-
-        [Tooltip("How fast speed builds up. Lower feels heavier and takes longer to get going.")]
-        [SerializeField] float acceleration = 26f;
-
-        [Tooltip("How fast the wizard coasts to a stop on the ground with no input.")]
-        [SerializeField] float groundFriction = 34f;
-
-        [Tooltip("Scales acceleration and friction in mid-air. 1 = full control, 0 = committed to your jump.")]
-        [Range(0f, 1f)]
-        [SerializeField] float airControl = 0.45f;
-
-        [Header("Jumping")]
-        [Tooltip("Height of a full jump, in units. The launch speed is worked out from gravity.")]
-        [SerializeField] float jumpHeight = 3.2f;
-
-        [Tooltip("Grace period after walking off a ledge where a jump still counts.")]
-        [SerializeField] float coyoteTime = 0.12f;
-
-        [Tooltip("A jump pressed this many seconds before landing still fires on touchdown.")]
-        [SerializeField] float jumpBuffer = 0.12f;
-
-        [Tooltip("Upward speed kept when the jump button is released early. Lower = shorter hops.")]
-        [Range(0f, 1f)]
-        [SerializeField] float shortHopMultiplier = 0.45f;
-
-        [Header("Falling")]
-        [Tooltip("Gravity is multiplied by this while falling, so drops feel weighty.")]
-        [SerializeField] float fallGravityMultiplier = 1.7f;
-
-        [Tooltip("Fastest the wizard can fall, in units per second.")]
-        [SerializeField] float maxFallSpeed = 22f;
-
-        [Header("Ground Check")]
-        [Tooltip("Which layers count as solid ground. Must not include the player's own layer.")]
-        [SerializeField] LayerMask groundLayers = ~0;
-
-        [SerializeField] Vector2 groundCheckOffset = new Vector2(0f, -0.9f);
-        [SerializeField] Vector2 groundCheckSize = new Vector2(0.7f, 0.1f);
-
-        Rigidbody2D body;
-        SpriteRenderer sprite;
-
-        float baseGravityScale;
-        float coyoteTimer;
-        float bufferTimer;
-        float highestPoint;
-        float pendingFallDistance;
-        bool hasLanded;
-        bool rising;
-        int airJumpsUsed;
-
-        public bool IsGrounded { get; private set; }
-
-        public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer)
-        {
-            body = rigidbody2d;
-            sprite = spriteRenderer;
-            baseGravityScale = Mathf.Max(MinGravityScale, body.gravityScale);
-            highestPoint = body.position.y;
-        }
-
-        public void Tick(bool jumpPressedThisFrame, float deltaTime)
-        {
-            if (jumpPressedThisFrame)
-                bufferTimer = jumpBuffer;
-            else
-                bufferTimer -= deltaTime;
-        }
-
-        public void FixedTick(float steer, bool jumpHeld, PlayerStats stats, float fixedDeltaTime)
-        {
-            UpdateGroundedState(fixedDeltaTime);
-            Run(steer, stats, fixedDeltaTime);
-            TryJump(stats);
-            ApplyShortHop(jumpHeld);
-            ApplyFallGravity(stats);
-        }
-
-        public bool TryGetLanding(out float fallDistance)
-        {
-            fallDistance = pendingFallDistance;
-            bool landedThisStep = hasLanded;
-            hasLanded = false;
-            return landedThisStep;
-        }
-
-        public void Stop() => body.linearVelocity = Vector2.zero;
-
-        public void FitGroundCheckTo(Collider2D collider2d)
-        {
-            groundCheckOffset = new Vector2(0f, -collider2d.bounds.extents.y - GroundCheckSkin);
-            groundCheckSize = new Vector2(collider2d.bounds.size.x * GroundCheckWidthFactor, GroundCheckThickness);
-        }
-
-        public void DrawGizmos(Vector2 origin)
-        {
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawWireCube(origin + groundCheckOffset, groundCheckSize);
-        }
-
-        void UpdateGroundedState(float fixedDeltaTime)
-        {
-            bool wasGrounded = IsGrounded;
-            Vector2 center = body.position + groundCheckOffset;
-            IsGrounded = Physics2D.OverlapBox(center, groundCheckSize, 0f, groundLayers) != null;
-
-            if (IsGrounded)
-            {
-                if (!wasGrounded)
-                {
-                    pendingFallDistance = Mathf.Max(0f, highestPoint - body.position.y);
-                    hasLanded = true;
-                }
-
-                coyoteTimer = coyoteTime;
-                highestPoint = body.position.y;
-                airJumpsUsed = 0;
-                rising = false;
-            }
-            else
-            {
-                coyoteTimer -= fixedDeltaTime;
-                highestPoint = Mathf.Max(highestPoint, body.position.y);
-            }
-        }
-
-        void Run(float steer, PlayerStats stats, float fixedDeltaTime)
-        {
-            float targetSpeed = steer * maxSpeed * stats.MoveSpeedMultiplier;
-            float rate = Mathf.Abs(steer) > InputDeadzone ? acceleration : groundFriction;
-
-            if (!IsGrounded)
-                rate *= airControl;
-
-            body.linearVelocityX = Mathf.MoveTowards(body.linearVelocityX, targetSpeed, rate * fixedDeltaTime);
-
-            if (sprite != null && Mathf.Abs(steer) > InputDeadzone)
-                sprite.flipX = steer < 0f;
-        }
-
-        void TryJump(PlayerStats stats)
-        {
-            bool onGroundOrCoyote = coyoteTimer > 0f;
-            bool hasAirJump = airJumpsUsed < stats.ExtraJumps;
-
-            if (bufferTimer <= 0f || (!onGroundOrCoyote && !hasAirJump))
-                return;
-
-            if (!onGroundOrCoyote)
-                airJumpsUsed++;
-
-            bufferTimer = 0f;
-            coyoteTimer = 0f;
-            rising = true;
-
-            float gravity = Mathf.Abs(Physics2D.gravity.y) * baseGravityScale;
-            body.linearVelocityY = Mathf.Sqrt(2f * gravity * jumpHeight * stats.JumpHeightMultiplier);
-        }
-
-        void ApplyShortHop(bool jumpHeld)
-        {
-            if (!rising || jumpHeld)
-                return;
-
-            if (body.linearVelocityY > 0f)
-                body.linearVelocityY *= shortHopMultiplier;
-
-            rising = false;
-        }
-
-        void ApplyFallGravity(PlayerStats stats)
-        {
-            float floatiness = stats.FallSpeedMultiplier;
-            bool falling = body.linearVelocityY < 0f;
-
-            body.gravityScale = falling
-                ? baseGravityScale * fallGravityMultiplier * floatiness
-                : baseGravityScale;
-
-            float terminalSpeed = maxFallSpeed * floatiness;
-            if (body.linearVelocityY < -terminalSpeed)
-                body.linearVelocityY = -terminalSpeed;
         }
     }
 
