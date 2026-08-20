@@ -13,9 +13,6 @@ using UnityEngine.UI;
 
 namespace FallingWizard.EditorTools
 {
-    // One-shot commands under Tools > Falling Wizard that build the menu hierarchy and a starter
-    // player, wired up and ready to press Play. Everything they create is ordinary scene objects,
-    // so this folder can be deleted once the commands have been run.
     static class FallingWizardSetup
     {
         const string AssetsFolder = "Assets";
@@ -68,7 +65,7 @@ namespace FallingWizard.EditorTools
 
             var controller = canvas.AddComponent<MainMenuController>();
             Wire(controller,
-                ("mainPanel", mainPanel),
+                ("panel", mainPanel),
                 ("settingsPanel", settingsPanel),
                 ("playButton", play),
                 ("settingsButton", settings),
@@ -104,7 +101,7 @@ namespace FallingWizard.EditorTools
 
             var controller = canvas.AddComponent<PauseMenuController>();
             Wire(controller,
-                ("pausePanel", pausePanel),
+                ("panel", pausePanel),
                 ("settingsPanel", settingsPanel),
                 ("resumeButton", resume),
                 ("settingsButton", settings),
@@ -158,19 +155,13 @@ namespace FallingWizard.EditorTools
             collider.direction = CapsuleDirection2D.Vertical;
             collider.size = PlayerSize;
 
-            root.AddComponent<PlayerInputReader>();
-            root.AddComponent<PlayerPowerUps>();
-            root.AddComponent<Health>();
-            var motor = root.AddComponent<PlayerMotor>();
-            root.AddComponent<FallDamage>();
-            root.AddComponent<PlayerCharacter>();
+            var player = root.AddComponent<PlayerCharacter>();
 
-            // AddComponent does not run Reset, so the ground check is set up here instead.
-            var serialized = new SerializedObject(motor);
-            serialized.FindProperty("groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
-            serialized.FindProperty("groundCheckOffset").vector2Value =
+            var serialized = new SerializedObject(player);
+            serialized.FindProperty("movement.groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
+            serialized.FindProperty("movement.groundCheckOffset").vector2Value =
                 new Vector2(0f, -(PlayerSize.y / 2f) - GroundCheckSkin);
-            serialized.FindProperty("groundCheckSize").vector2Value =
+            serialized.FindProperty("movement.groundCheckSize").vector2Value =
                 new Vector2(PlayerSize.x * GroundCheckWidthFactor, GroundCheckThickness);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
@@ -200,9 +191,9 @@ namespace FallingWizard.EditorTools
         {
             string[] wanted =
             {
-                ScenePath(GameScenes.MainMenu),
-                ScenePath(GameScenes.Cutscene),
-                ScenePath(GameScenes.Level1),
+                ScenePath(Game.MainMenuScene),
+                ScenePath(Game.CutsceneScene),
+                ScenePath(Game.FirstLevelScene),
             };
 
             var scenes = new List<EditorBuildSettingsScene>();
@@ -234,9 +225,6 @@ namespace FallingWizard.EditorTools
             GameObject fullscreenRow = UiFactory.CreateRow("Fullscreen", panel.transform);
             Toggle fullscreen = UiFactory.CreateToggle(fullscreenRow.transform);
 
-            GameObject qualityRow = UiFactory.CreateRow("Quality", panel.transform);
-            TMP_Dropdown quality = UiFactory.CreateDropdown(qualityRow.transform);
-
             GameObject volumeRow = UiFactory.CreateRow("Volume", panel.transform);
             Slider volume = UiFactory.CreateSlider(volumeRow.transform);
             TextMeshProUGUI volumeValue = UiFactory.CreateValueLabel("100%", volumeRow.transform);
@@ -247,7 +235,6 @@ namespace FallingWizard.EditorTools
             var settingsPanel = panel.AddComponent<SettingsPanel>();
             Wire(settingsPanel,
                 ("resolutionDropdown", resolution),
-                ("qualityDropdown", quality),
                 ("fullscreenToggle", fullscreen),
                 ("volumeSlider", volume),
                 ("volumeValueLabel", volumeValue),
@@ -266,7 +253,7 @@ namespace FallingWizard.EditorTools
 
             var renderer = go.AddComponent<SpriteRenderer>();
             renderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>(BoxSpritePath);
-            renderer.drawMode = SpriteDrawMode.Sliced;   // lets the sprite be sized in world units
+            renderer.drawMode = SpriteDrawMode.Sliced;
             renderer.size = size;
             renderer.color = color;
             renderer.sortingOrder = sortingOrder;
@@ -307,7 +294,6 @@ namespace FallingWizard.EditorTools
             return 0;
         }
 
-        // Fills in private [SerializeField] references the same way the inspector would.
         static void Wire(Object target, params (string field, Object value)[] links)
         {
             var serialized = new SerializedObject(target);

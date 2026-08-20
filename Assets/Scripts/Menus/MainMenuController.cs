@@ -4,46 +4,28 @@ using UnityEngine.UI;
 
 namespace FallingWizard.Menus
 {
-    public class MainMenuController : MonoBehaviour
+    public class MainMenuController : MenuScreen
     {
-        [Header("Panels")]
-        [SerializeField] GameObject mainPanel;
-        [SerializeField] SettingsPanel settingsPanel;
-
         [Header("Buttons")]
         [SerializeField] Button playButton;
         [SerializeField] Button settingsButton;
         [SerializeField] Button exitButton;
 
-        void Awake()
+        protected override Selectable DefaultSelection => playButton;
+
+        protected override void WireButtons()
         {
-            playButton.onClick.AddListener(SceneLoader.StartNewGame);
+            playButton.onClick.AddListener(Game.StartNewGame);
             settingsButton.onClick.AddListener(OpenSettings);
-            exitButton.onClick.AddListener(SceneLoader.QuitGame);
-            settingsPanel.Closed += CloseSettings;
+            exitButton.onClick.AddListener(Game.Quit);
         }
 
-        void OnDestroy() => settingsPanel.Closed -= CloseSettings;
-
-        void Start() => CloseSettings();
-
-        void Update()
+        protected override void OnBackPressed()
         {
-            if (MenuInput.PausePressedThisFrame && settingsPanel.gameObject.activeSelf)
+            if (IsSettingsOpen)
                 CloseSettings();
         }
 
-        void OpenSettings()
-        {
-            mainPanel.SetActive(false);
-            settingsPanel.gameObject.SetActive(true);
-        }
-
-        void CloseSettings()
-        {
-            settingsPanel.gameObject.SetActive(false);
-            mainPanel.SetActive(true);
-            MenuFocus.Set(playButton);
-        }
+        void Start() => ShowPanel();
     }
 }

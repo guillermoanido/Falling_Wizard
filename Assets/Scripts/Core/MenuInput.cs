@@ -1,19 +1,38 @@
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace FallingWizard.Core
 {
     public static class MenuInput
     {
-        // Esc on a keyboard, Start on a gamepad. Opens and closes the pause menu.
-        public static bool PausePressedThisFrame =>
-            (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) ||
-            (Gamepad.current != null && Gamepad.current.startButton.wasPressedThisFrame);
+        const string PauseActionPath = "UI/Pause";
+        const string SkipActionPath = "UI/Skip";
 
-        // Any key, face button or click. Used to skip the cutscene.
-        public static bool AnyButtonPressedThisFrame =>
-            (Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame) ||
-            (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) ||
-            (Gamepad.current != null && (Gamepad.current.buttonSouth.wasPressedThisFrame ||
-                                         Gamepad.current.startButton.wasPressedThisFrame));
+        static InputAction pauseAction;
+        static InputAction skipAction;
+
+        public static bool PausePressedThisFrame => pauseAction != null && pauseAction.WasPressedThisFrame();
+
+        public static bool SkipPressedThisFrame => skipAction != null && skipAction.WasPressedThisFrame();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void Bind()
+        {
+            pauseAction = Find(PauseActionPath);
+            skipAction = Find(SkipActionPath);
+        }
+
+        static InputAction Find(string path)
+        {
+            InputActionAsset actions = InputSystem.actions;
+            InputAction action = actions != null ? actions.FindAction(path) : null;
+
+            if (action == null)
+                Debug.LogError($"Input action '{path}' is missing from the project-wide actions asset.");
+            else
+                action.Enable();
+
+            return action;
+        }
     }
 }

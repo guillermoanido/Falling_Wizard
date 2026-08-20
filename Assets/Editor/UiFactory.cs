@@ -5,13 +5,11 @@ using UnityEngine.UI;
 
 namespace FallingWizard.EditorTools
 {
-    // Thin wrappers around Unity's own UI factories so the setup commands read like a layout
-    // description. Editor only: nothing here ships in a build.
     static class UiFactory
     {
-        public static readonly Color PanelColor = new Color(0.07f, 0.06f, 0.11f, 0.92f);
-        public static readonly Color TextColor = new Color(0.93f, 0.92f, 0.98f);
-        public static readonly Color ButtonTextColor = new Color(0.11f, 0.10f, 0.14f);
+        static readonly Color PanelColor = new Color(0.07f, 0.06f, 0.11f, 0.92f);
+        static readonly Color TextColor = new Color(0.93f, 0.92f, 0.98f);
+        static readonly Color ButtonTextColor = new Color(0.11f, 0.10f, 0.14f);
 
         static readonly Vector2 ReferenceResolution = new Vector2(1920f, 1080f);
         const float ScalerWidthHeightBalance = 0.5f;
@@ -137,7 +135,6 @@ namespace FallingWizard.EditorTools
             return go.GetComponent<Button>();
         }
 
-        // A settings line: caption on the left, room for one control on the right.
         public static GameObject CreateRow(string caption, Transform parent)
         {
             var row = new GameObject(caption + " Row", typeof(RectTransform), typeof(HorizontalLayoutGroup));
@@ -179,7 +176,6 @@ namespace FallingWizard.EditorTools
             Attach(go, parent);
             SetSize(go, ToggleBoxSize, ToggleBoxSize);
 
-            // The stock toggle ships with a legacy Text label; the row already has a caption.
             Transform label = go.transform.Find("Label");
             if (label != null)
                 Object.DestroyImmediate(label.gameObject);

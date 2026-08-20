@@ -5,7 +5,8 @@ namespace FallingWizard.Player
     [RequireComponent(typeof(Collider2D))]
     public class PowerUpPickup : MonoBehaviour
     {
-        [SerializeField] PowerUpEffect effect = new PowerUpEffect();
+        [Tooltip("The PowerUp asset to hand over. Create one from Assets > Create > Falling Wizard.")]
+        [SerializeField] PowerUp powerUp;
 
         [Tooltip("Optional prefab spawned where the pickup was, for a puff of sparkles.")]
         [SerializeField] GameObject collectedEffect;
@@ -15,10 +16,10 @@ namespace FallingWizard.Player
         void OnTriggerEnter2D(Collider2D other)
         {
             var player = other.GetComponentInParent<PlayerCharacter>();
-            if (player == null)
+            if (player == null || powerUp == null)
                 return;
 
-            player.PowerUps.Apply(effect);
+            player.Collect(powerUp);
 
             if (collectedEffect != null)
                 Instantiate(collectedEffect, transform.position, Quaternion.identity);

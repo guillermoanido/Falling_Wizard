@@ -7,7 +7,6 @@ namespace FallingWizard.Core
     {
         const string VolumeKey = "settings.volume";
         const string FullscreenKey = "settings.fullscreen";
-        const string QualityKey = "settings.quality";
         const string ResolutionWidthKey = "settings.resolution.width";
         const string ResolutionHeightKey = "settings.resolution.height";
 
@@ -16,7 +15,6 @@ namespace FallingWizard.Core
         static int resolutionIndex;
         static List<Resolution> resolutions;
 
-        // Consoles pick their own output mode, so those rows are hidden there.
         public static bool DisplaySettingsSupported =>
             Application.isEditor || Application.platform == RuntimePlatform.WindowsPlayer ||
             Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.LinuxPlayer;
@@ -53,17 +51,10 @@ namespace FallingWizard.Core
             }
         }
 
-        public static int QualityLevel
-        {
-            get => QualitySettings.GetQualityLevel();
-            set => QualitySettings.SetQualityLevel(Mathf.Clamp(value, 0, QualitySettings.names.Length - 1), true);
-        }
-
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         public static void Load()
         {
             Volume = PlayerPrefs.GetFloat(VolumeKey, 1f);
-            QualityLevel = PlayerPrefs.GetInt(QualityKey, QualitySettings.GetQualityLevel());
 
             fullscreen = PlayerPrefs.GetInt(FullscreenKey, Screen.fullScreen ? 1 : 0) == 1;
             resolutionIndex = FindResolutionIndex(
@@ -78,7 +69,6 @@ namespace FallingWizard.Core
         {
             PlayerPrefs.SetFloat(VolumeKey, volume);
             PlayerPrefs.SetInt(FullscreenKey, fullscreen ? 1 : 0);
-            PlayerPrefs.SetInt(QualityKey, QualitySettings.GetQualityLevel());
 
             Resolution chosen = Resolutions[resolutionIndex];
             PlayerPrefs.SetInt(ResolutionWidthKey, chosen.width);
@@ -105,7 +95,6 @@ namespace FallingWizard.Core
             return Resolutions.Count - 1;
         }
 
-        // Screen.resolutions lists the same size once per refresh rate; keep the fastest of each.
         static List<Resolution> BuildResolutionList()
         {
             var best = new Dictionary<(int, int), Resolution>();

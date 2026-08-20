@@ -4,8 +4,6 @@ using UnityEngine.Playables;
 
 namespace FallingWizard.Cutscenes
 {
-    // Plays the intro and then loads the first level. With no Timeline assigned it just waits
-    // for placeholderDuration, which is enough to test the flow end to end.
     public class CutsceneRunner : MonoBehaviour
     {
         [Tooltip("Timeline to play. Leave empty to simply wait for the placeholder duration.")]
@@ -32,7 +30,6 @@ namespace FallingWizard.Cutscenes
                 return;
             }
 
-            // Without this the Timeline holds on its last frame and never reports that it stopped.
             director.extrapolationMode = DirectorWrapMode.None;
             director.Play();
         }
@@ -42,7 +39,7 @@ namespace FallingWizard.Cutscenes
             if (finished)
                 return;
 
-            if (canSkip && MenuInput.AnyButtonPressedThisFrame)
+            if (canSkip && MenuInput.SkipPressedThisFrame)
                 Finish();
             else if (director != null && director.state != PlayState.Playing)
                 Finish();
@@ -54,7 +51,7 @@ namespace FallingWizard.Cutscenes
                 return;
 
             finished = true;
-            SceneLoader.LoadFirstLevel();
+            Game.LoadFirstLevel();
         }
     }
 }

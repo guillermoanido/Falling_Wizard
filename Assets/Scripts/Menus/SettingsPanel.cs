@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using FallingWizard.Core;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace FallingWizard.Menus
@@ -10,7 +11,6 @@ namespace FallingWizard.Menus
     public class SettingsPanel : MonoBehaviour
     {
         [SerializeField] TMP_Dropdown resolutionDropdown;
-        [SerializeField] TMP_Dropdown qualityDropdown;
         [SerializeField] Toggle fullscreenToggle;
         [SerializeField] Slider volumeSlider;
         [SerializeField] TMP_Text volumeValueLabel;
@@ -23,10 +23,9 @@ namespace FallingWizard.Menus
 
         void Awake()
         {
-            FillDropdowns();
+            FillResolutionDropdown();
 
             resolutionDropdown.onValueChanged.AddListener(index => GameSettings.ResolutionIndex = index);
-            qualityDropdown.onValueChanged.AddListener(index => GameSettings.QualityLevel = index);
             fullscreenToggle.onValueChanged.AddListener(on => GameSettings.Fullscreen = on);
             volumeSlider.onValueChanged.AddListener(OnVolumeChanged);
             backButton.onClick.AddListener(() => Closed?.Invoke());
@@ -38,29 +37,26 @@ namespace FallingWizard.Menus
         void OnEnable()
         {
             ShowCurrentSettings();
-            MenuFocus.Set(backButton);
+
+            if (EventSystem.current != null)
+                EventSystem.current.SetSelectedGameObject(backButton.gameObject);
         }
 
         void OnDisable() => GameSettings.Save();
 
-        void FillDropdowns()
+        void FillResolutionDropdown()
         {
-            var resolutionNames = new List<string>();
+            var names = new List<string>();
             foreach (Resolution option in GameSettings.Resolutions)
-                resolutionNames.Add($"{option.width} x {option.height}");
+                names.Add($"{option.width} x {option.height}");
 
             resolutionDropdown.ClearOptions();
-            resolutionDropdown.AddOptions(resolutionNames);
-
-            qualityDropdown.ClearOptions();
-            qualityDropdown.AddOptions(new List<string>(QualitySettings.names));
+            resolutionDropdown.AddOptions(names);
         }
 
-        // SetValueWithoutNotify is what keeps this from looping straight back into the callbacks.
         void ShowCurrentSettings()
         {
             resolutionDropdown.SetValueWithoutNotify(GameSettings.ResolutionIndex);
-            qualityDropdown.SetValueWithoutNotify(GameSettings.QualityLevel);
             fullscreenToggle.SetIsOnWithoutNotify(GameSettings.Fullscreen);
             volumeSlider.SetValueWithoutNotify(GameSettings.Volume);
             UpdateVolumeLabel(GameSettings.Volume);

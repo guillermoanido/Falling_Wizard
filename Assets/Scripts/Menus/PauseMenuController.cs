@@ -4,73 +4,46 @@ using UnityEngine.UI;
 
 namespace FallingWizard.Menus
 {
-    public class PauseMenuController : MonoBehaviour
+    public class PauseMenuController : MenuScreen
     {
-        [Header("Panels")]
-        [SerializeField] GameObject pausePanel;
-        [SerializeField] SettingsPanel settingsPanel;
-
         [Header("Buttons")]
         [SerializeField] Button resumeButton;
         [SerializeField] Button settingsButton;
         [SerializeField] Button mainMenuButton;
         [SerializeField] Button quitButton;
 
-        void Awake()
+        protected override Selectable DefaultSelection => resumeButton;
+
+        protected override void WireButtons()
         {
             resumeButton.onClick.AddListener(Resume);
             settingsButton.onClick.AddListener(OpenSettings);
-            mainMenuButton.onClick.AddListener(SceneLoader.LoadMainMenu);
-            quitButton.onClick.AddListener(SceneLoader.QuitGame);
-            settingsPanel.Closed += CloseSettings;
+            mainMenuButton.onClick.AddListener(Game.LoadMainMenu);
+            quitButton.onClick.AddListener(Game.Quit);
         }
 
-        void OnDestroy() => settingsPanel.Closed -= CloseSettings;
-
-        void Start()
+        protected override void OnBackPressed()
         {
-            settingsPanel.gameObject.SetActive(false);
-            pausePanel.SetActive(false);
-        }
-
-        void Update()
-        {
-            if (!MenuInput.PausePressedThisFrame)
-                return;
-
-            if (settingsPanel.gameObject.activeSelf)
+            if (IsSettingsOpen)
                 CloseSettings();
-            else if (GamePause.IsPaused)
+            else if (Game.IsPaused)
                 Resume();
             else
                 Pause();
         }
 
+        void Start() => HidePanel();
+
         public void Pause()
         {
-            GamePause.SetPaused(true);
-            pausePanel.SetActive(true);
-            MenuFocus.Set(resumeButton);
+            Game.SetPaused(true);
+            ShowPanel();
         }
 
         public void Resume()
         {
-            settingsPanel.gameObject.SetActive(false);
-            pausePanel.SetActive(false);
-            GamePause.SetPaused(false);
-        }
-
-        void OpenSettings()
-        {
-            pausePanel.SetActive(false);
-            settingsPanel.gameObject.SetActive(true);
-        }
-
-        void CloseSettings()
-        {
-            settingsPanel.gameObject.SetActive(false);
-            pausePanel.SetActive(true);
-            MenuFocus.Set(resumeButton);
+            HidePanel();
+            Game.SetPaused(false);
         }
     }
 }
