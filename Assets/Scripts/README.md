@@ -11,7 +11,7 @@ consoles work from the same code.
 | `Core/` | `Game` (pause state, scene flow, quit), `GameSettings`, `MenuInput` |
 | `Menus/` | `MenuScreen` base class, `MainMenuController`, `PauseMenuController`, `SettingsPanel` |
 | `Cutscenes/` | `CutsceneRunner` — plays the intro, then loads Level 1 |
-| `Player/` | `PlayerCharacter` (the wizard, its state machine, `PlayerStats`, `Health`), `PlayerMovement`, `StaffDescent`, `Ragdoll`, `PowerUp`, `PowerUpPickup` |
+| `Player/` | `PlayerCharacter` (the wizard, its state machine, `PlayerStats`, `Health`), `PlayerMovement`, `Ragdoll`, `PowerUp`, `PowerUpPickup`, and `Staff` — its own entity |
 | `World/` | `RoughGround` (marks stairs and rocks), `FollowCamera` |
 
 The wizard is **one** component. `PlayerMovement`, `Health` and `ActivePowerUps` are plain classes
@@ -56,9 +56,8 @@ so rebinding is done in the Input Actions editor, not in code:
 | `UI/Pause` | `MenuInput` | Esc, gamepad start |
 | `UI/Skip` | `MenuInput` | Space, Enter, left click, gamepad south, gamepad start |
 
-Looking down, lowering onto the staff, dropping off it and climbing back all read `Move`'s Y
-(S / Down and W / Up), so they need no action of their own. `Player/Staff` is only a shortcut
-that skips the hold.
+Looking down and climbing back up read `Move`'s Y (S / Down and W / Up), so they need no action
+of their own.
 `Player/Walk`, `Player/Staff`, `UI/Pause` and `UI/Skip` were added for this project; the rest ship
 with Unity's default asset. Add or change bindings there and the code picks them up with no edits.
 The stock `Sprint` action is unused — delete it if you like.
@@ -92,23 +91,21 @@ Speed and jump height live under **Movement**:
 | `fallGravityMultiplier` / `maxFallSpeed` | Falls are heavier than the rise, and cap out. |
 | `ledgeCheckAhead` / `ledgeCheckDepth` | How far ahead and down to look for a missing floor. |
 
-Under **Staff**: `staffLength` is the whole mechanic — how far down the wizard can lower
-themselves, and therefore how much of a drop it removes — plus `holdToDescend`, how long you
-must hold Down before looking becomes lowering. Under **Ragdoll**: `tripSpeed`, `spinSpeed`,
-`fallKick`, `minimumDuration`, `recoverSpeed`, `standUpDuration`.
+The staff is **not** on this component — it is a child object with its own inspector, so see
+below. Under **Ragdoll**: `tripSpeed`, `spinSpeed`, `fallKick`, `minimumDuration`,
+`recoverSpeed`, `standUpDuration`.
 
 ## The five mechanics
 
 - **Run off a ledge and you fall.** Normal running does nothing to stop you.
 - **Walk stops at edges.** Holding Walk caps speed at `walkSpeed`, and `PlayerMovement.Run`
   zeroes the target speed when `IsAtEdge` and you are pushing toward the drop.
-- **Look down, then go down.** Hold **S / Down** at an edge. `IsPeeking` goes true straight away
-  and `FollowCamera` slides the view down by `peekDistance`; keep holding past
-  `holdToDescend` and the wizard commits to the staff. A quick tap is just a look.
-- **The staff.** `StaffDescent` takes the body kinematic and lowers it `staffLength` below the
-  lip, then holds. Press **Down** again to drop the rest, **Up** to climb back. The drop is
-  measured from the hang point via `movement.BeginFallFrom`, which is exactly why it turns a
-  killing fall into a survivable one. The Staff button is an instant alternative to the hold.
+- **Look down.** Grounded at an edge, or hanging, hold **S / Down**: `IsPeeking` goes true and
+  `FollowCamera` slides the view down by `peekDistance`.
+- **The staff.** At an edge, hold **E**. The `Staff` lowers its wielder by its own `length` and
+  holds there. Release E to drop the rest, or push **Up** to climb back. The drop is measured
+  from the hang point via `movement.BeginFallFrom`, which is exactly why it turns a killing fall
+  into a survivable one.
 - **Rough ground → ragdoll.** Put `RoughGround` on stairs and rocks. Cross one faster than
   `tripSpeed` and `PlayerCharacter` enters `Ragdoll`: the body unfreezes its rotation, takes a
   spin and a downward kick, and physics owns it until it is grounded, slow, and past
@@ -117,6 +114,24 @@ must hold Down before looking becomes lowering. Under **Ragdoll**: `tripSpeed`, 
 `PlayerState` is the whole state machine — `Normal`, `Descending`, `Hanging`, `Climbing`,
 `Ragdoll` — and `PlayerCharacter.FixedUpdate` is a single switch over it. New state, new case.
 `State` is public, so an Animator can drive clips straight off it when you add sprites.
+
+## The staff
+
+The staff is a separate entity: a child GameObject of the wizard carrying a `Staff` component and
+its **own** SpriteRenderer. Growing it is a matter of raising `length` — the sprite resizes to
+match and the wizard's own sprite is untouched. Anything with a `Rigidbody2D` can carry one;
+`Staff` finds its wielder with `GetComponentInParent`, so an enemy or an NPC needs no new code.
+
+| Field | What it does |
+| --- | --- |
+| `length` | How far down it lowers its wielder, and how much of a drop it removes. The visual follows it. |
+| `visual` | Optional sprite, resized and positioned to `length`. Leave empty for no visual. |
+| `ledgeOffset` | How far past the lip the wielder shuffles while lowering. |
+| `moveDuration` | Seconds to lower the full length, or climb back. |
+| `groundLayers` | What the staff can find footing on. Set this as well as the movement one. |
+
+`PlayerCharacter.staff` points at it. Leave that empty and the wizard simply cannot descend —
+everything else still works.
 
 ## Power-ups
 

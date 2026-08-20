@@ -26,7 +26,8 @@ namespace FallingWizard.Player
         const float StickThreshold = 0.5f;
 
         [SerializeField] PlayerMovement movement = new PlayerMovement();
-        [SerializeField] StaffDescent staff = new StaffDescent();
+        [Tooltip("The Staff entity, normally a child of the wizard. No staff means no descent.")]
+        [SerializeField] Staff staff;
         [SerializeField] Ragdoll ragdoll = new Ragdoll();
         [SerializeField] Health health = new Health();
 
@@ -48,8 +49,6 @@ namespace FallingWizard.Player
         InputAction jumpAction;
         InputAction walkAction;
         InputAction staffAction;
-        float edgeHoldTimer;
-        bool dropArmed;
 
         public Health Health => health;
         public PlayerStats Stats => powerUps.Stats;
@@ -75,7 +74,6 @@ namespace FallingWizard.Player
 
             powerUps = new ActivePowerUps(this);
             movement.Attach(body, GetComponentInChildren<SpriteRenderer>());
-            staff.Attach(body, GetComponent<Collider2D>(), movement.GroundLayers);
             ragdoll.Attach(body);
             health.RestoreToFull();
 
@@ -93,7 +91,10 @@ namespace FallingWizard.Player
             movement.Tick(JumpPressedThisFrame, Time.deltaTime);
             powerUps.Tick(Time.deltaTime);
 
-            UpdateEdgeIntent(Time.deltaTime);
+            if (StaffPressedThisFrame)
+                TryBeginDescent();
+
+            UpdatePeeking();
         }
 
         void FixedUpdate()
@@ -146,32 +147,14 @@ namespace FallingWizard.Player
             Walk = WalkHeld,
         };
 
-        // Holding Down at an edge looks over it first, then commits to the descent.
-        void UpdateEdgeIntent(float deltaTime)
+        void TryBeginDescent()
         {
-            bool atLedge = State == PlayerState.Normal && movement.IsGrounded && movement.IsAtEdge;
-            bool lookingDown = LookingDown;
-
-            IsPeeking = State == PlayerState.Hanging || (atLedge && lookingDown);
-
-            if (!atLedge)
-            {
-                edgeHoldTimer = 0f;
+            if (staff == null || State != PlayerState.Normal ||
+                !movement.IsGrounded || !movement.IsAtEdge)
                 return;
-            }
 
-            edgeHoldTimer = lookingDown ? edgeHoldTimer + deltaTime : 0f;
-
-            if (edgeHoldTimer >= staff.HoldToDescend || StaffPressedThisFrame)
-                BeginDescent();
-        }
-
-        void BeginDescent()
-        {
             staff.BeginDescent(movement.Facing);
             State = PlayerState.Descending;
-            edgeHoldTimer = 0f;
-            dropArmed = false;
         }
 
         void UpdateHanging()
@@ -183,18 +166,19 @@ namespace FallingWizard.Player
                 return;
             }
 
-            // They are still holding Down from the descent, so wait for a fresh press.
-            if (!LookingDown)
-                dropArmed = true;
-            else if (dropArmed)
-                DropFromHang();
+            if (!StaffHeld || LookingDown)
+            {
+                staff.Release();
+                movement.BeginFallFrom(transform.position.y);
+                State = PlayerState.Normal;
+            }
         }
 
-        void DropFromHang()
+        void UpdatePeeking()
         {
-            staff.Release();
-            movement.BeginFallFrom(transform.position.y);
-            State = PlayerState.Normal;
+            IsPeeking = State == PlayerState.Hanging ||
+                        (State == PlayerState.Normal && movement.IsGrounded &&
+                         movement.IsAtEdge && LookingDown);
         }
 
         void CheckForTrip()
@@ -249,6 +233,8 @@ namespace FallingWizard.Player
         bool JumpHeld => jumpAction != null && !Game.IsPaused && jumpAction.IsPressed();
 
         bool WalkHeld => walkAction != null && !Game.IsPaused && walkAction.IsPressed();
+
+        bool StaffHeld => staffAction != null && !Game.IsPaused && staffAction.IsPressed();
 
         bool LookingDown => MoveInput.y < -StickThreshold;
 

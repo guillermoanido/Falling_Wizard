@@ -37,6 +37,11 @@ namespace FallingWizard.EditorTools
         const float PlayerGravityScale = 3f;
         const int PlayerSortingOrder = 1;
 
+        const float StaffLength = 2.5f;
+        const float StaffWidth = 0.12f;
+        static readonly Color StaffColor = new Color(0.55f, 0.38f, 0.20f);
+        const int StaffSortingOrder = 2;
+
         static readonly Vector2 PlatformSize = new Vector2(10f, 1f);
         static readonly Color PlatformColor = new Color(0.24f, 0.22f, 0.30f);
         static readonly Color RoughColor = new Color(0.42f, 0.29f, 0.22f);
@@ -176,6 +181,7 @@ namespace FallingWizard.EditorTools
                 new Vector2(0f, -(PlayerSize.y / 2f) - GroundCheckSkin);
             serialized.FindProperty("movement.groundCheckSize").vector2Value =
                 new Vector2(PlayerSize.x * GroundCheckWidthFactor, GroundCheckThickness);
+            serialized.FindProperty("staff").objectReferenceValue = CreateStaff(root.transform);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             CreateSpriteBox("Visual", root.transform, PlayerSize, PlayerColor, PlayerSortingOrder);
@@ -249,6 +255,30 @@ namespace FallingWizard.EditorTools
             }
 
             return stairs;
+        }
+
+        // The staff is its own entity with its own sprite, so growing it never touches the
+        // wizard's. Anything with a Rigidbody2D can carry one.
+        static Staff CreateStaff(Transform wielder)
+        {
+            var staffObject = new GameObject("Staff");
+            staffObject.transform.SetParent(wielder, false);
+            staffObject.transform.localPosition =
+                new Vector3(0.3f, StaffLength - PlayerSize.y / 2f, 0f);
+
+            var staff = staffObject.AddComponent<Staff>();
+
+            GameObject visual = CreateSpriteBox("Visual", staffObject.transform,
+                new Vector2(StaffWidth, StaffLength), StaffColor, StaffSortingOrder);
+            visual.transform.localPosition = new Vector3(0f, -StaffLength / 2f, 0f);
+
+            var serialized = new SerializedObject(staff);
+            serialized.FindProperty("length").floatValue = StaffLength;
+            serialized.FindProperty("visual").objectReferenceValue = visual.GetComponent<SpriteRenderer>();
+            serialized.FindProperty("groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            return staff;
         }
 
         static GameObject CreatePlatform(string name, Vector2 center, Vector2 size, bool rough)
