@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using FallingWizard.Core;
 using FallingWizard.Menus;
 using FallingWizard.Player;
+using FallingWizard.UI;
 using FallingWizard.World;
 using TMPro;
 using UnityEditor;
@@ -25,6 +26,7 @@ namespace FallingWizard.EditorTools
 
         const string GroundLayerName = "Ground";
         const string PlayerLayerName = "Player";
+        const string HazardLayerName = "Hazard";
 
         const string BoxSpritePath = "UI/Skin/UISprite.psd";
 
@@ -290,10 +292,23 @@ namespace FallingWizard.EditorTools
                 new Vector2(StaffWidth, StaffLength), StaffColor, StaffSortingOrder);
             visual.transform.localPosition = new Vector3(0f, -StaffLength / 2f, 0f);
 
+            // The plank you stand on when the staff is a bridge. It has to be SOLID and on
+            // the Ground layer - the staff itself is on Player, which the ground check ignores,
+            // so a collider on the staff would be one the wizard falls straight through.
+            var bridgeObject = new GameObject("Bridge");
+            bridgeObject.layer = LayerOrDefault(GroundLayerName);
+            bridgeObject.transform.SetParent(staffObject.transform, false);
+
+            var bridge = bridgeObject.AddComponent<BoxCollider2D>();
+            bridge.size = hitbox.size;
+            bridge.offset = hitbox.offset;
+            bridge.enabled = false;
+
             var serialized = new SerializedObject(staff);
             serialized.FindProperty("hitbox").objectReferenceValue = hitbox;
+            serialized.FindProperty("bridgeCollider").objectReferenceValue = bridge;
             serialized.FindProperty("visual").objectReferenceValue = visual.GetComponent<SpriteRenderer>();
-            serialized.FindProperty("logic.groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
+            serialized.FindProperty("pole.groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             return staff;
@@ -328,6 +343,95 @@ namespace FallingWizard.EditorTools
             // Nothing to wire up: FollowCamera finds the wizard through the singleton.
             if (camera.GetComponent<FollowCamera>() == null)
                 Undo.AddComponent<FollowCamera>(camera.gameObject);
+        }
+
+        [MenuItem("Tools/Falling Wizard/Add HUD To Open Scene", false, 33)]
+        static void AddHud()
+        {
+            if (Object.FindFirstObjectByType<PlayerHud>() != null)
+            {
+                Debug.LogWarning("This scene already has a HUD.");
+                return;
+            }
+
+            // A RectTransform up front, because a Canvas cannot live on a plain Transform and
+            // PlayerHud adds the Canvas itself when it wakes.
+            var hud = new GameObject("HUD", typeof(RectTransform), typeof(PlayerHud));
+            hud.layer = LayerOrDefault("UI");
+            Undo.RegisterCreatedObjectUndo(hud, "Add HUD");
+
+            Selection.activeGameObject = hud;
+            MarkSceneDirty();
+        }
+
+        [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Rock", false, 34)]
+        static void CreateRock()
+        {
+            // Solid and on Ground, not Hazard: a rock is a block you can stand on as well as run
+            // into, and the ground check only looks at the Ground layer.
+            GameObject rock = CreateHazard<Rock>("Rock", new Vector2(2f, 1f),
+                new Color(0.42f, 0.29f, 0.22f));
+            rock.layer = LayerOrDefault(GroundLayerName);
+            Finish(rock);
+        }
+
+        [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Slime", false, 35)]
+        static void CreateSlime()
+        {
+            // Solid, so the wizard actually lands on it, but on the Hazard layer so the ground
+            // check never sees it and never bills them for the fall.
+            GameObject slime = CreateHazard<Slime>("Slime", new Vector2(2f, 1f),
+                new Color(0.35f, 0.78f, 0.42f));
+            slime.GetComponent<Collider2D>().isTrigger = false;
+            Finish(slime);
+        }
+
+        [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Wind", false, 36)]
+        static void CreateWind()
+        {
+            GameObject wind = CreateHazard<WindZone2D>("Wind", new Vector2(8f, 6f),
+                new Color(0.55f, 0.80f, 0.95f, 0.18f));
+            wind.GetComponent<Collider2D>().isTrigger = true;
+            Finish(wind);
+        }
+
+        [MenuItem("Tools/Falling Wizard/Create Ability Shrine In Open Scene", false, 37)]
+        static void CreateShrine()
+        {
+            var shrine = new GameObject("Shrine");
+            shrine.transform.position = Vector3.zero;
+            Undo.RegisterCreatedObjectUndo(shrine, "Create Shrine");
+
+            shrine.AddComponent<BoxCollider2D>().isTrigger = true;
+            shrine.AddComponent<AbilityShrine>();
+            CreateSpriteBox("Visual", shrine.transform, Vector2.one,
+                new Color(0.95f, 0.86f, 0.45f), PlayerSortingOrder);
+
+            Debug.Log("Shrine created. Drag a spell asset onto it, and make sure that spell is " +
+                      "also listed in Assets/Resources/Spellbook.asset.");
+            Finish(shrine);
+        }
+
+        // Hazards go at the scene root on purpose: several platforms in the test level carry
+        // non-uniform scales that would squash anything parented under them.
+        static GameObject CreateHazard<T>(string name, Vector2 size, Color color) where T : Component
+        {
+            var hazard = new GameObject(name);
+            hazard.layer = LayerOrDefault(HazardLayerName);
+            hazard.transform.position = Vector3.zero;
+            Undo.RegisterCreatedObjectUndo(hazard, "Create " + name);
+
+            hazard.AddComponent<BoxCollider2D>().size = size;
+            hazard.AddComponent<T>();
+            CreateSpriteBox("Visual", hazard.transform, size, color, PlatformSortingOrder);
+
+            return hazard;
+        }
+
+        static void Finish(GameObject created)
+        {
+            Selection.activeGameObject = created;
+            MarkSceneDirty();
         }
 
         [MenuItem("Tools/Falling Wizard/Add Game Scenes To Build Settings", false, 40)]

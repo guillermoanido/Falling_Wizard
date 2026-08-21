@@ -1,168 +1,227 @@
 # Falling Wizard — scripts
 
 Unity 6.3, URP 2D, new Input System only. Everything reads the project-wide actions in
-`Assets/InputSystem_Actions`, which are already bound to keyboard and gamepad, so PC and
-consoles work from the same code.
+`Assets/InputSystem_Actions`, already bound to keyboard and gamepad, so PC and consoles work from
+the same code with no branches.
+
+## The unit everything is measured in
+
+**One box = 32 px = 1 world unit ≈ one mage.** The art is drawn on a 32 px grid and imported at
+32 pixels per unit, so a box is the same thing on the canvas, in the inspector and in the physics.
+
+Every number in the game is expressed in boxes or boxes per second:
+
+| | |
+| --- | --- |
+| Run / walk | 6 and 2 boxes per second |
+| Jump | 2 boxes |
+| Free fall | 3 boxes |
+| Fall damage | 1 heart per box past that — so 8 boxes kills a full-health wizard |
+| Staff reach | pole height + the wizard's hand-hang, about 1.9 boxes |
+
+Jump height being under the damage floor is deliberate: a jump can never hurt you.
 
 ## Layout
 
 | Folder | What lives there |
 | --- | --- |
-| `Core/` | `Game` (pause state, scene flow, quit), `GameSettings`, `MenuInput` |
-| `Menus/` | `MenuScreen` base class, `MainMenuController`, `PauseMenuController`, `SettingsPanel` |
-| `Cutscenes/` | `CutsceneRunner` — plays the intro, then loads Level 1 |
-| `Player/` | `PlayerCharacter` (the wizard, its state machine, `PlayerStats`, `Health`), `PlayerMovement`, `Ragdoll`, `PowerUp`, `PowerUpPickup`, and `Staff` — its own entity |
-| `World/` | `RoughGround` (marks stairs and rocks), `FollowCamera` |
+| `Core/` | `Game` (pause, scene flow, quit), `GameSettings`, `Controls` (every input lookup, plus which device is in use), `Progress` (what the wizard has learned), `SingletonBehaviour` |
+| `Player/` | `PlayerCharacter`, `PlayerLogic`, `Staff` |
+| `Player/Abilities/` | `Ability` and the spells, `AbilityBook`, `AbilityShrine` |
+| `World/` | `PlayerTrigger`, `Hazard`, `Rock`, `Slime`, `WindZone2D`, `RoughGround`, `FollowCamera` |
+| `UI/` | `PlayerHud` |
+| `Menus/`, `Cutscenes/` | `MenuScreen` and the three menus; `CutsceneRunner` |
 
-The wizard is **one** component. `PlayerMovement`, `Health` and `ActivePowerUps` are plain classes
-that `PlayerCharacter` owns and drives, and they live in the same file as their owner so Unity does
-not create draggable script assets for them. The two menus share `MenuScreen`, which owns the panel
-swapping, the back button and controller focus.
+Three files hold the whole wizard. `Movement`, `Ragdoll`, `Health`, `Modifiers`, `Spellbook`,
+`Intent` and `Command` are all **nested classes of `PlayerLogic`** — they are parts of a wizard and
+meaningless on their own, so they live inside it rather than in seven files of their own. `Staff`
+likewise contains `Staff.Pole`. Nested `[Serializable]` classes serialize exactly like top-level
+ones and show up as foldouts in the inspector.
 
-Changing a serialized field name or turning a MonoBehaviour into a plain class breaks any scene that
-already references it. If Unity reports a missing script or `ExtensionOfNativeClass`, the fix is to
-delete the stale component and rebuild the object with the Tools menu.
+### Rules that keep it working
 
-`Assets/Editor/` holds one-shot build commands. They only create ordinary scene objects —
-delete that folder once you have run them if you want it gone.
+- **Never rename `PlayerCharacter.cs`, `Staff.cs`, `RoughGround.cs` or `FollowCamera.cs`**, or their
+  classes. `Level 1.unity` refers to them by GUID, and the GUID lives in the `.meta` beside the
+  file. Moving a file is fine — the `.meta` travels with it. Renaming is not.
+- **Never use `[SerializeReference]`.** It writes assembly, namespace and class names into the
+  scene; renaming a class silently nulls every reference to it.
+- **`OnValidate` does not reach nested classes.** Each block has a `Validate()` instead, chained
+  from `PlayerCharacter.OnValidate` and `Staff.OnValidate`.
+- **Public runtime state needs `[NonSerialized]`.** Inside a `[Serializable]` class a public field
+  serializes by default, so a public timer would be baked into the scene at whatever value it held
+  when you last saved.
 
-## First-time setup
+## Numbers
 
-1. Open `Assets/Scenes/Main Menu.unity`.
-2. **Tools ▸ Falling Wizard ▸ Build Main Menu In Open Scene**. The first run may ask to import
-   the TextMeshPro essentials; accept, wait, then run it again. Save the scene.
-3. **Tools ▸ Falling Wizard ▸ Create Pause Menu Prefab** (writes `Assets/Prefabs/Pause Menu.prefab`).
-4. Optional, for later: open `Assets/Scenes/Cutscene.unity` and add an empty object with
-   `CutsceneRunner` on it. With no Timeline assigned it waits a few seconds and moves on.
-   Play skips straight to Level 1 until you switch `Game.StartNewGame()` over.
-5. Open `Assets/Scenes/Level 1.unity`, delete anything already in it except the camera and light,
-   then run **Build Test Level In Open Scene** and **Add Pause Menu To Open Scene**. Save.
-   The test level lays out flat ground, a staircase, and two drops sized around the staff.
+Three kinds of field, and which one a thing is decides how it is declared:
 
-The three scenes are already listed in Build Settings, main menu first.
-**Add Game Scenes To Build Settings** puts them back if they ever get out of order.
-
-## Input
-
-Nothing reads a key or button directly. Every binding lives in `Assets/InputSystem_Actions`,
-so rebinding is done in the Input Actions editor, not in code:
-
-| Action | Read by | Default bindings |
+| Kind | Declared as | Examples |
 | --- | --- | --- |
-| `Player/Move` | `PlayerCharacter` | WASD, arrows, left stick |
-| `Player/Jump` | `PlayerCharacter` | Space, gamepad south |
-| `Player/Walk` | `PlayerCharacter` | Left Shift, gamepad left trigger |
-| `Player/Staff` | `PlayerCharacter` | E, gamepad west |
-| `UI/Pause` | `MenuInput` | Esc, gamepad start |
-| `UI/Skip` | `MenuInput` | Space, Enter, left click, gamepad south, gamepad start |
+| **Tuning** — has a unit | `public` under a `[Header]`, with `[Tooltip]` and `[Min]`/`[Range]` | `runSpeed`, `jumpHeight`, `tripSpeed`, `bounceHeight` |
+| **Wiring** — points at something | `public` under a `[Header]` | `hitbox`, `visual`, `bridgeCollider`, `book`, `ability` |
+| **Runtime** — has a lifetime, not a value | `{ get; private set; }` or `[NonSerialized]` private | `IsGrounded`, `Facing`, `Current`, `Progress` |
 
-Looking down and climbing back up read `Move`'s Y (S / Down and W / Up), so they need no action
-of their own.
-`Player/Walk`, `Player/Staff`, `UI/Pause` and `UI/Skip` were added for this project; the rest ship
-with Unity's default asset. Add or change bindings there and the code picks them up with no edits.
-The stock `Sprint` action is unused — delete it if you like.
+Every tunable is public so it is visible and editable in the inspector. That is a deliberate
+trade: nothing stops another script writing `wizard.Logic.movement.runSpeed = 99`, so **don't**.
+If you find yourself wanting to, you wanted a `Modifiers` multiplier or one of the verbs below.
 
-## How it fits together
+## How the world talks to the wizard
 
-- **Play** → `Game.StartNewGame()` → Level 1. The cutscene is wired up but skipped:
-  change that method to call `LoadCutscene()` and the intro plays first, then hands off to
-  Level 1 on its own.
-- **UI/Pause** → `PauseMenuController` freezes the game through `Game`, which sets
-  `Time.timeScale` and pauses audio. `PlayerInputReader` reads as zero while paused, so nothing
-  moves behind the menu. Pressing it again resumes; if the options panel is open it backs out first.
-- **Settings** apply the moment you change them and save to PlayerPrefs when the panel closes.
-  `GameSettings.Load()` runs automatically before the first scene.
-- Every scene change goes through `Game`, which clears the pause state first, so a paused
-  game can never carry a frozen time scale into the next scene.
+Hazards and spells never reach in and set a number. They call verbs on `PlayerLogic`, each of which
+decides for itself whether it applies:
 
-## Tuning the wizard
+```csharp
+wizard.Trip();                                   // rough ground, rocks
+wizard.Bounce(heightInBoxes, sideways, resetsFall);  // slimes
+wizard.Push(boxesPerSecond, rampup, groundScale);    // wind, every step you are inside it
+wizard.Shove(velocity, controlLockout);          // one-off knock
+wizard.Hurt(hearts);  wizard.Heal(hearts);
+wizard.TryPlantStaff(mode);  wizard.RecoverStaff();  wizard.DropFromStaff();
+```
 
-Everything is on the **PlayerCharacter** component of the Wizard, grouped into foldouts.
-Speed and jump height live under **Movement**:
+`Movement.Run` writes `linearVelocityX` absolutely every physics step, so an `AddForce` from
+outside is wiped within a quarter second. That is why external force has exactly one way in:
+wind is folded into `Run`'s target speed (so you can lean into it and partly win, and it
+self-limits), and impulses are applied at the top of `FixedTick` with a short steering lockout.
 
-| Field | What it does |
+## Spells
+
+A spell is a `ScriptableObject` asset. They are **stateless flyweights** — every wizard shares the
+one asset, so all the mutable state lives in `PlayerLogic.Spellbook.Slot`. Adding a mutable field
+to an `Ability` would leak between play sessions and into the build.
+
+Passive or active is decided by one thing: **a spell with an empty `actionName` has no button**,
+shows no key on the HUD, and simply applies while it is owned.
+
+| Hook | When |
 | --- | --- |
-| `runSpeed` | Top speed at a normal run. Running off a ledge drops you. |
-| `walkSpeed` | Top speed holding Walk. Walking also refuses to step off a ledge. |
-| `jumpHeight` | Height of a full jump, in units. Literal — see the gravity note below. |
-| `acceleration` | How quickly speed builds. Lower = heavier, slower to get going. |
-| `groundFriction` | How quickly they coast to a stop with no input. |
-| `airControl` | Scales both while airborne. 0.45 = committed to your jump but still steerable. |
-| `fallGravityMultiplier` / `maxFallSpeed` | Falls are heavier than the rise, and cap out. |
-| `ledgeCheckAhead` / `ledgeCheckDepth` | How far ahead and down to look for a missing floor. |
+| `ModifyStats` | Every step, while OWNED. Where a passive lives. Multiply, never assign. |
+| `ModifyStatsWhileLit` | Every step, only during the seconds after a cast. |
+| `CanCast` | Whether the button would do anything. Greys the HUD slot. |
+| `OnCast` | Do it. **Return false for "not yet"** — the press stays buffered and retries, which is what lets you press the staff button just before reaching a ledge. |
+| `OnLit` / `OnEnded` | During and at the end of the lit window. |
+| `OnLearned` / `OnRunReset` | Picked up; and died. |
 
-The staff is **not** on this component — it is a child object with its own inspector, so see
-below. Under **Ragdoll**: `tripSpeed`, `spinSpeed`, `fallKick`, `minimumDuration`,
-`recoverSpeed`, `standUpDuration`.
+The four that exist: **Staff** (ability #1, the one you start with), **Glide**, **Higher Jump**
+(a `StatAbility`, passive), **Staff Bridge**.
 
-## The five mechanics
+### Adding spell #5
 
-- **Run off a ledge and you fall.** Normal running does nothing to stop you.
-- **Walk stops at edges.** Holding Walk caps speed at `walkSpeed`, and `PlayerMovement.Run`
-  zeroes the target speed when `IsAtEdge` and you are pushing toward the drop.
-- **Look down.** Hold **S / Down** anywhere you have control — standing, running, mid-air or
-  hanging: `IsPeeking` goes true and `FollowCamera` slides the view down by `peekDistance`.
-  It is off during a ragdoll or while the staff is moving, since you have no control there.
-- **The staff.** At an edge, hold **E**. The `Staff` lowers its wielder by its own `length` and
-  holds there. Release E to drop the rest, or push **Up** to climb back. The drop is measured
-  from the hang point via `movement.BeginFallFrom`, which is exactly why it turns a killing fall
-  into a survivable one.
-- **Rough ground → ragdoll.** Put `RoughGround` on stairs and rocks. Cross one faster than
-  `tripSpeed` and `PlayerCharacter` enters `Ragdoll`: the body unfreezes its rotation, takes a
-  spin and a downward kick, and physics owns it until it is grounded, slow, and past
-  `minimumDuration`. Then it stands back up over `standUpDuration`.
+1. One `.cs` in `Player/Abilities/` — or none at all, if it is only stat changes: make another
+   `StatAbility` asset instead.
+2. One asset via **Assets ▸ Create ▸ Falling Wizard ▸ Abilities ▸ …**.
+3. If it needs a button, one action + two bindings in `Assets/InputSystem_Actions`, and put the
+   action's name in the asset's `actionName`.
+4. Drag it into `Assets/Resources/Spellbook.asset` → `spells`.
 
-`PlayerState` is the whole state machine — `Normal`, `Descending`, `Hanging`, `Climbing`,
-`Ragdoll` — and `PlayerCharacter.FixedUpdate` is a single switch over it. New state, new case.
-`State` is public, so an Animator can drive clips straight off it when you add sprites.
+HUD slot, button glyph, press buffering, cooldown, unlocking and persistence all come for free.
+
+### Order and unlocking
+
+`Assets/Resources/Spellbook.asset` is the single source of truth. `spells` is the bar, left to
+right — **drag to reorder, nothing in any scene depends on it**. `known` is what a new game starts
+with; the Staff belongs there.
+
+Everything else is learned from an `AbilityShrine`: one component, one field, and the icon and
+sparkle come from the spell itself. Learning is **permanent** — `Core.Progress` holds it outside
+the wizard, because dying reloads the level and builds a brand new one. A shrine you already drank
+from does not come back.
+
+Progress lasts the play session: it survives dying and moving between levels, and starts empty
+every time you press Play. When the game grows a save file, swap the `HashSet` in `Progress` for
+`PlayerPrefs` and nothing else changes.
 
 ## The staff
 
-The staff is a separate entity: a child GameObject of the wizard carrying a `Staff` component and
-its **own** SpriteRenderer. Growing it is a matter of raising `length` — the sprite resizes to
-match and the wizard's own sprite is untouched. Anything with a `Rigidbody2D` can carry one;
-`Staff` finds its wielder with `GetComponentInParent`, so an enemy or an NPC needs no new code.
+A child of the wizard with its own hitbox and sprite. **The hitbox's height is the mechanic** —
+the wizard travels its span and then the length of their own hand-hang past the tip, so a taller
+collider is a longer climb and nothing else has to be told about it.
 
-| Field | What it does |
-| --- | --- |
-| `length` | How far down it lowers its wielder, and how much of a drop it removes. The visual follows it. |
-| `visual` | Optional sprite, resized and positioned to `length`. Leave empty for no visual. |
-| `ledgeOffset` | How far past the lip the wielder shuffles while lowering. |
-| `moveDuration` | Seconds to lower the full length, or climb back. |
-| `groundLayers` | What the staff can find footing on. Set this as well as the movement one. |
+Two modes:
 
-`PlayerCharacter.staff` points at it. Leave that empty and the wizard simply cannot descend —
-everything else still works.
+- **Ladder** (the `Staff` spell). Driven in just past the lip with its top flush to the ledge, so
+  the far end of the pole is where your feet will end up and you can read the drop off it. Slide
+  down, and keep pushing down at the bottom to let go.
+- **Bridge** (the `Staff Bridge` spell). Laid flat as a plank you walk out onto. The thing you
+  stand on is a **separate solid collider on a child, on the Ground layer** — the staff itself is
+  on the Player layer, which the ground check deliberately ignores, so a collider on the staff
+  would be one you fall straight through.
 
-## Power-ups
+## Hazards
 
-A power-up is a ScriptableObject you subclass, so nothing is assumed about what any of them do:
+| | What it is | Notes |
+| --- | --- | --- |
+| `RoughGround` | A surface you stumble **across** | Goes on the collider, or a parent of it. Carries its own `tripSpeed`. Stairs 4, gravel 3, scree 2.5. |
+| `Rock` | An obstacle you run **into** | Trigger. `minimumSpeed` 4 means a run trips and a walk does not. |
+| `Slime` | Land on it, get thrown back up | **Solid**, on the Hazard layer — never Ground, or you would be charged fall damage before it bounced you. |
+| `WindZone2D` | A volume that pushes you | One `Vector2` covers left, right, up and down. `groundScale` decides how much you feel with both feet down. |
 
-```csharp
-[CreateAssetMenu(menuName = "Falling Wizard/Power Ups/Feather Fall")]
-public class FeatherFall : PowerUp
-{
-    [SerializeField] float fallSpeedMultiplier = 0.5f;
+All three sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach
+a wizard who is on their staff or already tumbling. **Adding hazard #6 is one subclass with one
+`Affect` method.**
 
-    public override void ModifyStats(PlayerStats stats) =>
-        stats.FallSpeedMultiplier *= fallSpeedMultiplier;
-}
-```
+Two things worth knowing:
 
-Three hooks: `OnCollected` for instant effects, `ModifyStats` for continuous ones,
-`OnExpired` for cleanup. `ActivePowerUps` holds the live ones and rebuilds `PlayerStats`
-from scratch whenever the set changes. Drop the asset on a `PowerUpPickup`.
+- Hazards go on **layer 8 (Hazard)** and at the **scene root**. Several platforms in the test level
+  carry non-uniform scales that would squash anything parented under them.
+- `PlayerTrigger` filters contacts down to the wizard's body collider. The wizard emits two
+  colliders — their body and the staff's trigger, which shares their rigidbody — so without that
+  filter every hazard would fire twice.
+
+## HUD
+
+`PlayerHud` builds its own canvas at runtime, so there is no prefab to drift out of step with the
+code and the scene needs nothing but one object with the component on it. Hearts top-left, spells
+bottom-left, every layout number public.
+
+It finds the wizard through the singleton and re-checks every frame, because dying destroys them
+and builds a new one — anything that had subscribed would be holding a destroyed object.
+
+The button under each spell follows **whichever device is actually in use**: `E` on a keyboard,
+`X` on an Xbox pad, `Square` on a DualSense. `Core.Controls` watches only the actions this game
+asked for, which is what stops a mouse twitch flipping the HUD back to keyboard letters mid
+gamepad play. Asking for the glyph without naming a device returns `"E | X"` — always go through
+`Controls.Glyph`.
+
+No `GraphicRaycaster`, on purpose: the HUD must never swallow a pause-menu click or steal
+controller focus from the menus.
+
+## Input
+
+| Action | Keyboard | Gamepad | Read by |
+| --- | --- | --- | --- |
+| `Player/Move` | WASD / arrows | left stick | `PlayerCharacter.Controls` |
+| `Player/Jump` | Space | south | `PlayerCharacter.Controls` |
+| `Player/Walk` | Left Shift | left trigger | `PlayerCharacter.Controls` |
+| `Player/Staff` | E | west | `Staff.asset` |
+| `Player/Glide` | Q | right shoulder | `Glide.asset` |
+| `Player/Bridge` | F | left shoulder | `Staff Bridge.asset` |
+| `UI/Pause` | Esc | start | `Core.Controls` |
+| `UI/Skip` | Space, Enter, click | south, start | `Core.Controls` |
+
+Looking down and climbing the staff read `Move`'s Y, so they need no action of their own. Spell
+buttons are looked up **by name from the asset**, so rebinding or adding one never touches code.
+
+## Editor commands
+
+`Tools ▸ Falling Wizard ▸ …` builds ordinary scene objects and nothing else.
+
+Build Main Menu · Create Pause Menu Prefab · Add Pause Menu To Open Scene · Create Player ·
+Create Ground Platform · Build Test Level · **Add HUD** · **Create Hazard ▸ Rock / Slime / Wind** ·
+**Create Ability Shrine** · Add Game Scenes To Build Settings
 
 ## Worth knowing
 
-- The movement block's `groundLayers` must exclude the player's own layer, or the ground box finds
-  the wizard's collider and they are permanently "grounded". The Create Player command sets it to
-  **Ground**; layers 6 and 7 are now `Ground` and `Player`. Select the wizard to see the cyan
-  ground-check gizmo.
-- The **Exit** button is always shown. Console certification usually forbids quitting to the OS
-  from a menu, so hide it in `MainMenuController.Awake` when you get to a console build.
-- Resolution and fullscreen rows hide themselves off desktop (`SettingsPanel.desktopOnlyRows`).
-- Volume drives `AudioListener.volume`. Swap in an `AudioMixer` when you want separate
-  music and SFX sliders.
-- Buttons are wired in `Awake` in code, not through the inspector's OnClick list. Add both and
-  they will fire twice.
+- `groundLayers` must exclude the wizard's own layer or they stand on themselves. It defaults to
+  Ground (layer 6) in code, and `Validate()` warns if you widen it. Layers: 6 Ground, 7 Player,
+  8 Hazard.
+- The project queries triggers by default, so every ground query passes
+  `ContactFilter2D { useTriggers = false }`. Without it any trigger on the Ground layer becomes
+  walkable floor.
+- Never write `body.gravityScale` from a spell — `ApplyFallGravity` reassigns it 50 times a second.
+  Use `Modifiers.FallSpeedMultiplier`, which is already threaded through both the gravity and the
+  terminal-speed clamp.
+- Buttons are wired in `Awake` in code, not through the inspector's OnClick list. Add both and they
+  fire twice.
+- The **Exit** button is always shown. Console certification usually forbids quitting to the OS from
+  a menu, so hide it in `MainMenuController.Awake` for a console build.

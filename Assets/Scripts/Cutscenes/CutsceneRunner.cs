@@ -39,7 +39,7 @@ namespace FallingWizard.Cutscenes
             if (finished)
                 return;
 
-            if (canSkip && MenuInput.SkipPressedThisFrame)
+            if (canSkip && Controls.SkipPressed)
                 Finish();
             else if (director != null && director.state != PlayState.Playing)
                 Finish();

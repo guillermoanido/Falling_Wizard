@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: df83914c507f43254ecd9643411905b7, type: 3}
+  m_Name: Higher Jump
+  m_EditorClassIdentifier: 
+  id: leap
+  displayName: Higher Jump
+  description: Jump half again as high. Always on.
+  icon: {fileID: 0}
+  actionName: 
+  pressBuffer: 0.12
+  activeDuration: 0
+  cooldown: 0
+  collectedEffect: {fileID: 0}
+  moveSpeed: 1
+  jumpHeight: 1.5
+  fallSpeed: 1
+  fallDamage: 1
+  extraJumps: 0

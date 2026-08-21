@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f3acd44c02ede71f04bed3ad4c59d95, type: 3}
+  m_Name: Glide
+  m_EditorClassIdentifier: 
+  id: glide
+  displayName: Glide
+  description: Slow a fall for a second.
+  icon: {fileID: 0}
+  actionName: Glide
+  pressBuffer: 0.12
+  activeDuration: 1
+  cooldown: 0.5
+  collectedEffect: {fileID: 0}
+  fallSpeed: 0.25
+  endsOnLanding: 1

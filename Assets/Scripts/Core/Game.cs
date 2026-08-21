@@ -23,7 +23,12 @@ namespace FallingWizard.Core
 
         public static void LoadMainMenu() => Load(MainMenuScene);
 
-        public static void StartNewGame() => LoadFirstLevel();
+        public static void StartNewGame()
+        {
+            // A new game starts with nothing but the staff.
+            Progress.ForgetAll();
+            LoadFirstLevel();
+        }
 
         public static void LoadCutscene() => Load(CutsceneScene);
 

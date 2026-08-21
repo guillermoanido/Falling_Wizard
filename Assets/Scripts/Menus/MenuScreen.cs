@@ -29,7 +29,7 @@ namespace FallingWizard.Menus
 
         void Update()
         {
-            if (MenuInput.PausePressedThisFrame)
+            if (Controls.PausePressed)
                 OnBackPressed();
         }
 
