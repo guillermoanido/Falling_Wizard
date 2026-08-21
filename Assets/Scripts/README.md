@@ -133,6 +133,32 @@ Progress lasts the play session: it survives dying and moving between levels, an
 every time you press Play. When the game grows a save file, swap the `HashSet` in `Progress` for
 `PlayerPrefs` and nothing else changes.
 
+## Tripping
+
+A trip **launches you onward** — your speed, plus `launchForward`, never below `minimumLaunch`, and
+`launchUp` of lift so you actually leave the floor. Landing back down, the skid bleeds at
+`slideFriction` boxes per second squared. All of it on `PlayerLogic ▸ Ragdoll`, and all of it the
+same every time: a rock, a slime and a bad staircase throw you identically, because none of them
+supply their own knock — they just call `Trip()`.
+
+**The sprite tumbles; the collider does not.** A rotating box levers itself up on its corners — its
+half-diagonal is longer than its half-height, 0.64 against 0.52 here, so the solver must lift it
+0.11 boxes every time a corner swings down. That reads as bouncing along the floor, and no material
+setting removes it because it is geometry, not bounciness. It also makes how far you slide depend
+on which corner happens to be down. Spinning the art instead costs nothing and looks the same.
+
+The wizard's `Rigidbody2D` rotation is frozen and nothing in the game ever unfreezes it.
+
+## Contact friction is zero
+
+`Movement.surfaceFriction` is 0, applied as a material in `Attach`. Horizontal speed is written
+outright every physics step, so contact friction never helps the wizard move — it only ever fights
+them, catching on platform corners and seams and bleeding speed for no visible reason. The only
+thing that slows them is `groundFriction`, which is a number you can see.
+
+That makes `Ragdoll.slideFriction` the *only* thing stopping a tumble. Set it to 0 and a tripped
+wizard slides forever and can never get up; `Validate()` warns if you do.
+
 ## Small ledges
 
 `Movement.TryStepUp` climbs anything up to `stepHeight` (0.35 boxes) instead of letting it stop the
@@ -169,10 +195,17 @@ Two modes:
 
 | | What it is | Notes |
 | --- | --- | --- |
-| `RoughGround` | A surface you stumble **across** | Goes on the collider, or a parent of it. Carries its own `tripSpeed`. Stairs 4, gravel 3, scree 2.5. |
-| `Rock` | An obstacle you run **into** | Trigger. `minimumSpeed` 4 means a run trips and a walk does not. |
-| `Slime` | Land on it, get thrown back up | **Solid**, on the Hazard layer — never Ground, or you would be charged fall damage before it bounced you. |
+| `RoughGround` | A surface you stumble **across** | Not a hazard — it goes on the ground collider itself, or a parent of it. Carries its own `tripSpeed`. Stairs 4, gravel 3, scree 2.5. |
+| `Rock` | A stone you clip at a run | `minimumSpeed` 4 means a run trips and a walk does not. |
+| `Slime` | Fall into it, get thrown back up | Launches you on the way past. |
 | `WindZone2D` | A volume that pushes you | One `Vector2` covers left, right, up and down. `groundScale` decides how much you feel with both feet down. |
+
+**Nothing on the Hazard layer blocks you.** `Hazard.passThrough` is on by default and applied on
+`Awake`, so hazards are things you pass straight through that do something to you on the way, not
+things you bump into. That is also why they belong on layer 8: the ground check ignores that layer,
+so a *solid* hazard there would be something the wizard comes to rest on while the game still
+believes they are falling — no jump, and no way out of a tumble, since a ragdoll only recovers once
+grounded. Ticking `passThrough` off is supported, but move it off layer 8 if you do.
 
 All three sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach
 a wizard who is on their staff or already tumbling. **Adding hazard #6 is one subclass with one

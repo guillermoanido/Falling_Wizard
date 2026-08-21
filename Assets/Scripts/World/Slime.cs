@@ -3,9 +3,9 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // Land on it and you are thrown back into the air, tumbling. Put it on the Hazard layer, not
-    // Ground - if the ground check could see it, the wizard would be billed fall damage for
-    // arriving before it ever got the chance to bounce them.
+    // Fall into it and you are thrown back into the air, tumbling. You pass straight through -
+    // it launches you on the way past rather than catching you - which also means the ground check
+    // never sees it and never bills you fall damage for arriving.
     public class Slime : Hazard
     {
         [Header("Bounce")]
@@ -29,11 +29,6 @@ namespace FallingWizard.World
         {
             rearmDelay = 0.25f;
             damage = 0;
-
-            // Must be a trigger. Solid plus the Hazard layer is the one combination that soft
-            // locks the wizard: they come to rest on it while the ground check, which only sees
-            // the Ground layer, still reports them airborne - so they can never jump or get up.
-            GetComponent<Collider2D>().isTrigger = true;
         }
 
         protected override void Affect(PlayerLogic wizard)

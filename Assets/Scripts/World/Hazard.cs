@@ -12,6 +12,15 @@ namespace FallingWizard.World
     public abstract class Hazard : PlayerTrigger
     {
         [Header("Hazard")]
+        [Tooltip("Hazards are things you pass straight through that do something to you on the " +
+                 "way, rather than things you bump into. Applied on Awake, so ticking this fixes " +
+                 "a hazard already placed in a scene without touching its collider by hand. " +
+                 "Untick only for something meant to be solid - and if you do, keep it OFF the " +
+                 "Hazard layer, because the ground check ignores that layer and a solid hazard " +
+                 "there is something the wizard comes to rest on while the game still believes " +
+                 "they are falling.")]
+        public bool passThrough = true;
+
         [Tooltip("Only fires above this speed, in boxes per second. Running is 6 and walking is " +
                  "2, so 4 means a run sets it off and a walk does not. 0 always fires.")]
         [Min(0f)] public float minimumSpeed = 0f;
@@ -33,6 +42,16 @@ namespace FallingWizard.World
 
         // What this particular hazard does. Speed, re-arming and damage are already handled.
         protected abstract void Affect(PlayerLogic wizard);
+
+        // Safe to do here: nothing has touched anything yet. Flipping isTrigger on a collider
+        // that is mid-contact makes Unity re-evaluate the contact and can eject the wizard.
+        protected virtual void Awake()
+        {
+            var hitbox = GetComponent<Collider2D>();
+
+            if (hitbox != null)
+                hitbox.isTrigger = passThrough;
+        }
 
         protected sealed override void OnPlayerEntered(PlayerCharacter wizard)
         {

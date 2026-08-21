@@ -28,7 +28,6 @@ namespace FallingWizard.World
         {
             rearmDelay = 0f;
             damage = 0;
-            GetComponent<Collider2D>().isTrigger = true;
         }
 
         // Walking in does nothing on its own; being in it is the whole effect.

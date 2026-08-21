@@ -3,17 +3,12 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // Something you run into rather than across. Clips the wizard's legs and sends them tumbling,
-    // but only if they were actually running - walking past is fine.
+    // Something you clip rather than collide with. You pass straight through it and go over,
+    // but only if you were actually running - walking past is fine.
     //
     // For a surface you STUMBLE ACROSS rather than trip over, use RoughGround instead.
     public class Rock : Hazard
     {
-        // Works either way round, and the choice decides more than it looks like:
-        //   SOLID on the Ground layer  - a block you bump into AND can stand on top of.
-        //   TRIGGER on the Hazard layer - a stone you clip and stumble straight through.
-        // A solid collider on the Hazard layer is the one combination to avoid: you would land
-        // on top of it and the ground check, which only looks at Ground, would not see it.
         void Reset()
         {
             minimumSpeed = 4f;      // between a walk (2) and a run (6)

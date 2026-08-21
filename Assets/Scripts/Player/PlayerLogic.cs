@@ -56,7 +56,7 @@ namespace FallingWizard.Player
         public void Attach(Rigidbody2D body, SpriteRenderer sprite, Collider2D hitbox, Staff.Pole staffPole)
         {
             movement.Attach(body, sprite, hitbox);
-            ragdoll.Attach(body);
+            ragdoll.Attach(body, sprite != null ? sprite.transform : null);
             health.RestoreToFull();
 
             pole = staffPole;
@@ -984,29 +984,31 @@ namespace FallingWizard.Player
         public class Ragdoll
         {
             [Header("Tumble")]
-            [Tooltip("Spin given to the wizard when they trip, in degrees per second. They always " +
-                     "roll the way they were going.")]
+            [Tooltip("How fast the wizard spins as they go over, in degrees per second. They " +
+                     "always roll the way they were going.")]
             public float spinSpeed = 520f;
+
+            [Tooltip("How quickly that spin slows, in degrees per second squared. 0 keeps " +
+                     "spinning at full rate until they get up.")]
+            [Min(0f)] public float spinDown = 240f;
 
             [Tooltip("How much of their speed carries into the tumble. 1 keeps all of it, so a " +
                      "trip is a loss of footing rather than a wall.")]
             [Range(0f, 1f)] public float momentumKept = 1f;
 
             [Header("Launch")]
-            [Tooltip("Shove ONWARD as they go over, in boxes per second, on top of whatever speed " +
-                     "they already had. This is what makes a trip throw you rather than drop you.")]
+            [Tooltip("Shove ONWARD as they go over, in boxes per second, on top of whatever " +
+                     "speed they already had. This is what makes a trip throw you rather than " +
+                     "drop you.")]
             [Min(0f)] public float launchForward = 3f;
 
             [Tooltip("Lift as they go over, in boxes per second. A little goes a long way: it " +
                      "gets them off the floor so the launch is not immediately scrubbed off.")]
             [Min(0f)] public float launchUp = 5f;
 
-            [Tooltip("Least speed they leave the ground with, in boxes per second. Tripping at a " +
-                     "crawl and tripping at a sprint then differ in degree, not in kind.")]
+            [Tooltip("Least speed they leave the ground with, in boxes per second. Tripping at " +
+                     "a crawl and tripping at a sprint then differ in degree, not in kind.")]
             [Min(0f)] public float minimumLaunch = 4f;
-
-            [Tooltip("How quickly the tumble spins down. 0 spins forever.")]
-            [Min(0f)] public float angularDamping = 1.5f;
 
             [Header("Getting Up")]
             [Tooltip("Minimum seconds spent tumbling before they can start getting up.")]
@@ -1020,46 +1022,53 @@ namespace FallingWizard.Player
             [Tooltip("They only get up once grounded and slower than this, in boxes per second.")]
             [Min(0f)] public float recoverSpeed = 1.2f;
 
-            [Tooltip("Seconds spent standing back upright.")]
+            [Tooltip("Seconds spent straightening back up.")]
             [Min(0.01f)] public float standUpDuration = 0.35f;
 
             [NonSerialized] Rigidbody2D body;
-            [NonSerialized] float originalAngularDamping;
+            [NonSerialized] Transform visual;
+            [NonSerialized] float angle;
+            [NonSerialized] float spin;
             [NonSerialized] float tumbleTimer;
             [NonSerialized] float standUpTimer;
             [NonSerialized] float standUpFrom;
 
             public bool IsStandingUp => standUpTimer >= 0f;
 
-            public void Attach(Rigidbody2D rigidbody2d)
+            public void Attach(Rigidbody2D rigidbody2d, Transform sprite)
             {
                 body = rigidbody2d;
-                originalAngularDamping = body.angularDamping;
+                visual = sprite;
                 standUpTimer = -1f;
+                angle = 0f;
+                Show();
             }
 
-            // direction is the way they were TRAVELLING, so they roll onward rather than
-            // being spun about by which way they happened to be looking.
+            // direction is the way they were TRAVELLING, so they roll onward rather than being
+            // spun about by whichever way they happened to be looking.
+            //
+            // The SPRITE tumbles. The collider stays an upright box, and that is deliberate: a
+            // rotating box levers itself up on its corners, because its half-diagonal is longer
+            // than its half-height - about a tenth of a body here - so the solver has to lift it
+            // clear every time a corner swings down, and that reads as bouncing along the floor.
+            // It also makes how far you slide depend on which corner happens to be down, which
+            // is the opposite of consistent. Spinning the art instead costs nothing.
             public void Begin(int direction)
             {
-                body.freezeRotation = false;
-                body.angularDamping = angularDamping;
-                body.angularVelocity = -direction * spinSpeed;
+                spin = -direction * spinSpeed;
+                angle = 0f;
 
-                // Carry the run into the tumble and add a shove ONWARD. Every trip launches the
-                // same way, so catching a rock at a sprint and catching one at a jog differ in
-                // how far you go, not in what happens.
-                float carried = body.linearVelocityX * momentumKept;
-                float thrown = carried + direction * launchForward;
+                // Carry the run into the tumble and add a shove ONWARD, so catching a rock at a
+                // sprint and catching one at a jog differ in how far you go, not in what happens.
+                float thrown = body.linearVelocityX * momentumKept + direction * launchForward;
 
-                // ...and never below a floor, so a trip is always a trip.
                 if (Mathf.Abs(thrown) < minimumLaunch)
                     thrown = direction * minimumLaunch;
 
                 body.linearVelocityX = thrown;
 
-                // Up, not down. Driving them into the floor was what killed the momentum: it
-                // pins them to the ground for the whole tumble and scrubs the speed straight off.
+                // Up, not down. Driving them into the floor pins them there for the whole tumble
+                // and scrubs the speed straight off.
                 body.linearVelocityY = Mathf.Max(body.linearVelocityY, launchUp);
 
                 tumbleTimer = minimumDuration;
@@ -1071,10 +1080,14 @@ namespace FallingWizard.Player
                 if (standUpTimer >= 0f)
                     return StandUp(fixedDeltaTime);
 
+                angle += spin * fixedDeltaTime;
+                spin = Mathf.MoveTowards(spin, 0f, spinDown * fixedDeltaTime);
+                Show();
+
                 tumbleTimer -= fixedDeltaTime;
 
-                // Bleed the skid by a number instead of leaving it to the physics material and
-                // the luck of which corner of the box is digging in. Airborne they keep it all.
+                // Bleed the skid by a number rather than leaving it to the physics material.
+                // Airborne they keep all of it.
                 if (grounded && slideFriction > 0f)
                     body.linearVelocityX =
                         Mathf.MoveTowards(body.linearVelocityX, 0f, slideFriction * fixedDeltaTime);
@@ -1082,24 +1095,21 @@ namespace FallingWizard.Player
                 if (tumbleTimer > 0f || !grounded || horizontalSpeed > recoverSpeed)
                     return false;
 
-                body.angularVelocity = 0f;
-                standUpFrom = body.rotation;
+                standUpFrom = angle;
                 standUpTimer = 0f;
                 return false;
             }
 
             public void Cancel()
             {
-                body.angularVelocity = 0f;
-                body.rotation = 0f;
-                body.freezeRotation = true;
-                body.angularDamping = originalAngularDamping;
+                spin = 0f;
+                angle = 0f;
                 standUpTimer = -1f;
+                Show();
             }
 
             public void Validate()
             {
-                angularDamping = Mathf.Max(0f, angularDamping);
                 standUpDuration = Mathf.Max(0.01f, standUpDuration);
 
                 // A tumble that cannot slow below the speed it needs to get up never ends.
@@ -1112,14 +1122,22 @@ namespace FallingWizard.Player
             bool StandUp(float fixedDeltaTime)
             {
                 standUpTimer += fixedDeltaTime;
+
                 float t = Mathf.Clamp01(standUpTimer / Mathf.Max(0.01f, standUpDuration));
-                body.MoveRotation(Mathf.LerpAngle(standUpFrom, 0f, t));
+                angle = Mathf.LerpAngle(standUpFrom, 0f, t);
+                Show();
 
                 if (t < 1f)
                     return false;
 
                 Cancel();
                 return true;
+            }
+
+            void Show()
+            {
+                if (visual != null)
+                    visual.localRotation = Quaternion.Euler(0f, 0f, angle);
             }
         }
 

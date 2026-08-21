@@ -368,36 +368,16 @@ namespace FallingWizard.EditorTools
         }
 
         [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Rock", false, 34)]
-        static void CreateRock()
-        {
-            // Solid and on Ground, not Hazard: a rock is a block you can stand on as well as run
-            // into, and the ground check only looks at the Ground layer.
-            GameObject rock = CreateHazard<Rock>("Rock", new Vector2(2f, 1f),
-                new Color(0.42f, 0.29f, 0.22f));
-            rock.layer = LayerOrDefault(GroundLayerName);
-            Finish(rock);
-        }
+        static void CreateRock() => Finish(CreateHazard<Rock>("Rock", new Vector2(2f, 1f),
+            new Color(0.42f, 0.29f, 0.22f)));
 
         [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Slime", false, 35)]
-        static void CreateSlime()
-        {
-            // A TRIGGER, not a solid block. The ground check only looks at the Ground layer,
-            // so a solid slime would be something the wizard comes to rest on while the game
-            // still believes they are falling - no jump, no recovery from a tumble, stuck.
-            GameObject slime = CreateHazard<Slime>("Slime", new Vector2(2f, 1f),
-                new Color(0.35f, 0.78f, 0.42f));
-            slime.GetComponent<Collider2D>().isTrigger = true;
-            Finish(slime);
-        }
+        static void CreateSlime() => Finish(CreateHazard<Slime>("Slime", new Vector2(2f, 1f),
+            new Color(0.35f, 0.78f, 0.42f)));
 
         [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Wind", false, 36)]
-        static void CreateWind()
-        {
-            GameObject wind = CreateHazard<WindZone2D>("Wind", new Vector2(8f, 6f),
-                new Color(0.55f, 0.80f, 0.95f, 0.18f));
-            wind.GetComponent<Collider2D>().isTrigger = true;
-            Finish(wind);
-        }
+        static void CreateWind() => Finish(CreateHazard<WindZone2D>("Wind", new Vector2(8f, 6f),
+            new Color(0.55f, 0.80f, 0.95f, 0.18f)));
 
         [MenuItem("Tools/Falling Wizard/Create Ability Shrine In Open Scene", false, 37)]
         static void CreateShrine()
@@ -425,7 +405,12 @@ namespace FallingWizard.EditorTools
             hazard.transform.position = SpawnPoint();
             Undo.RegisterCreatedObjectUndo(hazard, "Create " + name);
 
-            hazard.AddComponent<BoxCollider2D>().size = size;
+            // Every hazard is something you pass through; Hazard applies that on Awake, and
+            // this makes it true in the editor too, so the scene view matches what you get.
+            var box = hazard.AddComponent<BoxCollider2D>();
+            box.size = size;
+            box.isTrigger = true;
+
             hazard.AddComponent<T>();
             CreateSpriteBox("Visual", hazard.transform, size, color, HazardSortingOrder);
 
