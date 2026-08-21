@@ -13,7 +13,9 @@ namespace FallingWizard.World
                  "3 really is three boxes.")]
         [Min(0f)] public float bounceHeight = 3f;
 
-        [Tooltip("Sideways scatter away from the slime, in boxes per second.")]
+        [Tooltip("Sideways push as they launch, in boxes per second, carrying them ONWARD the " +
+                 "way they were already going. Bouncing them away from the slime instead would " +
+                 "mean the same jump throws you a different way depending on where you landed.")]
         public float shove = 2f;
 
         [Tooltip("Send the wizard tumbling as well as up.")]
@@ -27,19 +29,24 @@ namespace FallingWizard.World
         {
             rearmDelay = 0.25f;
             damage = 0;
+
+            // Must be a trigger. Solid plus the Hazard layer is the one combination that soft
+            // locks the wizard: they come to rest on it while the ground check, which only sees
+            // the Ground layer, still reports them airborne - so they can never jump or get up.
+            GetComponent<Collider2D>().isTrigger = true;
         }
 
         protected override void Affect(PlayerLogic wizard)
         {
-            float away = Mathf.Sign(wizard.movement.Position.x - transform.position.x);
+            // Which way they arrived, measured before the impact stopped them.
+            int onward = wizard.movement.TravelDirection;
 
-            if (Mathf.Approximately(away, 0f))
-                away = 1f;
-
-            wizard.Bounce(bounceHeight, away * shove, resetsFall);
-
+            // Trip first, then fling. A tumble kicks the wizard downward as it starts, so
+            // bouncing first would just be undone - the slime would throw them into the floor.
             if (ragdolls)
                 wizard.Trip();
+
+            wizard.Bounce(bounceHeight, onward * shove, resetsFall);
         }
     }
 }

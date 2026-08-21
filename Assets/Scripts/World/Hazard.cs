@@ -39,7 +39,7 @@ namespace FallingWizard.World
             if (Time.time < readyAt || !Allowed(wizard))
                 return;
 
-            if (wizard.Logic.movement.HorizontalSpeed < minimumSpeed)
+            if (wizard.Logic.movement.ApproachSpeed < minimumSpeed)
                 return;
 
             readyAt = Time.time + rearmDelay;

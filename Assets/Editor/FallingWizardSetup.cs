@@ -35,7 +35,6 @@ namespace FallingWizard.EditorTools
 
         // Matched to the art: 25x35 px of mage on a 32 px grid.
         static readonly Vector2 PlayerSize = new Vector2(0.78125f, 1.09375f);
-        static readonly Vector3 PlayerSpawnPosition = new Vector3(0f, 1f, 0f);
         static readonly Color PlayerColor = new Color(0.58f, 0.45f, 0.88f);
         const float PlayerGravityScale = 3f;
         const int PlayerSortingOrder = 1;
@@ -51,6 +50,10 @@ namespace FallingWizard.EditorTools
         static readonly Color PlatformColor = new Color(0.24f, 0.22f, 0.30f);
         static readonly Color RoughColor = new Color(0.42f, 0.29f, 0.22f);
         const int PlatformSortingOrder = 0;
+
+        // Above the level geometry, so a new hazard is never hidden behind a platform that
+        // happens to sit closer to the camera.
+        const int HazardSortingOrder = 3;
 
         const int StairStepCount = 5;
         const float StairStepWidth = 1f;
@@ -158,7 +161,7 @@ namespace FallingWizard.EditorTools
         [MenuItem("Tools/Falling Wizard/Create Player In Open Scene", false, 30)]
         static void CreatePlayer()
         {
-            Selection.activeGameObject = SpawnPlayer(PlayerSpawnPosition);
+            Selection.activeGameObject = SpawnPlayer(SpawnPoint());
             MarkSceneDirty();
         }
 
@@ -200,7 +203,7 @@ namespace FallingWizard.EditorTools
         [MenuItem("Tools/Falling Wizard/Create Ground Platform In Open Scene", false, 31)]
         static void CreateGroundPlatform()
         {
-            Selection.activeGameObject = CreatePlatform("Platform", Vector2.zero, PlatformSize, false);
+            Selection.activeGameObject = CreatePlatform("Platform", SpawnPoint(), PlatformSize, false);
             MarkSceneDirty();
         }
 
@@ -378,11 +381,12 @@ namespace FallingWizard.EditorTools
         [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Slime", false, 35)]
         static void CreateSlime()
         {
-            // Solid, so the wizard actually lands on it, but on the Hazard layer so the ground
-            // check never sees it and never bills them for the fall.
+            // A TRIGGER, not a solid block. The ground check only looks at the Ground layer,
+            // so a solid slime would be something the wizard comes to rest on while the game
+            // still believes they are falling - no jump, no recovery from a tumble, stuck.
             GameObject slime = CreateHazard<Slime>("Slime", new Vector2(2f, 1f),
                 new Color(0.35f, 0.78f, 0.42f));
-            slime.GetComponent<Collider2D>().isTrigger = false;
+            slime.GetComponent<Collider2D>().isTrigger = true;
             Finish(slime);
         }
 
@@ -399,13 +403,13 @@ namespace FallingWizard.EditorTools
         static void CreateShrine()
         {
             var shrine = new GameObject("Shrine");
-            shrine.transform.position = Vector3.zero;
+            shrine.transform.position = SpawnPoint();
             Undo.RegisterCreatedObjectUndo(shrine, "Create Shrine");
 
             shrine.AddComponent<BoxCollider2D>().isTrigger = true;
             shrine.AddComponent<AbilityShrine>();
             CreateSpriteBox("Visual", shrine.transform, Vector2.one,
-                new Color(0.95f, 0.86f, 0.45f), PlayerSortingOrder);
+                new Color(0.95f, 0.86f, 0.45f), HazardSortingOrder);
 
             Debug.Log("Shrine created. Drag a spell asset onto it, and make sure that spell is " +
                       "also listed in Assets/Resources/Spellbook.asset.");
@@ -418,14 +422,28 @@ namespace FallingWizard.EditorTools
         {
             var hazard = new GameObject(name);
             hazard.layer = LayerOrDefault(HazardLayerName);
-            hazard.transform.position = Vector3.zero;
+            hazard.transform.position = SpawnPoint();
             Undo.RegisterCreatedObjectUndo(hazard, "Create " + name);
 
             hazard.AddComponent<BoxCollider2D>().size = size;
             hazard.AddComponent<T>();
-            CreateSpriteBox("Visual", hazard.transform, size, color, PlatformSortingOrder);
+            CreateSpriteBox("Visual", hazard.transform, size, color, HazardSortingOrder);
 
             return hazard;
+        }
+
+        // Where a newly created object should appear. The middle of the Scene view, the way
+        // Unity's own Create menu behaves - dropping things at the world origin buries them in
+        // whatever happens to be built there, and a solid one becomes an invisible wall.
+        //
+        // z is forced to 0 because that is the plane the wizard lives on. Nothing in a 2D game
+        // should be built at another depth, however the Scene view was angled at the time.
+        static Vector3 SpawnPoint()
+        {
+            SceneView view = SceneView.lastActiveSceneView;
+            Vector3 point = view != null ? view.pivot : Vector3.zero;
+
+            return new Vector3(point.x, point.y, 0f);
         }
 
         static void Finish(GameObject created)

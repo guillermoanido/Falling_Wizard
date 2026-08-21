@@ -55,7 +55,7 @@ namespace FallingWizard.Player
 
         public void Attach(Rigidbody2D body, SpriteRenderer sprite, Collider2D hitbox, Staff.Pole staffPole)
         {
-            movement.Attach(body, sprite);
+            movement.Attach(body, sprite, hitbox);
             ragdoll.Attach(body);
             health.RestoreToFull();
 
@@ -135,7 +135,7 @@ namespace FallingWizard.Player
             if (State != PlayerState.Normal || !health.IsAlive)
                 return false;
 
-            ragdoll.Begin(movement.Facing);
+            ragdoll.Begin(movement.TravelDirection);
             State = PlayerState.Ragdoll;
             return true;
         }
@@ -337,9 +337,7 @@ namespace FallingWizard.Player
             public bool JumpHeld;
             public bool Walk;
             public bool LookingDown;
-            public bool LookingUp;
 
-            public float Steer => Move.x;
             public float Lean => Move.y;
 
             public Command Movement => new Command
@@ -437,8 +435,16 @@ namespace FallingWizard.Player
         {
             const float MinGravityScale = 0.01f;
 
+            // A hair of clearance so probes start just off a surface rather than exactly on it.
+            const float StepSkin = 0.02f;
+
+            // Below this the wizard counts as standing still, and which way they are LOOKING is
+            // a better answer than which way they are drifting.
+            const float MinTravelSpeed = 0.1f;
+
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(8);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
+            static readonly List<RaycastHit2D> Casts = new List<RaycastHit2D>(4);
 
             // Tuned in boxes: one box is 32 px, one world unit, and about one mage.
             [Header("Speed")]
@@ -511,12 +517,32 @@ namespace FallingWizard.Player
             [Tooltip("How finely to close in on the exact lip when planting the staff.")]
             [Range(4, 16)] public int edgeSearchSteps = 8;
 
+            [Header("Contact")]
+            [Tooltip("Friction between the wizard and the world. 0 is right for a platformer: " +
+                     "speed is driven entirely by the numbers above, so physics friction adds " +
+                     "nothing except corners and seams to snag on. Raise it only if you want " +
+                     "them to catch on scenery deliberately.")]
+            [Range(0f, 1f)] public float surfaceFriction = 0f;
+
+            [Header("Step Up")]
+            [Tooltip("Ledges this tall or shorter are climbed instead of stopping the wizard. " +
+                     "About a third of a box suits the art. 0 turns it off.")]
+            [Min(0f)] public float stepHeight = 0.35f;
+
+            [Tooltip("How far ahead to look for a step, in boxes. Roughly one step's worth of " +
+                     "travel at running speed.")]
+            [Min(0.01f)] public float stepProbe = 0.12f;
+
+            [Tooltip("How fast they rise onto a step, in boxes per second.")]
+            [Min(0.1f)] public float stepSpeed = 14f;
+
             [Header("External Force")]
             [Tooltip("How fast wind fades once you leave the zone, in boxes per second squared.")]
             [Min(0f)] public float windDecay = 24f;
 
             [NonSerialized] Rigidbody2D body;
             [NonSerialized] SpriteRenderer sprite;
+            [NonSerialized] Collider2D hitbox;
             [NonSerialized] ContactFilter2D groundFilter;
 
             [NonSerialized] float baseGravityScale;
@@ -529,11 +555,27 @@ namespace FallingWizard.Player
             [NonSerialized] int airJumpsUsed;
 
             [NonSerialized] Vector2 wind;
-            [NonSerialized] Vector2 impulse;
             [NonSerialized] float lockout;
 
             public bool IsGrounded { get; private set; }
             public bool IsAtEdge { get; private set; }
+
+            [NonSerialized] float approachVelocityX;
+
+            // How fast they were travelling going into the current physics solve. Hazards gate on
+            // this rather than on live velocity: a collision callback runs AFTER the solver, so
+            // running flat into a solid rock reports a speed of nearly zero at the moment of
+            // contact, and every speed-gated hazard would refuse to fire.
+            public float ApproachSpeed => Mathf.Abs(approachVelocityX);
+
+            // Which way they were actually going, for anything that wants to send them onward
+            // rather than bounce them back. Not the same as Facing - a shove or a slope can carry
+            // them backwards - and not readable from live velocity during a collision callback,
+            // for the same reason ApproachSpeed is not.
+            public int TravelDirection =>
+                Mathf.Abs(approachVelocityX) > MinTravelSpeed
+                    ? (approachVelocityX < 0f ? -1 : 1)
+                    : Facing;
 
             // What they are standing on, when it is worth knowing about.
             public RoughGround Ground { get; private set; }
@@ -544,10 +586,11 @@ namespace FallingWizard.Player
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
             public float VerticalSpeed => body == null ? 0f : body.linearVelocityY;
 
-            public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer)
+            public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer, Collider2D bodyHitbox)
             {
                 body = rigidbody2d;
                 sprite = spriteRenderer;
+                hitbox = bodyHitbox;
                 baseGravityScale = Mathf.Max(MinGravityScale, body.gravityScale);
                 highestPoint = body.position.y;
 
@@ -558,6 +601,25 @@ namespace FallingWizard.Player
                     useLayerMask = true,
                     layerMask = groundLayers,
                     useTriggers = false,
+                };
+
+                ApplySurfaceFriction();
+            }
+
+            // Horizontal speed is written outright every step, so contact friction never helps
+            // the wizard move - it only ever fights them, catching on the corner of a platform or
+            // the seam between two of them and bleeding speed for no visible reason. A dedicated
+            // material means the wizard slides along the world cleanly and the only thing that
+            // slows them down is groundFriction, which is a number you can see.
+            void ApplySurfaceFriction()
+            {
+                if (body == null)
+                    return;
+
+                body.sharedMaterial = new PhysicsMaterial2D("Wizard Contact")
+                {
+                    friction = surfaceFriction,
+                    bounciness = 0f,
                 };
             }
 
@@ -571,18 +633,12 @@ namespace FallingWizard.Player
 
             public void FixedTick(Command command, Modifiers stats, float fixedDeltaTime)
             {
-                if (impulse != Vector2.zero)
-                {
-                    body.linearVelocity += impulse;
-                    impulse = Vector2.zero;
-                    rising = false;             // a shove is not a jump, so no short-hop clipping
-                }
-
                 lockout -= fixedDeltaTime;
 
                 UpdateFacing(command.Steer);
                 UpdateGroundedState(fixedDeltaTime);
                 Run(command, stats, fixedDeltaTime);
+                TryStepUp(command.Steer, fixedDeltaTime);
                 TryJump(stats);
                 ApplyShortHop(command.JumpHeld);
 
@@ -592,8 +648,7 @@ namespace FallingWizard.Player
 
                 ApplyFallGravity(stats);
 
-                // Zones re-assert themselves every step, so this only bites once you leave one.
-                wind = Vector2.MoveTowards(wind, Vector2.zero, windDecay * fixedDeltaTime);
+                approachVelocityX = body.linearVelocityX;
             }
 
             public bool TryGetLanding(out float fallDistance)
@@ -608,7 +663,6 @@ namespace FallingWizard.Player
             {
                 body.linearVelocity = Vector2.zero;
                 wind = Vector2.zero;
-                impulse = Vector2.zero;
             }
 
             // Ground sensing without any of the control, for states that let physics take over.
@@ -622,6 +676,9 @@ namespace FallingWizard.Player
                 rising = false;
             }
 
+            // Called every step whether or not a zone is pushing. With no zone the target is
+            // zero and this is what fades the wind back out, which is why FixedTick must NOT
+            // decay it as well - doing both capped the wind at one step's worth of ramp.
             public void ApplyWind(Vector2 target, float rampup, float groundScale, float fixedDeltaTime)
             {
                 float scale = IsGrounded ? groundScale : 1f;
@@ -629,9 +686,16 @@ namespace FallingWizard.Player
                 wind = Vector2.MoveTowards(wind, target * scale, rate * fixedDeltaTime);
             }
 
+            // Applied straight away rather than queued for the next FixedTick, because the
+            // thing that shoves you is usually the same thing that trips you - and FixedTick
+            // never runs while tumbling, so a queued shove would fire when they stood back up.
             public void AddImpulse(Vector2 velocity, float controlLockout)
             {
-                impulse += velocity;
+                if (body == null)
+                    return;
+
+                body.linearVelocity += velocity;
+                rising = false;             // a shove is not a jump, so no short-hop clipping
                 lockout = Mathf.Max(lockout, controlLockout);
             }
 
@@ -782,6 +846,66 @@ namespace FallingWizard.Player
                 return Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, ledgeCheckDepth) > 0;
             }
 
+            // A kerb, a lip, the seam between two platforms - none of them should stop a
+            // wizard dead. Anything up to stepHeight is climbed instead of collided with.
+            //
+            // This casts the wizard's OWN collider rather than firing thin rays: a ray can slip
+            // through the corner it was meant to find, and can hit a sliver of geometry the body
+            // would never actually touch. The shape either fits or it does not.
+            //
+            // Up only, on purpose. Snapping down small drops as well would stop the wizard
+            // running off ledges, and running off ledges is the whole game.
+            void TryStepUp(float steer, float fixedDeltaTime)
+            {
+                if (stepHeight <= 0f || !IsGrounded || hitbox == null)
+                    return;
+
+                if (Mathf.Abs(steer) <= steerDeadzone)
+                    return;
+
+                Bounds bounds = hitbox.bounds;
+
+                // Never more than half their own height, whatever the field says, or a big
+                // enough number turns into wall climbing.
+                float rider = Mathf.Min(stepHeight, bounds.size.y * 0.5f);
+                if (rider <= 0f)
+                    return;
+
+                Vector2 forward = steer < 0f ? Vector2.left : Vector2.right;
+                Vector2 centre = bounds.center;
+
+                // Shrunk a hair on every side so the cast cannot catch on the floor they are
+                // already standing on, or on a wall they are already flush against.
+                Vector2 shape = (Vector2)bounds.size - Vector2.one * (StepSkin * 2f);
+
+                groundFilter.layerMask = groundLayers;
+
+                // Anything in the way at all?
+                if (Physics2D.BoxCast(centre, shape, 0f, forward, groundFilter, Casts, stepProbe) == 0)
+                    return;
+
+                // Would the body clear it once lifted? Still blocked means it is a wall.
+                if (Physics2D.BoxCast(centre + Vector2.up * rider, shape, 0f, forward,
+                                      groundFilter, Casts, stepProbe) > 0)
+                    return;
+
+                // How high is it really. Look down onto the step from the lifted position.
+                Vector2 probe = centre
+                              + Vector2.up * rider
+                              + forward * (bounds.extents.x + stepProbe);
+
+                if (Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, rider + StepSkin) == 0)
+                    return;
+
+                float rise = Rays[0].point.y - bounds.min.y;
+                if (rise <= StepSkin || rise > rider)
+                    return;
+
+                // Spread over a couple of physics steps so it reads as a step, not a jump cut.
+                float lift = Mathf.Min(rise + StepSkin, stepSpeed * fixedDeltaTime);
+                body.position += Vector2.up * lift;
+            }
+
             void Run(Command command, Modifiers stats, float fixedDeltaTime)
             {
                 if (lockout > 0f)
@@ -860,11 +984,26 @@ namespace FallingWizard.Player
         public class Ragdoll
         {
             [Header("Tumble")]
-            [Tooltip("Spin given to the wizard when they trip, in degrees per second.")]
+            [Tooltip("Spin given to the wizard when they trip, in degrees per second. They always " +
+                     "roll the way they were going.")]
             public float spinSpeed = 520f;
 
-            [Tooltip("Downward kick when tripping, so they pitch forward and drop fast.")]
-            public float fallKick = 4f;
+            [Tooltip("How much of their speed carries into the tumble. 1 keeps all of it, so a " +
+                     "trip is a loss of footing rather than a wall.")]
+            [Range(0f, 1f)] public float momentumKept = 1f;
+
+            [Header("Launch")]
+            [Tooltip("Shove ONWARD as they go over, in boxes per second, on top of whatever speed " +
+                     "they already had. This is what makes a trip throw you rather than drop you.")]
+            [Min(0f)] public float launchForward = 3f;
+
+            [Tooltip("Lift as they go over, in boxes per second. A little goes a long way: it " +
+                     "gets them off the floor so the launch is not immediately scrubbed off.")]
+            [Min(0f)] public float launchUp = 5f;
+
+            [Tooltip("Least speed they leave the ground with, in boxes per second. Tripping at a " +
+                     "crawl and tripping at a sprint then differ in degree, not in kind.")]
+            [Min(0f)] public float minimumLaunch = 4f;
 
             [Tooltip("How quickly the tumble spins down. 0 spins forever.")]
             [Min(0f)] public float angularDamping = 1.5f;
@@ -872,6 +1011,11 @@ namespace FallingWizard.Player
             [Header("Getting Up")]
             [Tooltip("Minimum seconds spent tumbling before they can start getting up.")]
             [Min(0f)] public float minimumDuration = 0.9f;
+
+            [Tooltip("How fast the skid bleeds off once they are back on the ground, in boxes " +
+                     "per second squared. This rather than physics friction, so the same trip " +
+                     "always slides the same distance.")]
+            [Min(0f)] public float slideFriction = 9f;
 
             [Tooltip("They only get up once grounded and slower than this, in boxes per second.")]
             [Min(0f)] public float recoverSpeed = 1.2f;
@@ -894,12 +1038,29 @@ namespace FallingWizard.Player
                 standUpTimer = -1f;
             }
 
-            public void Begin(int facing)
+            // direction is the way they were TRAVELLING, so they roll onward rather than
+            // being spun about by which way they happened to be looking.
+            public void Begin(int direction)
             {
                 body.freezeRotation = false;
                 body.angularDamping = angularDamping;
-                body.angularVelocity = -facing * spinSpeed;
-                body.linearVelocityY = -fallKick;
+                body.angularVelocity = -direction * spinSpeed;
+
+                // Carry the run into the tumble and add a shove ONWARD. Every trip launches the
+                // same way, so catching a rock at a sprint and catching one at a jog differ in
+                // how far you go, not in what happens.
+                float carried = body.linearVelocityX * momentumKept;
+                float thrown = carried + direction * launchForward;
+
+                // ...and never below a floor, so a trip is always a trip.
+                if (Mathf.Abs(thrown) < minimumLaunch)
+                    thrown = direction * minimumLaunch;
+
+                body.linearVelocityX = thrown;
+
+                // Up, not down. Driving them into the floor was what killed the momentum: it
+                // pins them to the ground for the whole tumble and scrubs the speed straight off.
+                body.linearVelocityY = Mathf.Max(body.linearVelocityY, launchUp);
 
                 tumbleTimer = minimumDuration;
                 standUpTimer = -1f;
@@ -911,6 +1072,12 @@ namespace FallingWizard.Player
                     return StandUp(fixedDeltaTime);
 
                 tumbleTimer -= fixedDeltaTime;
+
+                // Bleed the skid by a number instead of leaving it to the physics material and
+                // the luck of which corner of the box is digging in. Airborne they keep it all.
+                if (grounded && slideFriction > 0f)
+                    body.linearVelocityX =
+                        Mathf.MoveTowards(body.linearVelocityX, 0f, slideFriction * fixedDeltaTime);
 
                 if (tumbleTimer > 0f || !grounded || horizontalSpeed > recoverSpeed)
                     return false;
@@ -934,6 +1101,12 @@ namespace FallingWizard.Player
             {
                 angularDamping = Mathf.Max(0f, angularDamping);
                 standUpDuration = Mathf.Max(0.01f, standUpDuration);
+
+                // A tumble that cannot slow below the speed it needs to get up never ends.
+                if (slideFriction <= 0f && recoverSpeed < minimumLaunch)
+                    Debug.LogWarning("Ragdoll.slideFriction is 0 and recoverSpeed is below " +
+                                     "minimumLaunch, so a tripped wizard can never slow down " +
+                                     "enough to stand back up.");
             }
 
             bool StandUp(float fixedDeltaTime)
@@ -1054,9 +1227,14 @@ namespace FallingWizard.Player
 
             public void Observe(float deltaTime)
             {
+                // Spells read their own actions, so unlike movement they do not go through the
+                // Intent that PlayerCharacter blanks while paused. Without this, tapping a spell
+                // button behind the pause menu buffers it and casts the moment you resume.
+                bool paused = Game.IsPaused;
+
                 foreach (Slot slot in slots)
                 {
-                    if (!slot.Owned || slot.Action == null)
+                    if (paused || !slot.Owned || slot.Action == null)
                     {
                         slot.Buffer = 0f;
                         continue;

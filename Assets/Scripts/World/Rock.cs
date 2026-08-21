@@ -9,13 +9,6 @@ namespace FallingWizard.World
     // For a surface you STUMBLE ACROSS rather than trip over, use RoughGround instead.
     public class Rock : Hazard
     {
-        [Header("Rock")]
-        [Tooltip("Backward and upward shove as they go over, in boxes per second.")]
-        public Vector2 knockback = new Vector2(2f, 1.5f);
-
-        [Tooltip("Seconds the wizard cannot steer after being clipped.")]
-        [Min(0f)] public float controlLockout = 0.15f;
-
         // Works either way round, and the choice decides more than it looks like:
         //   SOLID on the Ground layer  - a block you bump into AND can stand on top of.
         //   TRIGGER on the Hazard layer - a stone you clip and stumble straight through.
@@ -27,14 +20,9 @@ namespace FallingWizard.World
             rearmDelay = 1f;
         }
 
-        protected override void Affect(PlayerLogic wizard)
-        {
-            // Backwards is away from where they were heading, not away from the rock: a rock you
-            // clipped a corner of should still throw you the way you were going.
-            var shove = new Vector2(-wizard.movement.Facing * knockback.x, knockback.y);
-
-            wizard.Shove(shove, controlLockout);
-            wizard.Trip();
-        }
+        // Just trip them. The launch - onward, and up enough to actually leave the floor -
+        // belongs to the tumble itself, so a rock, a slime and a bad staircase all throw the
+        // wizard the same way. Tune it once on PlayerLogic > Ragdoll > Launch.
+        protected override void Affect(PlayerLogic wizard) => wizard.Trip();
     }
 }

@@ -15,7 +15,6 @@ namespace FallingWizard.UI
     // would be holding a destroyed object.
     public class PlayerHud : MonoBehaviour
     {
-        const string BuiltinSprite = "UI/Skin/UISprite.psd";
 
         [Header("Canvas")]
         [Tooltip("Draw order. Above the game, below the pause menu, which sits at 100.")]
@@ -72,6 +71,41 @@ namespace FallingWizard.UI
         RectTransform spellBar;
         PlayerCharacter bound;
         int builtHearts = -1;
+
+        static Sprite blank;
+
+        // A plain white square to stand in for art nobody has drawn yet. Made here rather than
+        // borrowed from Unity's built-in UI skin, which URP projects do not ship. It also has to
+        // be a real sprite and not just a null one: an Image with no sprite draws a plain quad
+        // and quietly ignores its fill mode, which would leave every cooldown wipe frozen.
+        static Sprite Blank
+        {
+            get
+            {
+                if (blank != null)
+                    return blank;
+
+                var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false)
+                {
+                    name = "Falling Wizard HUD Blank",
+                    filterMode = FilterMode.Point,
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+
+                var pixels = new Color32[16];
+                for (int i = 0; i < pixels.Length; i++)
+                    pixels[i] = new Color32(255, 255, 255, 255);
+
+                texture.SetPixels32(pixels);
+                texture.Apply();
+
+                blank = Sprite.Create(texture, new Rect(0f, 0f, 4f, 4f), new Vector2(0.5f, 0.5f), 4f);
+                blank.name = "Falling Wizard HUD Blank";
+                blank.hideFlags = HideFlags.HideAndDontSave;
+
+                return blank;
+            }
+        }
 
         void Awake() => Build();
 
@@ -211,7 +245,7 @@ namespace FallingWizard.UI
             host.transform.SetParent(parent, false);
 
             var image = host.AddComponent<Image>();
-            image.sprite = sprite != null ? sprite : Resources.GetBuiltinResource<Sprite>(BuiltinSprite);
+            image.sprite = sprite != null ? sprite : Blank;
             image.type = Image.Type.Simple;
             image.raycastTarget = false;
 

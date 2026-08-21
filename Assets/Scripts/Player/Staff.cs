@@ -363,17 +363,35 @@ namespace FallingWizard.Player
             // independent, unlike bounds.
             public static Vector2 LocalSpan(Collider2D collider2d)
             {
+                LocalBox(collider2d, out Vector2 centre, out Vector2 size);
+                return new Vector2(centre.y, size.y);
+            }
+
+            // The collider in its own local space: where its centre sits and how big it is.
+            // Rotation independent, unlike bounds, which is a world AABB and would report a
+            // laid-flat pole's thickness as its length.
+            public static void LocalBox(Collider2D collider2d, out Vector2 centre, out Vector2 size)
+            {
+                centre = Vector2.zero;
+                size = Vector2.zero;
+
                 if (collider2d == null)
-                    return Vector2.zero;
+                    return;
 
                 if (collider2d is BoxCollider2D box)
-                    return new Vector2(box.offset.y, box.size.y);
+                {
+                    centre = box.offset;
+                    size = box.size;
+                    return;
+                }
 
                 Bounds bounds = collider2d.bounds;
-                float scale = Mathf.Max(MinScale, Mathf.Abs(collider2d.transform.lossyScale.y));
-                float centre = collider2d.transform.InverseTransformPoint(bounds.center).y;
+                Transform owner = collider2d.transform;
 
-                return new Vector2(centre, bounds.size.y / scale);
+                centre = owner.InverseTransformPoint(bounds.center);
+                size = new Vector2(
+                    bounds.size.x / Mathf.Max(MinScale, Mathf.Abs(owner.lossyScale.x)),
+                    bounds.size.y / Mathf.Max(MinScale, Mathf.Abs(owner.lossyScale.y)));
             }
 
             // Drive the pole in over the lip of the ledge and take over the wielder's body.
@@ -436,18 +454,39 @@ namespace FallingWizard.Player
                 Face(wielderFacing);
 
                 anchor = wielder.position;
-                float span = MeasureReach();
-                float thickness = LocalSpan(hitbox).x * Mathf.Abs(pole.lossyScale.x);
                 float surfaceY = anchor.y - WielderFeetOffset;
+
+                // Measure the plank itself, not the pole's climbing hitbox - they are the same
+                // shape today, but the thing the wizard stands on is the one that has to line up.
+                LocalBox(bridge, out Vector2 localCentre, out Vector2 localSize);
+
+                float scaleX = Mathf.Abs(pole.lossyScale.x);
+                float scaleY = Mathf.Abs(pole.lossyScale.y);
+                float length = localSize.y * scaleY;
+                float thickness = localSize.x * scaleX;
 
                 // The wizard stands on it, so it must not be dragged around by their own motion.
                 if (pole.parent != null)
                     pole.SetParent(null, true);
 
-                plantedRotation = Quaternion.Euler(0f, 0f, 90f);
+                // Laying the pole flat maps its local +Y onto world X. Turn it the way they are
+                // looking, or the plank reaches back over the ledge instead of out over the drop.
+                plantedRotation = Quaternion.Euler(0f, 0f, facing > 0 ? -90f : 90f);
+
+                // That turn also carries the collider's own local offset somewhere else entirely,
+                // so solve for the origin that puts the PLANK where it belongs rather than
+                // assuming the pole's pivot is the middle of it.
+                var carried = new Vector2(
+                    facing * localCentre.y * scaleY,
+                    -facing * localCentre.x * scaleX);
+
+                var wanted = new Vector2(
+                    edgeX + facing * (lipClearance + length * 0.5f),
+                    surfaceY - thickness * 0.5f);
+
                 plantedPosition = new Vector3(
-                    edgeX + facing * span * 0.5f,
-                    surfaceY - thickness * 0.5f,
+                    wanted.x - carried.x,
+                    wanted.y - carried.y,
                     pole.position.z);
 
                 pole.SetPositionAndRotation(plantedPosition, plantedRotation);

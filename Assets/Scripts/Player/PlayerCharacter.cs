@@ -122,7 +122,6 @@ namespace FallingWizard.Player
                     JumpHeld = jump != null && jump.IsPressed(),
                     Walk = walk != null && walk.IsPressed(),
                     LookingDown = stick.y < -lookThreshold,
-                    LookingUp = stick.y > lookThreshold,
                 };
             }
         }

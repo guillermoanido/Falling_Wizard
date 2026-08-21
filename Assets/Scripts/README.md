@@ -80,9 +80,11 @@ wizard.TryPlantStaff(mode);  wizard.RecoverStaff();  wizard.DropFromStaff();
 ```
 
 `Movement.Run` writes `linearVelocityX` absolutely every physics step, so an `AddForce` from
-outside is wiped within a quarter second. That is why external force has exactly one way in:
-wind is folded into `Run`'s target speed (so you can lean into it and partly win, and it
-self-limits), and impulses are applied at the top of `FixedTick` with a short steering lockout.
+outside is wiped within a quarter second. That is why external force has exactly one way in: wind
+is folded into `Run`'s target speed — so you can lean into it and partly win, and it self-limits —
+and impulses land immediately with a short steering lockout. **Impulses must not be queued for the
+next `FixedTick`:** whatever shoves you usually trips you too, and `FixedTick` never runs while
+tumbling, so a queued shove would sit unspent and then fire as you stood back up.
 
 ## Spells
 
@@ -131,6 +133,22 @@ Progress lasts the play session: it survives dying and moving between levels, an
 every time you press Play. When the game grows a save file, swap the `HashSet` in `Progress` for
 `PlayerPrefs` and nothing else changes.
 
+## Small ledges
+
+`Movement.TryStepUp` climbs anything up to `stepHeight` (0.35 boxes) instead of letting it stop the
+wizard, so a lip, a kerb or the seam between two platforms is not a wall. Three probes: is
+something in the way at shin height, would the body clear it once lifted (if not, it is a wall and
+nothing happens), and how tall is it really. The rise is spread over a couple of physics steps so
+it reads as a step rather than a teleport, and it is hard-clamped to half the wizard's height so a
+big number cannot become wall-climbing.
+
+**Up only, deliberately.** Snapping down small drops as well would stop the wizard running off
+ledges, and running off ledges is the whole game.
+
+If you are catching on colliders that are perfectly *flush* rather than stepped, that is a
+different problem — Unity's 2D solver snagging on the seam between two separate box colliders. The
+fix for that is a `CompositeCollider2D` over the platforms, not a bigger `stepHeight`.
+
 ## The staff
 
 A child of the wizard with its own hitbox and sprite. **The hitbox's height is the mechanic** —
@@ -159,6 +177,18 @@ Two modes:
 All three sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach
 a wizard who is on their staff or already tumbling. **Adding hazard #6 is one subclass with one
 `Affect` method.**
+
+**Hazards push you onward, never back.** Rocks, slimes and tumbles all send you the way you were
+already travelling — `Movement.TravelDirection`, which is the direction you *arrived* in, not the
+direction you happen to be facing and not away from the hazard's own centre. Being thrown back the
+way you came is the least predictable thing a hazard can do: you lose the ground you covered and
+land somewhere you were not looking. Tripping keeps your speed too (`Ragdoll.momentumKept`), so a
+trip is a loss of footing rather than a wall.
+
+Two things follow from that, and they matter when you place hazards: a hazard read live from
+`HorizontalSpeed` would measure *after* the impact — which against a solid rock is nearly zero, so
+every speed gate would refuse to fire. Both direction and speed come from the value recorded at the
+end of the previous physics step instead.
 
 Two things worth knowing:
 
