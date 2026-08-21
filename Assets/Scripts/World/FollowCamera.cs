@@ -5,8 +5,6 @@ namespace FallingWizard.World
 {
     public class FollowCamera : MonoBehaviour
     {
-        [SerializeField] PlayerCharacter target;
-
         [Tooltip("Where the camera sits relative to the wizard.")]
         [SerializeField] Vector2 offset = new Vector2(0f, 1.5f);
 
@@ -25,10 +23,13 @@ namespace FallingWizard.World
 
         void LateUpdate()
         {
+            // The wizard is a singleton, so the camera finds them itself rather than being
+            // wired up in every scene, and picks them up again after a respawn.
+            PlayerCharacter target = PlayerCharacter.Instance;
             if (target == null)
                 return;
 
-            float wantedPeek = target.IsPeeking ? -peekDistance : 0f;
+            float wantedPeek = target.Logic.IsPeeking ? -peekDistance : 0f;
             peekOffset = Mathf.SmoothDamp(peekOffset, wantedPeek, ref peekVelocity, peekSmoothTime);
 
             Vector3 wanted = new Vector3(

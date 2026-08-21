@@ -1,118 +1,110 @@
+using FallingWizard.Core;
 using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    public class Staff : MonoBehaviour
+    /// <summary>
+    /// The wizard's staff: a child of whoever carries it, and the scene's one and only, so
+    /// anything that needs it can ask for <see cref="SingletonBehaviour{T}.Instance"/> rather
+    /// than being wired up. All the behaviour lives in <see cref="Logic"/>; this is the Unity
+    /// shell that owns the hitbox and keeps the pole where it was planted.
+    /// </summary>
+    [RequireComponent(typeof(BoxCollider2D))]
+    public class Staff : SingletonBehaviour<Staff>
     {
-        [Tooltip("How far down the staff can lower whoever is holding it, in units. " +
-                 "This is the whole mechanic: it decides how much of a drop the staff removes.")]
-        [SerializeField] float length = 2.5f;
+        const float DefaultLength = 2.5f;
+        const float DefaultWidth = 0.12f;
 
-        [Tooltip("Optional sprite. It is resized and positioned to match the length above, " +
-                 "so the staff can grow without touching the wielder's own sprite.")]
+        [Tooltip("The pole's hitbox. Its height is the mechanic: it decides how far the wielder " +
+                 "can travel down or back up the staff. Left empty, the collider on this object " +
+                 "is used.")]
+        [SerializeField] Collider2D hitbox;
+
+        [Tooltip("Optional sprite. It is resized to match the hitbox, so the staff can grow " +
+                 "without anyone touching the wielder's own sprite.")]
         [SerializeField] SpriteRenderer visual;
 
-        [Tooltip("How far past the lip of the ledge the wielder shuffles while lowering.")]
-        [SerializeField] float ledgeOffset = 0.4f;
+        [SerializeField] StaffLogic logic = new StaffLogic();
 
-        [Tooltip("Seconds to lower the full length, or to climb back up.")]
-        [SerializeField] float moveDuration = 0.4f;
+        bool bound;
 
-        [Tooltip("Which layers the staff can find footing on.")]
-        [SerializeField] LayerMask groundLayers = ~0;
-
-        Rigidbody2D wielder;
-        Collider2D wielderCollider;
-        RigidbodyType2D originalBodyType;
-        Vector2 ledgePosition;
-        Vector2 hangPosition;
-        float progress;
-        bool climbing;
-
-        public float Length => length;
-        public bool HasWielder => wielder != null;
-
-        void OnValidate() => MatchVisualToLength();
-
-        void Awake()
+        /// <summary>Everything the staff actually does.</summary>
+        public StaffLogic Logic
         {
-            wielder = GetComponentInParent<Rigidbody2D>();
-
-            if (wielder != null)
+            get
             {
-                wielderCollider = wielder.GetComponent<Collider2D>();
-                originalBodyType = wielder.bodyType;
+                Bind();
+                return logic;
+            }
+        }
+
+        /// <summary>The pole's height, straight off the hitbox.</summary>
+        public float Length => hitbox != null ? hitbox.bounds.size.y : 0f;
+
+        void Reset()
+        {
+            var box = GetComponent<BoxCollider2D>();
+            box.isTrigger = true;
+            box.size = new Vector2(DefaultWidth, DefaultLength);
+            box.offset = new Vector2(0f, -DefaultLength / 2f);
+
+            hitbox = box;
+            visual = GetComponentInChildren<SpriteRenderer>();
+            MatchVisualToHitbox();
+        }
+
+        void OnValidate()
+        {
+            if (hitbox == null)
+                hitbox = GetComponent<Collider2D>();
+
+            MatchVisualToHitbox();
+        }
+
+        protected override void OnAwake() => Bind();
+
+        // The wielder moves in FixedUpdate and their transform drags every child along with
+        // them, so a planted pole is put back afterwards, once per rendered frame.
+        void LateUpdate() => logic.HoldPolePosition();
+
+        void OnDrawGizmosSelected() => logic.DrawGizmos();
+
+        // Idempotent, and reachable from the Logic getter, so it does not matter whether the
+        // staff or the wielder wakes up first.
+        void Bind()
+        {
+            if (bound)
+                return;
+
+            bound = true;
+
+            if (hitbox == null)
+                hitbox = GetComponent<Collider2D>();
+
+            if (hitbox == null)
+            {
+                Debug.LogError($"'{name}' has no hitbox, so it has no reach and cannot be used " +
+                               "to climb down. Add a Collider2D to it.", this);
+                return;
             }
 
-            MatchVisualToLength();
+            // The pole measures a descent, it does not push anything around.
+            hitbox.isTrigger = true;
+            logic.BindPole(hitbox, visual);
         }
 
-        public void BeginDescent(int facing)
+        void MatchVisualToHitbox()
         {
-            if (wielder == null)
+            if (visual == null || hitbox == null)
                 return;
 
-            ledgePosition = wielder.position;
-            hangPosition = ledgePosition + new Vector2(facing * ledgeOffset, -length);
-            hangPosition.y = Mathf.Max(hangPosition.y, LowestClearHeight(hangPosition.x));
-
-            progress = 0f;
-            climbing = false;
-
-            wielder.linearVelocity = Vector2.zero;
-            wielder.bodyType = RigidbodyType2D.Kinematic;
-        }
-
-        public void BeginClimb()
-        {
-            progress = 0f;
-            climbing = true;
-        }
-
-        public bool Tick(float fixedDeltaTime)
-        {
-            if (wielder == null)
-                return true;
-
-            progress += fixedDeltaTime / Mathf.Max(0.01f, moveDuration);
-            float t = Mathf.Clamp01(progress);
-
-            wielder.MovePosition(climbing
-                ? Vector2.Lerp(hangPosition, ledgePosition, t)
-                : Vector2.Lerp(ledgePosition, hangPosition, t));
-
-            return t >= 1f;
-        }
-
-        public void Release()
-        {
-            if (wielder == null)
-                return;
-
-            wielder.bodyType = originalBodyType;
-            wielder.linearVelocity = Vector2.zero;
-        }
-
-        // MovePosition on a kinematic body drives straight through solid ground, so work out
-        // where the feet would land and never lower past it.
-        float LowestClearHeight(float x)
-        {
-            float halfHeight = wielderCollider != null ? wielderCollider.bounds.extents.y : 0f;
-            var origin = new Vector2(x, ledgePosition.y);
-
-            RaycastHit2D hit = Physics2D.Raycast(origin, Vector2.down, length + halfHeight, groundLayers);
-            return hit.collider == null ? float.NegativeInfinity : hit.point.y + halfHeight;
-        }
-
-        void MatchVisualToLength()
-        {
-            if (visual == null)
-                return;
+            Vector2 span = StaffLogic.LocalSpan(hitbox);
 
             if (visual.drawMode != SpriteDrawMode.Simple)
-                visual.size = new Vector2(visual.size.x, length);
+                visual.size = new Vector2(visual.size.x, span.y);
 
-            visual.transform.localPosition = new Vector3(0f, -length / 2f, 0f);
+            Vector3 local = visual.transform.localPosition;
+            visual.transform.localPosition = new Vector3(local.x, span.x, local.z);
         }
     }
 }

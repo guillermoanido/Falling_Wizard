@@ -19,7 +19,7 @@ namespace FallingWizard.Player
             if (player == null || powerUp == null)
                 return;
 
-            player.Collect(powerUp);
+            player.Logic.Collect(powerUp);
 
             if (collectedEffect != null)
                 Instantiate(collectedEffect, transform.position, Quaternion.identity);

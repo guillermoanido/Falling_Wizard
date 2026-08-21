@@ -41,6 +41,7 @@ namespace FallingWizard.EditorTools
         const float StaffWidth = 0.12f;
         static readonly Color StaffColor = new Color(0.55f, 0.38f, 0.20f);
         const int StaffSortingOrder = 2;
+        static readonly Vector2 StaffGripOffset = new Vector2(0.3f, 0f);
 
         static readonly Vector2 PlatformSize = new Vector2(10f, 1f);
         static readonly Color PlatformColor = new Color(0.24f, 0.22f, 0.30f);
@@ -176,15 +177,17 @@ namespace FallingWizard.EditorTools
             var player = root.AddComponent<PlayerCharacter>();
 
             var serialized = new SerializedObject(player);
-            serialized.FindProperty("movement.groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
-            serialized.FindProperty("movement.groundCheckOffset").vector2Value =
+            serialized.FindProperty("logic.movement.groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
+            serialized.FindProperty("logic.movement.groundCheckOffset").vector2Value =
                 new Vector2(0f, -(PlayerSize.y / 2f) - GroundCheckSkin);
-            serialized.FindProperty("movement.groundCheckSize").vector2Value =
+            serialized.FindProperty("logic.movement.groundCheckSize").vector2Value =
                 new Vector2(PlayerSize.x * GroundCheckWidthFactor, GroundCheckThickness);
-            serialized.FindProperty("staff").objectReferenceValue = CreateStaff(root.transform);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
+            // The wizard's own sprite first, so it is the one that gets flipped, then the staff
+            // as a child: the player finds it by hierarchy rather than by a wired reference.
             CreateSpriteBox("Visual", root.transform, PlayerSize, PlayerColor, PlayerSortingOrder);
+            CreateStaff(root.transform);
 
             root.transform.position = position;
             return root;
@@ -211,7 +214,7 @@ namespace FallingWizard.EditorTools
             CreatePlatform("Bottom", new Vector2(25f, -24.5f), new Vector2(12f, 1f), false);
 
             GameObject player = SpawnPlayer(new Vector3(-13f, 1f, 0f));
-            AttachFollowCamera(player);
+            AttachFollowCamera();
 
             Selection.activeGameObject = player;
             MarkSceneDirty();
@@ -257,14 +260,22 @@ namespace FallingWizard.EditorTools
             return stairs;
         }
 
-        // The staff is its own entity with its own sprite, so growing it never touches the
-        // wizard's. Anything with a Rigidbody2D can carry one.
+        // The staff is its own entity with its own sprite and its own hitbox, so growing it
+        // never touches the wizard's. Anything with a Rigidbody2D can carry one.
         static Staff CreateStaff(Transform wielder)
         {
             var staffObject = new GameObject("Staff");
+            staffObject.layer = wielder.gameObject.layer;
             staffObject.transform.SetParent(wielder, false);
-            staffObject.transform.localPosition =
-                new Vector3(0.3f, StaffLength - PlayerSize.y / 2f, 0f);
+            staffObject.transform.localPosition = new Vector3(StaffGripOffset.x,
+                StaffLength - PlayerSize.y / 2f + StaffGripOffset.y, 0f);
+
+            // This collider is the mechanic: the wizard travels its height and no further, so
+            // a taller box is a longer climb down with nothing else to change.
+            var hitbox = staffObject.AddComponent<BoxCollider2D>();
+            hitbox.isTrigger = true;
+            hitbox.size = new Vector2(StaffWidth, StaffLength);
+            hitbox.offset = new Vector2(0f, -StaffLength / 2f);
 
             var staff = staffObject.AddComponent<Staff>();
 
@@ -273,9 +284,9 @@ namespace FallingWizard.EditorTools
             visual.transform.localPosition = new Vector3(0f, -StaffLength / 2f, 0f);
 
             var serialized = new SerializedObject(staff);
-            serialized.FindProperty("length").floatValue = StaffLength;
+            serialized.FindProperty("hitbox").objectReferenceValue = hitbox;
             serialized.FindProperty("visual").objectReferenceValue = visual.GetComponent<SpriteRenderer>();
-            serialized.FindProperty("groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
+            serialized.FindProperty("logic.groundLayers").intValue = LayerMask.GetMask(GroundLayerName);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             return staff;
@@ -298,7 +309,7 @@ namespace FallingWizard.EditorTools
             return platform;
         }
 
-        static void AttachFollowCamera(GameObject player)
+        static void AttachFollowCamera()
         {
             Camera camera = Camera.main;
             if (camera == null)
@@ -307,13 +318,9 @@ namespace FallingWizard.EditorTools
                 return;
             }
 
-            var follow = camera.GetComponent<FollowCamera>();
-            if (follow == null)
-                follow = Undo.AddComponent<FollowCamera>(camera.gameObject);
-
-            var serialized = new SerializedObject(follow);
-            serialized.FindProperty("target").objectReferenceValue = player.GetComponent<PlayerCharacter>();
-            serialized.ApplyModifiedPropertiesWithoutUndo();
+            // Nothing to wire up: FollowCamera finds the wizard through the singleton.
+            if (camera.GetComponent<FollowCamera>() == null)
+                Undo.AddComponent<FollowCamera>(camera.gameObject);
         }
 
         [MenuItem("Tools/Falling Wizard/Add Game Scenes To Build Settings", false, 40)]

@@ -15,20 +15,20 @@ namespace FallingWizard.Player
         public float Duration => duration;
         public bool IsTimed => duration > 0f;
 
-        public virtual void OnCollected(PlayerCharacter player) { }
+        public virtual void OnCollected(PlayerLogic player) { }
 
         public virtual void ModifyStats(PlayerStats stats) { }
 
-        public virtual void OnExpired(PlayerCharacter player) { }
+        public virtual void OnExpired(PlayerLogic player) { }
     }
 
     public class ActivePowerUps
     {
         readonly List<Entry> entries = new List<Entry>();
         readonly PlayerStats stats = new PlayerStats();
-        readonly PlayerCharacter player;
+        readonly PlayerLogic player;
 
-        public ActivePowerUps(PlayerCharacter owner) => player = owner;
+        public ActivePowerUps(PlayerLogic owner) => player = owner;
 
         public PlayerStats Stats => stats;
 

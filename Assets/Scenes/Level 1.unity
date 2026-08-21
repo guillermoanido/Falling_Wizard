@@ -779,7 +779,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de8b1809e4addfd4aad7434ad9dfdb3a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FallingWizard.World.FollowCamera
-  target: {fileID: 1093354180}
   offset: {x: 0, y: 1.5}
   smoothTime: 0.18
   peekDistance: 4
@@ -1484,39 +1483,39 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d3fbb01301155a647a039d5f6360d45e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FallingWizard.Player.PlayerCharacter
-  movement:
-    runSpeed: 8
-    walkSpeed: 2.6
-    acceleration: 26
-    groundFriction: 34
-    airControl: 0.45
-    jumpHeight: 3.2
-    coyoteTime: 0.12
-    jumpBuffer: 0.12
-    shortHopMultiplier: 0.45
-    fallGravityMultiplier: 1.7
-    maxFallSpeed: 22
-    groundLayers:
-      serializedVersion: 2
-      m_Bits: 64
-    groundCheckOffset: {x: 0, y: -0.85}
-    groundCheckSize: {x: 0.71999997, y: 0.1}
-    ledgeCheckAhead: 0.6
-    ledgeCheckDepth: 0.8
-  staff: {fileID: 1730592903}
-  ragdoll:
-    tripSpeed: 5
-    spinSpeed: 520
-    fallKick: 6
-    angularDamping: 1.5
-    minimumDuration: 0.9
-    recoverSpeed: 1.5
-    standUpDuration: 0.35
-  health:
-    maxHealth: 5
-    invulnerabilityTime: 0.6
-  safeFallDistance: 5
-  damagePerUnit: 0.6
+  logic:
+    movement:
+      runSpeed: 8
+      walkSpeed: 2.6
+      acceleration: 26
+      groundFriction: 34
+      airControl: 0.45
+      jumpHeight: 3.2
+      coyoteTime: 0.12
+      jumpBuffer: 0.12
+      shortHopMultiplier: 0.45
+      fallGravityMultiplier: 1.7
+      maxFallSpeed: 22
+      groundLayers:
+        serializedVersion: 2
+        m_Bits: 64
+      groundCheckOffset: {x: 0, y: -0.85}
+      groundCheckSize: {x: 0.71999997, y: 0.1}
+      ledgeCheckAhead: 0.6
+      ledgeCheckDepth: 0.8
+    ragdoll:
+      tripSpeed: 5
+      spinSpeed: 520
+      fallKick: 6
+      angularDamping: 1.5
+      minimumDuration: 0.9
+      recoverSpeed: 1.5
+      standUpDuration: 0.35
+    health:
+      maxHealth: 5
+      invulnerabilityTime: 0.6
+    safeFallDistance: 5
+    damagePerUnit: 0.6
   restartLevelOnDeath: 1
   respawnDelay: 1.25
 --- !u!50 &1093354182
@@ -2263,8 +2262,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1730592904}
+  - component: {fileID: 1730592905}
   - component: {fileID: 1730592903}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Staff
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2283,13 +2283,61 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5bd370e3ff029b44b9c76ecbc3920bdc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FallingWizard.Player.Staff
-  length: 2.5
+  hitbox: {fileID: 1730592905}
   visual: {fileID: 560071437}
-  ledgeOffset: 0.4
-  moveDuration: 0.4
-  groundLayers:
+  logic:
+    slideSpeed: 4
+    swingDepth: 0.5
+    dropHoldTime: 0.2
+    groundLayers:
+      serializedVersion: 2
+      m_Bits: 64
+--- !u!61 &1730592905
+BoxCollider2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1730592902}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Density: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ForceSendLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ForceReceiveLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ContactCaptureLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_CallbackLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_IsTrigger: 1
+  m_UsedByEffector: 0
+  m_CompositeOperation: 0
+  m_CompositeOrder: 0
+  m_Offset: {x: 0, y: -1.25}
+  m_SpriteTilingProperty:
+    border: {x: 0, y: 0, z: 0, w: 0}
+    pivot: {x: 0, y: 0}
+    oldSize: {x: 0, y: 0}
+    newSize: {x: 0, y: 0}
+    adaptiveTilingThreshold: 0
+    drawMode: 0
+    adaptiveTiling: 0
+  m_AutoTiling: 0
+  m_Size: {x: 0.12, y: 2.5}
+  m_EdgeRadius: 0
 --- !u!4 &1730592904
 Transform:
   m_ObjectHideFlags: 0
