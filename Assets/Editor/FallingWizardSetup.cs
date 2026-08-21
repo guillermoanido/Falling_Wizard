@@ -55,6 +55,20 @@ namespace FallingWizard.EditorTools
         // happens to sit closer to the camera.
         const int HazardSortingOrder = 3;
 
+        const string UiLayerName = "UI";
+        const int HudSortingOrder = 10;                 // above the game, below the pause menu
+        const float HudPixelsPerUnit = 32f;             // must match the art, or icons come out small
+        const float HudHeartSize = 40f;
+        const float HudHeartSpacing = 6f;
+        const float HudSlotSize = 64f;
+        const float HudSlotSpacing = 14f;
+        const float HudSlotPadding = 6f;
+        const float HudButtonTextSize = 22f;
+        static readonly Vector2 HudReferenceResolution = new Vector2(1920f, 1080f);
+        static readonly Vector2 HudMargin = new Vector2(48f, 48f);
+        static readonly Color HudSlotFrameColor = new Color(0.12f, 0.10f, 0.16f, 0.75f);
+        static readonly Color HudButtonTextColor = new Color(0.92f, 0.90f, 0.86f);
+
         const int StairStepCount = 5;
         const float StairStepWidth = 1f;
         const float StairStepHeight = 0.5f;
@@ -353,18 +367,146 @@ namespace FallingWizard.EditorTools
         {
             if (Object.FindFirstObjectByType<PlayerHud>() != null)
             {
-                Debug.LogWarning("This scene already has a HUD.");
+                Debug.LogWarning("This scene already has a HUD. Delete it first to rebuild.");
                 return;
             }
 
-            // A RectTransform up front, because a Canvas cannot live on a plain Transform and
-            // PlayerHud adds the Canvas itself when it wakes.
-            var hud = new GameObject("HUD", typeof(RectTransform), typeof(PlayerHud));
-            hud.layer = LayerOrDefault("UI");
-            Undo.RegisterCreatedObjectUndo(hud, "Add HUD");
+            // A plain screen-space Canvas, so the whole HUD is ordinary UI you can open up and
+            // restyle. Deliberately no GraphicRaycaster: the HUD must never swallow a pause-menu
+            // click or steal controller focus from the menus.
+            var canvas = new GameObject("HUD", typeof(Canvas), typeof(CanvasScaler), typeof(PlayerHud));
+            canvas.layer = LayerOrDefault(UiLayerName);
+            Undo.RegisterCreatedObjectUndo(canvas, "Add HUD");
 
-            Selection.activeGameObject = hud;
+            var surface = canvas.GetComponent<Canvas>();
+            surface.renderMode = RenderMode.ScreenSpaceOverlay;
+            surface.sortingOrder = HudSortingOrder;
+
+            var scaler = canvas.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = HudReferenceResolution;
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+
+            // The art is 32 pixels per unit. Left at the default 100 every icon comes out a
+            // third of the size it should be.
+            scaler.referencePixelsPerUnit = HudPixelsPerUnit;
+
+            RectTransform hearts = CreateHudRow("Hearts", canvas.transform,
+                new Vector2(0f, 1f), new Vector2(HudMargin.x, -HudMargin.y), HudHeartSpacing);
+
+            RectTransform spells = CreateHudRow("Spell Bar", canvas.transform,
+                new Vector2(0f, 0f), new Vector2(HudMargin.x, HudMargin.y), HudSlotSpacing);
+
+            var hud = canvas.GetComponent<PlayerHud>();
+            hud.heartRow = hearts;
+            hud.spellBar = spells;
+            hud.heartTemplate = CreateHeartTemplate(hearts);
+            hud.slotTemplate = CreateSlotTemplate(spells);
+
+            Selection.activeGameObject = canvas;
             MarkSceneDirty();
+            Debug.Log("HUD built. Hearts and spell slots are copies of the two templates under " +
+                      "it - restyle a template and every heart or slot follows.");
+        }
+
+        static RectTransform CreateHudRow(string name, Transform parent, Vector2 corner,
+                                          Vector2 offset, float spacing)
+        {
+            var host = new GameObject(name, typeof(RectTransform));
+            var rect = host.GetComponent<RectTransform>();
+            rect.SetParent(parent, false);
+
+            // Pinned to one corner and sized by its contents, so it never has to be re-laid-out
+            // when the wizard gains a heart or learns a spell.
+            rect.anchorMin = rect.anchorMax = rect.pivot = corner;
+            rect.anchoredPosition = offset;
+            rect.sizeDelta = Vector2.zero;
+
+            var layout = host.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = spacing;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childAlignment = corner.y > 0.5f ? TextAnchor.UpperLeft : TextAnchor.LowerLeft;
+
+            var fitter = host.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            return rect;
+        }
+
+        static Image CreateHeartTemplate(Transform parent)
+        {
+            Image heart = CreateHudImage("Heart", parent, Vector2.one * HudHeartSize);
+            heart.gameObject.SetActive(false);
+            return heart;
+        }
+
+        static HudSlot CreateSlotTemplate(Transform parent)
+        {
+            Image frame = CreateHudImage("Spell Slot", parent, Vector2.one * HudSlotSize);
+            frame.color = HudSlotFrameColor;
+
+            Image icon = CreateHudImage("Icon", frame.transform, Vector2.zero);
+            StretchHud(icon.rectTransform, HudSlotPadding);
+
+            Image charge = CreateHudImage("Charge", frame.transform, Vector2.zero);
+            StretchHud(charge.rectTransform, HudSlotPadding);
+            charge.type = Image.Type.Filled;
+            charge.fillMethod = Image.FillMethod.Radial360;
+            charge.fillOrigin = (int)Image.Origin360.Top;
+            charge.fillClockwise = false;
+
+            var labelObject = new GameObject("Button", typeof(RectTransform));
+            labelObject.transform.SetParent(frame.transform, false);
+
+            var label = labelObject.AddComponent<TextMeshProUGUI>();
+            label.fontSize = HudButtonTextSize;
+            label.color = HudButtonTextColor;
+            label.alignment = TextAlignmentOptions.Center;
+            label.raycastTarget = false;
+            label.text = "E";
+
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0f, 0f);
+            labelRect.anchorMax = new Vector2(1f, 0f);
+            labelRect.pivot = new Vector2(0.5f, 1f);
+            labelRect.sizeDelta = new Vector2(0f, HudButtonTextSize * 1.4f);
+            labelRect.anchoredPosition = new Vector2(0f, -2f);
+
+            var slot = frame.gameObject.AddComponent<HudSlot>();
+            slot.icon = icon;
+            slot.charge = charge;
+            slot.button = label;
+
+            frame.gameObject.SetActive(false);
+            return slot;
+        }
+
+        static Image CreateHudImage(string name, Transform parent, Vector2 size)
+        {
+            var host = new GameObject(name, typeof(RectTransform));
+            host.transform.SetParent(parent, false);
+
+            var image = host.AddComponent<Image>();
+            image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>(BoxSpritePath);
+            image.raycastTarget = false;
+
+            if (size != Vector2.zero)
+                host.GetComponent<RectTransform>().sizeDelta = size;
+
+            return image;
+        }
+
+        static void StretchHud(RectTransform rect, float inset)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.one * inset;
+            rect.offsetMax = Vector2.one * -inset;
         }
 
         [MenuItem("Tools/Falling Wizard/Create Hazard In Open Scene/Rock", false, 34)]

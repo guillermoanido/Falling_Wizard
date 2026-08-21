@@ -233,9 +233,26 @@ Two things worth knowing:
 
 ## HUD
 
-`PlayerHud` builds its own canvas at runtime, so there is no prefab to drift out of step with the
-code and the scene needs nothing but one object with the component on it. Hearts top-left, spells
-bottom-left, every layout number public.
+An ordinary screen-space `Canvas` you can open up and restyle. Build it with
+**Tools ▸ Falling Wizard ▸ Add HUD To Open Scene**:
+
+```
+HUD              Canvas (Overlay, order 10) + CanvasScaler + PlayerHud
+├── Hearts       top-left, HorizontalLayoutGroup + ContentSizeFitter
+│   └── Heart        TEMPLATE, inactive
+└── Spell Bar    bottom-left, same
+    └── Spell Slot   TEMPLATE, inactive - Image + HudSlot
+        ├── Icon         the spell's own icon
+        ├── Charge       Image, Filled/Radial360 - the running and cooling wipe
+        └── Button       TextMeshProUGUI
+```
+
+Hearts and slots are **copies of the two templates**, made at runtime, one per point of health and
+one per spell. Restyle a template — sprite, size, colour, add a border — and every heart or every
+slot follows. `PlayerHud` only ever fills them in; it never builds layout.
+
+Set `CanvasScaler.referencePixelsPerUnit` to **32**, not the default 100, or every icon comes out
+at a third of its size. The builder does this for you.
 
 It finds the wizard through the singleton and re-checks every frame, because dying destroys them
 and builds a new one — anything that had subscribed would be holding a destroyed object.
@@ -247,7 +264,9 @@ gamepad play. Asking for the glyph without naming a device returns `"E | X"` —
 `Controls.Glyph`.
 
 No `GraphicRaycaster`, on purpose: the HUD must never swallow a pause-menu click or steal
-controller focus from the menus.
+controller focus from the menus. The `Charge` image must stay set to **Filled** — an `Image` with
+no sprite, or one set to Simple, draws a plain quad and silently ignores `fillAmount`, so every
+cooldown would sit frozen at full with nothing in the console.
 
 ## Input
 
