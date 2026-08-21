@@ -31,14 +31,16 @@ namespace FallingWizard.EditorTools
         const int MenuCanvasSortingOrder = 0;
         const int PauseCanvasSortingOrder = 100;
 
-        static readonly Vector2 PlayerSize = new Vector2(0.8f, 1.6f);
+        // Matched to the art: 25x35 px of mage on a 32 px grid.
+        static readonly Vector2 PlayerSize = new Vector2(0.78125f, 1.09375f);
         static readonly Vector3 PlayerSpawnPosition = new Vector3(0f, 1f, 0f);
         static readonly Color PlayerColor = new Color(0.58f, 0.45f, 0.88f);
         const float PlayerGravityScale = 3f;
         const int PlayerSortingOrder = 1;
 
-        const float StaffLength = 2.5f;
-        const float StaffWidth = 0.12f;
+        // Likewise 14x34 px of staff. The pole's height is its reach, so this is a real number.
+        const float StaffLength = 1.0625f;
+        const float StaffWidth = 0.4375f;
         static readonly Color StaffColor = new Color(0.55f, 0.38f, 0.20f);
         const int StaffSortingOrder = 2;
         static readonly Vector2 StaffGripOffset = new Vector2(0.3f, 0f);
@@ -49,7 +51,7 @@ namespace FallingWizard.EditorTools
         const int PlatformSortingOrder = 0;
 
         const int StairStepCount = 5;
-        const float StairStepWidth = 0.7f;
+        const float StairStepWidth = 1f;
         const float StairStepHeight = 0.5f;
         const float StairStartX = -3f;
 
@@ -203,15 +205,20 @@ namespace FallingWizard.EditorTools
         [MenuItem("Tools/Falling Wizard/Build Test Level In Open Scene", false, 32)]
         static void BuildTestLevel()
         {
-            // A run of flat ground, then stairs, then two drops sized around the staff.
+            // Laid out in boxes: one box is 32 px, one world unit, and about one mage. A run of
+            // flat ground, then stairs, then two drops either side of what the staff is worth.
             CreatePlatform("Start Ledge", new Vector2(-9f, -0.5f), new Vector2(12f, 1f), false);
 
             CreateStaircase(new Vector2(StairStartX, 0f));
 
             CreatePlatform("Mid Ledge", new Vector2(4.5f, -3f), new Vector2(9f, 1f), false);
-            CreatePlatform("Lower Ledge", new Vector2(14f, -10f), new Vector2(10f, 1f), false);
-            CreatePlatform("Rock", new Vector2(14f, -9f), new Vector2(1.6f, 1f), true);
-            CreatePlatform("Bottom", new Vector2(25f, -24.5f), new Vector2(12f, 1f), false);
+
+            // Four boxes down: one heart taken bare, free if you climb down the staff first.
+            CreatePlatform("Lower Ledge", new Vector2(14f, -7f), new Vector2(10f, 1f), false);
+            CreatePlatform("Rock", new Vector2(14f, -6f), new Vector2(2f, 1f), true);
+
+            // Seven boxes down: four hearts bare, two off the staff. Survivable either way.
+            CreatePlatform("Bottom", new Vector2(25f, -14f), new Vector2(12f, 1f), false);
 
             GameObject player = SpawnPlayer(new Vector3(-13f, 1f, 0f));
             AttachFollowCamera();

@@ -3,12 +3,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    /// <summary>
-    /// The wizard in the scene, and the scene's only one, so anything that needs them can ask
-    /// for <see cref="SingletonBehaviour{T}.Instance"/> rather than being wired up. The
-    /// component itself does nothing but plug Unity into <see cref="Logic"/>: components in,
-    /// input in, death out.
-    /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     public class PlayerCharacter : SingletonBehaviour<PlayerCharacter>
     {
@@ -24,10 +18,8 @@ namespace FallingWizard.Player
 
         PlayerInputReader input;
 
-        /// <summary>Everything the wizard actually is.</summary>
         public PlayerLogic Logic => logic;
 
-        /// <summary>The staff they carry, if they carry one.</summary>
         public Staff Staff { get; private set; }
 
         void Reset()

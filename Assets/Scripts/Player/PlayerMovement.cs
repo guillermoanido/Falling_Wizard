@@ -19,27 +19,29 @@ namespace FallingWizard.Player
         const float GroundCheckSkin = 0.05f;
         const float GroundCheckThickness = 0.1f;
         const float GroundCheckWidthFactor = 0.9f;
+        const int EdgeSearchSteps = 8;
 
+        // Tuned in boxes: one box is 32 px, one world unit, and about one mage.
         [Header("Speed")]
-        [Tooltip("Top speed at a normal run, in units per second. Running off a ledge drops you.")]
-        [SerializeField] float runSpeed = 8f;
+        [Tooltip("Top speed at a normal run, in boxes per second. Running off a ledge drops you.")]
+        [SerializeField] float runSpeed = 6f;
 
         [Tooltip("Top speed while holding Walk. Walking also refuses to step off a ledge.")]
-        [SerializeField] float walkSpeed = 2.6f;
+        [SerializeField] float walkSpeed = 2f;
 
         [Tooltip("How fast speed builds up. Lower feels heavier and takes longer to get going.")]
-        [SerializeField] float acceleration = 26f;
+        [SerializeField] float acceleration = 20f;
 
         [Tooltip("How fast the wizard coasts to a stop on the ground with no input.")]
-        [SerializeField] float groundFriction = 34f;
+        [SerializeField] float groundFriction = 26f;
 
         [Tooltip("Scales acceleration and friction in mid-air. 1 = full control, 0 = committed to your jump.")]
         [Range(0f, 1f)]
         [SerializeField] float airControl = 0.45f;
 
         [Header("Jumping")]
-        [Tooltip("Height of a full jump, in units. The launch speed is worked out from gravity.")]
-        [SerializeField] float jumpHeight = 3.2f;
+        [Tooltip("Height of a full jump, in boxes. The launch speed is worked out from gravity.")]
+        [SerializeField] float jumpHeight = 2f;
 
         [Tooltip("Grace period after walking off a ledge where a jump still counts.")]
         [SerializeField] float coyoteTime = 0.12f;
@@ -55,8 +57,8 @@ namespace FallingWizard.Player
         [Tooltip("Gravity is multiplied by this while falling, so drops feel weighty.")]
         [SerializeField] float fallGravityMultiplier = 1.7f;
 
-        [Tooltip("Fastest the wizard can fall, in units per second.")]
-        [SerializeField] float maxFallSpeed = 22f;
+        [Tooltip("Fastest the wizard can fall, in boxes per second.")]
+        [SerializeField] float maxFallSpeed = 16f;
 
         [Header("Ground Check")]
         [Tooltip("Which layers count as solid ground. Must not include the player's own layer.")]
@@ -67,10 +69,10 @@ namespace FallingWizard.Player
 
         [Header("Ledge Check")]
         [Tooltip("How far ahead of the feet to look for missing ground.")]
-        [SerializeField] float ledgeCheckAhead = 0.6f;
+        [SerializeField] float ledgeCheckAhead = 0.5f;
 
         [Tooltip("A gap deeper than this counts as a ledge worth stopping at.")]
-        [SerializeField] float ledgeCheckDepth = 0.8f;
+        [SerializeField] float ledgeCheckDepth = 0.75f;
 
         Rigidbody2D body;
         SpriteRenderer sprite;
@@ -129,6 +131,40 @@ namespace FallingWizard.Player
 
         public void Stop() => body.linearVelocity = Vector2.zero;
 
+        public bool TryFindLedgeEdge(out float edgeX)
+        {
+            edgeX = body.position.x;
+
+            if (!IsGrounded || !IsAtEdge)
+                return false;
+
+            float footing = 0f;
+            float air = ledgeCheckAhead;
+
+            // The feet are wide enough to stay grounded with the middle already out over the
+            // drop, so when there is nothing underneath, back up until they find rock again.
+            if (!HasGroundAt(footing))
+            {
+                footing = -groundCheckSize.x * 0.5f;
+
+                if (!HasGroundAt(footing))
+                    return false;
+            }
+
+            for (int step = 0; step < EdgeSearchSteps; step++)
+            {
+                float middle = (footing + air) * 0.5f;
+
+                if (HasGroundAt(middle))
+                    footing = middle;
+                else
+                    air = middle;
+            }
+
+            edgeX = body.position.x + Facing * air;
+            return true;
+        }
+
         // Ground sensing without any of the control, for states that let physics take over.
         public void SenseGround(float fixedDeltaTime) => UpdateGroundedState(fixedDeltaTime);
 
@@ -173,7 +209,7 @@ namespace FallingWizard.Player
 
             IsGrounded = hit != null;
             SetGround(hit);
-            IsAtEdge = IsGrounded && !HasGroundAhead();
+            IsAtEdge = IsGrounded && !HasGroundAt(ledgeCheckAhead);
 
             if (IsGrounded)
             {
@@ -204,9 +240,9 @@ namespace FallingWizard.Player
             GroundIsRough = hit != null && hit.GetComponentInParent<RoughGround>() != null;
         }
 
-        bool HasGroundAhead()
+        bool HasGroundAt(float ahead)
         {
-            Vector2 probe = body.position + new Vector2(Facing * ledgeCheckAhead, groundCheckOffset.y);
+            Vector2 probe = body.position + new Vector2(Facing * ahead, groundCheckOffset.y);
             return Physics2D.Raycast(probe, Vector2.down, ledgeCheckDepth, groundLayers).collider != null;
         }
 

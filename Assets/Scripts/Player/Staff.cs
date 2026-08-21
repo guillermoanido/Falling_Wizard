@@ -3,17 +3,12 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    /// <summary>
-    /// The wizard's staff: a child of whoever carries it, and the scene's one and only, so
-    /// anything that needs it can ask for <see cref="SingletonBehaviour{T}.Instance"/> rather
-    /// than being wired up. All the behaviour lives in <see cref="Logic"/>; this is the Unity
-    /// shell that owns the hitbox and keeps the pole where it was planted.
-    /// </summary>
     [RequireComponent(typeof(BoxCollider2D))]
     public class Staff : SingletonBehaviour<Staff>
     {
-        const float DefaultLength = 2.5f;
-        const float DefaultWidth = 0.12f;
+        // A staff's worth of the 32 px grid the art is drawn on: 14x34 px.
+        const float DefaultLength = 1.0625f;
+        const float DefaultWidth = 0.4375f;
 
         [Tooltip("The pole's hitbox. Its height is the mechanic: it decides how far the wielder " +
                  "can travel down or back up the staff. Left empty, the collider on this object " +
@@ -28,7 +23,6 @@ namespace FallingWizard.Player
 
         bool bound;
 
-        /// <summary>Everything the staff actually does.</summary>
         public StaffLogic Logic
         {
             get
@@ -38,7 +32,6 @@ namespace FallingWizard.Player
             }
         }
 
-        /// <summary>The pole's height, straight off the hitbox.</summary>
         public float Length => hitbox != null ? hitbox.bounds.size.y : 0f;
 
         void Reset()

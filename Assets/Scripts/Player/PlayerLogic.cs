@@ -5,26 +5,14 @@ namespace FallingWizard.Player
 {
     public enum PlayerState
     {
-        /// <summary>Feet on the ground or in the air: normal locomotion.</summary>
         Normal,
-
-        /// <summary>Hanging off the staff, travelling between the ends of its hitbox.</summary>
         OnStaff,
-
-        /// <summary>Tripped. Physics owns the body until they get back up.</summary>
         Ragdoll,
     }
 
-    /// <summary>
-    /// Everything the wizard is, with no Unity component around it: a state machine over
-    /// <see cref="PlayerMovement"/>, <see cref="StaffLogic"/>, <see cref="Ragdoll"/> and
-    /// <see cref="Health"/>. It is driven by a <see cref="PlayerInput"/> a frame at a time and
-    /// reports dying as an event, so it never has to know what a scene is.
-    /// </summary>
     [Serializable]
     public class PlayerLogic
     {
-        /// <summary>A staff press that could not be used yet still counts for this long.</summary>
         const float StaffPressBuffer = 0.12f;
 
         [SerializeField] PlayerMovement movement = new PlayerMovement();
@@ -32,11 +20,12 @@ namespace FallingWizard.Player
         [SerializeField] Health health = new Health();
 
         [Header("Fall Damage")]
-        [Tooltip("Falls shorter than this many units are free.")]
-        [SerializeField] float safeFallDistance = 5f;
+        [Tooltip("Falls shorter than this many boxes are free.")]
+        [SerializeField] float safeFallDistance = 3f;
 
-        [Tooltip("Damage taken per unit fallen beyond the safe distance.")]
-        [SerializeField] float damagePerUnit = 0.6f;
+        [Tooltip("Damage taken per box fallen beyond the safe distance. At one heart a box, a " +
+                 "full health wizard dies on the eighth.")]
+        [SerializeField] float damagePerUnit = 1f;
 
         readonly ActivePowerUps powerUps;
 
@@ -46,7 +35,6 @@ namespace FallingWizard.Player
 
         public PlayerLogic() => powerUps = new ActivePowerUps(this);
 
-        /// <summary>Raised the moment health runs out, before anything is torn down.</summary>
         public event Action Died;
 
         public PlayerMovement Movement => movement;
@@ -57,7 +45,6 @@ namespace FallingWizard.Player
 
         public PlayerStats Stats => powerUps.Stats;
 
-        /// <summary>The staff this wizard carries, or null if they have none.</summary>
         public StaffLogic Staff => staff;
 
         public bool HasStaff => staff != null && staff.HasPole;
@@ -66,7 +53,6 @@ namespace FallingWizard.Player
 
         public bool IsOnStaff => State == PlayerState.OnStaff;
 
-        /// <summary>True while the camera should be looking down past the wizard.</summary>
         public bool IsPeeking { get; private set; }
 
         public void Attach(Rigidbody2D body, SpriteRenderer sprite, Collider2D hitbox, StaffLogic staffLogic)
@@ -81,10 +67,6 @@ namespace FallingWizard.Player
 
         public void Collect(PowerUp powerUp) => powerUps.Add(powerUp);
 
-        /// <summary>
-        /// One rendered frame of input. Presses are latched here because a frame can hold any
-        /// number of physics steps, including none at all.
-        /// </summary>
         public void Observe(in PlayerInput frame, float deltaTime)
         {
             input = frame;
@@ -100,7 +82,6 @@ namespace FallingWizard.Player
             UpdatePeeking();
         }
 
-        /// <summary>One physics step, run against the latest observed input.</summary>
         public void Simulate(float fixedDeltaTime)
         {
             if (!health.IsAlive)
@@ -181,12 +162,13 @@ namespace FallingWizard.Player
             if (staffPressTimer <= 0f || !HasStaff)
                 return false;
 
-            if (!movement.IsGrounded || !movement.IsAtEdge)
+            // The pole goes in at the lip itself, not at wherever the walk happened to stop.
+            if (!movement.TryFindLedgeEdge(out float edgeX))
                 return false;
 
             staffPressTimer = 0f;
 
-            if (!staff.Plant(movement.Facing))
+            if (!staff.Plant(movement.Facing, edgeX))
                 return false;
 
             State = PlayerState.OnStaff;

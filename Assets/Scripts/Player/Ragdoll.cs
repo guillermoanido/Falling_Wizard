@@ -7,13 +7,13 @@ namespace FallingWizard.Player
     public class Ragdoll
     {
         [Tooltip("Crossing rough ground faster than this trips the wizard.")]
-        [SerializeField] float tripSpeed = 5f;
+        [SerializeField] float tripSpeed = 4f;
 
         [Tooltip("Spin given to the wizard when they trip, in degrees per second.")]
         [SerializeField] float spinSpeed = 520f;
 
         [Tooltip("Downward kick when tripping, so they pitch forward and drop fast.")]
-        [SerializeField] float fallKick = 6f;
+        [SerializeField] float fallKick = 4f;
 
         [Tooltip("How quickly the tumble spins down. 0 spins forever.")]
         [SerializeField] float angularDamping = 1.5f;
@@ -22,7 +22,7 @@ namespace FallingWizard.Player
         [SerializeField] float minimumDuration = 0.9f;
 
         [Tooltip("They only get up once grounded and moving slower than this.")]
-        [SerializeField] float recoverSpeed = 1.5f;
+        [SerializeField] float recoverSpeed = 1.2f;
 
         [Tooltip("Seconds spent standing back upright.")]
         [SerializeField] float standUpDuration = 0.35f;

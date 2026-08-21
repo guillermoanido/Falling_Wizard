@@ -4,10 +4,6 @@ using UnityEngine.InputSystem;
 
 namespace FallingWizard.Player
 {
-    /// <summary>
-    /// One frame of intent. The logic works off this, not off the Input System, so nothing in
-    /// the player has to know where a button lives.
-    /// </summary>
     public struct PlayerInput
     {
         const float LookThreshold = 0.5f;
@@ -19,17 +15,14 @@ namespace FallingWizard.Player
         public bool StaffPressed;
         public bool StaffHeld;
 
-        /// <summary>Left and right, as a signed amount.</summary>
         public float Steer => Move.x;
 
-        /// <summary>Up and down: climbing and lowering on the staff, peeking on the ground.</summary>
         public float Lean => Move.y;
 
         public bool LookingDown => Move.y < -LookThreshold;
 
         public bool LookingUp => Move.y > LookThreshold;
 
-        /// <summary>The slice of this that locomotion cares about.</summary>
         public MoveCommand Movement => new MoveCommand
         {
             Steer = Move.x,
@@ -38,10 +31,6 @@ namespace FallingWizard.Player
         };
     }
 
-    /// <summary>
-    /// Reads the project-wide actions and hands back a <see cref="PlayerInput"/>. Pausing is
-    /// handled here so no state machine downstream has to check for it.
-    /// </summary>
     public class PlayerInputReader
     {
         const string MoveActionPath = "Player/Move";
