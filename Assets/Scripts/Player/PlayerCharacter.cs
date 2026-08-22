@@ -61,8 +61,26 @@ namespace FallingWizard.Player
             Staff = GetComponentInChildren<Staff>(true);
             controls = new Controls();
 
+            // Before Attach, not after: attaching records where the wizard is as the height to
+            // measure the next fall from, and moving them afterwards would bill them for the trip.
+            MoveToCheckpoint();
+
             logic.Attach(GetComponent<Rigidbody2D>(), FindBodySprite(), Hitbox, Staff?.Logic);
             logic.Died += OnDied;
+        }
+
+        // Where the wizard starts is wherever they last touched a checkpoint. With none, they
+        // start where they were placed in the scene.
+        void MoveToCheckpoint()
+        {
+            if (!Progress.CheckpointIsHere)
+                return;
+
+            var body = GetComponent<Rigidbody2D>();
+
+            body.position = Progress.CheckpointPoint;
+            body.linearVelocity = Vector2.zero;
+            transform.position = Progress.CheckpointPoint;
         }
 
         protected override void OnDestroy()
@@ -92,6 +110,10 @@ namespace FallingWizard.Player
 
         void OnDied()
         {
+            // Roll back to the last checkpoint. Spells learned since are lost, and their shrines
+            // are standing again when the level comes back.
+            Progress.Rewind();
+
             if (restartLevelOnDeath)
                 Invoke(nameof(RestartLevel), respawnDelay);
         }

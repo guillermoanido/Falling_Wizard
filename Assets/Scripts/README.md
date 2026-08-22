@@ -28,7 +28,7 @@ Jump height being under the damage floor is deliberate: a jump can never hurt yo
 | `Core/` | `Game` (pause, scene flow, quit), `GameSettings`, `Controls` (every input lookup, plus which device is in use), `Progress` (what the wizard has learned), `SingletonBehaviour` |
 | `Player/` | `PlayerCharacter`, `PlayerLogic`, `Staff` |
 | `Player/Abilities/` | `Ability` and the spells, `AbilityBook`, `AbilityShrine` |
-| `World/` | `PlayerTrigger`, `Hazard`, `Rock`, `Slime`, `WindZone2D`, `RoughGround`, `FollowCamera` |
+| `World/` | `PlayerTrigger`, `Hazard`, `Rock`, `Slime`, `WindZone2D`, `FollowCamera` |
 | `UI/` | `PlayerHud` |
 | `Menus/`, `Cutscenes/` | `MenuScreen` and the three menus; `CutsceneRunner` |
 
@@ -40,7 +40,7 @@ ones and show up as foldouts in the inspector.
 
 ### Rules that keep it working
 
-- **Never rename `PlayerCharacter.cs`, `Staff.cs`, `RoughGround.cs` or `FollowCamera.cs`**, or their
+- **Never rename `PlayerCharacter.cs`, `Staff.cs` or `FollowCamera.cs`**, or their
   classes. `Level 1.unity` refers to them by GUID, and the GUID lives in the `.meta` beside the
   file. Moving a file is fine — the `.meta` travels with it. Renaming is not.
 - **Never use `[SerializeReference]`.** It writes assembly, namespace and class names into the
@@ -71,7 +71,7 @@ Hazards and spells never reach in and set a number. They call verbs on `PlayerLo
 decides for itself whether it applies:
 
 ```csharp
-wizard.Trip();                                   // rough ground, rocks
+wizard.Trip();                                   // rocks
 wizard.Bounce(heightInBoxes, sideways, resetsFall);  // slimes
 wizard.Push(boxesPerSecond, rampup, groundScale);    // wind, every step you are inside it
 wizard.Shove(velocity, controlLockout);          // one-off knock
@@ -125,13 +125,39 @@ right — **drag to reorder, nothing in any scene depends on it**. `known` is wh
 with; the Staff belongs there.
 
 Everything else is learned from an `AbilityShrine`: one component, one field, and the icon and
-sparkle come from the spell itself. Learning is **permanent** — `Core.Progress` holds it outside
-the wizard, because dying reloads the level and builds a brand new one. A shrine you already drank
-from does not come back.
+sparkle come from the spell itself. `Core.Progress` holds what is known, outside the wizard,
+because dying reloads the level and builds a brand new one.
 
-Progress lasts the play session: it survives dying and moving between levels, and starts empty
-every time you press Play. When the game grows a save file, swap the `HashSet` in `Progress` for
-`PlayerPrefs` and nothing else changes.
+## Checkpoints
+
+`Progress` keeps **two** sets, and the difference between them is the whole system:
+
+| | |
+| --- | --- |
+| `learned` | what the wizard knows right now |
+| `banked` | what they knew when they last touched a `Checkpoint` |
+
+Reaching a checkpoint copies `learned` into `banked` and remembers the spot. **Dying copies
+`banked` back over `learned`** — so a spell picked up after the checkpoint is lost, and because
+`AbilityShrine` destroys itself on `Awake` only when `Progress.Knows` its spell, **the shrine that
+granted it is standing there again**. Losing a spell and being able to go and get it back fall out
+of the same two sets; neither is special-cased.
+
+`PlayerCharacter` moves to `Progress.CheckpointPoint` in `OnAwake`, **before** `logic.Attach` —
+attaching records the current height as the one to measure the next fall from, so moving afterwards
+would bill the wizard for the trip. Health comes back full because `Attach` restores it.
+
+Build one with **Tools ▸ Falling Wizard ▸ Create Checkpoint In Open Scene**. `respawnOffset` lifts
+the spawn point clear of the floor, and the live checkpoint tints itself — read back from
+`Progress` rather than remembered in a static, since the level reloads on every death and a static
+would be pointing at a destroyed object by the time it mattered.
+
+Each checkpoint also writes to `PlayerPrefs`. Nothing reads it back automatically, so pressing Play
+in the editor always starts you where you are rather than teleporting you to wherever you last got
+to. `Progress.HasSave` and `Progress.Load()` are there for a Continue button when you want one, and
+**Tools ▸ Falling Wizard ▸ Clear Saved Progress** wipes it.
+
+`UnityEditor` has a `Progress` class of its own, so any editor script has to say `Core.Progress`.
 
 ## Tripping
 
@@ -149,31 +175,23 @@ on which corner happens to be down. Spinning the art instead costs nothing and l
 
 The wizard's `Rigidbody2D` rotation is frozen and nothing in the game ever unfreezes it.
 
-## Contact friction is zero
+## Ground, friction and getting stuck
 
-`Movement.surfaceFriction` is 0, applied as a material in `Attach`. Horizontal speed is written
-outright every physics step, so contact friction never helps the wizard move — it only ever fights
-them, catching on platform corners and seams and bleeding speed for no visible reason. The only
-thing that slows them is `groundFriction`, which is a number you can see.
+**Contact friction is 0** (`Movement.surfaceFriction`), applied as a material in `Attach`.
+Horizontal speed is written outright every physics step, so contact friction never helps the wizard
+move — it only fights them, catching on corners and seams. The only thing that slows them is
+`groundFriction`, which is a number you can see. That makes `Ragdoll.slideFriction` the only thing
+that stops a tumble.
 
-That makes `Ragdoll.slideFriction` the *only* thing stopping a tumble. Set it to 0 and a tripped
-wizard slides forever and can never get up; `Validate()` warns if you do.
+**Everything the wizard stands on must be on a layer in `Movement.groundLayers`** (Ground, layer 6).
+Physics does not care about that mask, so a wrong layer still holds the wizard up — but every query
+comes back empty, and then `IsGrounded` is never true, which means no jump, permanent air control,
+no ledge detection and no staff. Tilemaps start on Default, which is how you walk into it. The
+wizard logs a warning naming the mask if it has not found ground after three seconds.
 
-## Small ledges
-
-`Movement.TryStepUp` climbs anything up to `stepHeight` (0.35 boxes) instead of letting it stop the
-wizard, so a lip, a kerb or the seam between two platforms is not a wall. Three probes: is
-something in the way at shin height, would the body clear it once lifted (if not, it is a wall and
-nothing happens), and how tall is it really. The rise is spread over a couple of physics steps so
-it reads as a step rather than a teleport, and it is hard-clamped to half the wizard's height so a
-big number cannot become wall-climbing.
-
-**Up only, deliberately.** Snapping down small drops as well would stop the wizard running off
-ledges, and running off ledges is the whole game.
-
-If you are catching on colliders that are perfectly *flush* rather than stepped, that is a
-different problem — Unity's 2D solver snagging on the seam between two separate box colliders. The
-fix for that is a `CompositeCollider2D` over the platforms, not a bigger `stepHeight`.
+A tumble also ends on a timer (`Ragdoll.maximumDuration`) as well as on landing. A ragdoll that can
+only recover once grounded is one bad drop — or one wrongly-layered floor — away from a wizard who
+can never move again.
 
 ## The staff
 
@@ -191,11 +209,17 @@ Two modes:
   on the Player layer, which the ground check deliberately ignores, so a collider on the staff
   would be one you fall straight through.
 
+**One staff, one job.** Both spells are the same shape — press at a ledge to put it out, press
+again to take it back — and both ask `StaffIsFree` / `StaffIsPlantedAs(mode)` rather than the bare
+`Pole.IsPlanted`, which says the pole is busy but not what with. Without the mode check, standing
+on your own bridge puts you at a lip with `IsAtEdge` true, so the Staff spell would happily re-plant
+that same pole as a ladder and pull the floor out from under you. `TryPlantStaff` refuses a pole
+that is already in the ground as well, so the rule holds however a future spell asks.
+
 ## Hazards
 
 | | What it is | Notes |
 | --- | --- | --- |
-| `RoughGround` | A surface you stumble **across** | Not a hazard — it goes on the ground collider itself, or a parent of it. Carries its own `tripSpeed`. Stairs 4, gravel 3, scree 2.5. |
 | `Rock` | A stone you clip at a run | `minimumSpeed` 4 means a run trips and a walk does not. |
 | `Slime` | Fall into it, get thrown back up | Launches you on the way past. |
 | `WindZone2D` | A volume that pushes you | One `Vector2` covers left, right, up and down. `groundScale` decides how much you feel with both feet down. |

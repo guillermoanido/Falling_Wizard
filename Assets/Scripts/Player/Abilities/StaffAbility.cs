@@ -7,9 +7,10 @@ namespace FallingWizard.Player
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Staff", fileName = "Staff")]
     public class StaffAbility : Ability
     {
+        // Hanging on it, or free to plant it. Never while it is doing something else.
         public override bool CanCast(PlayerLogic wizard) =>
-            wizard.IsOnStaff ||
-            (wizard.State == PlayerState.Normal && wizard.HasPole && wizard.movement.IsAtEdge);
+            wizard.StaffIsPlantedAs(StaffMode.Ladder) ||
+            (wizard.StaffIsFree && wizard.movement.IsAtEdge);
 
         public override bool OnCast(PlayerLogic wizard)
         {

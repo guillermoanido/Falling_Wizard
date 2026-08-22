@@ -11,13 +11,16 @@ namespace FallingWizard.Player
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Staff Bridge", fileName = "Staff Bridge")]
     public class BridgeAbility : Ability
     {
+        // Deliberately the same shape as the Staff spell: press at a ledge to put it out,
+        // press again to take it back. The only difference is which mode it asks for - so
+        // neither spell can ever touch a staff the other one is using.
         public override bool CanCast(PlayerLogic wizard) =>
-            wizard.State == PlayerState.Normal && wizard.HasPole &&
-            (wizard.Pole.IsPlanted || wizard.movement.IsAtEdge);
+            wizard.StaffIsPlantedAs(StaffMode.Bridge) ||
+            (wizard.StaffIsFree && wizard.movement.IsAtEdge);
 
         public override bool OnCast(PlayerLogic wizard)
         {
-            if (wizard.Pole.IsPlanted)
+            if (wizard.StaffIsPlantedAs(StaffMode.Bridge))
             {
                 wizard.RecoverStaff();
                 return true;

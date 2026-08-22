@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using FallingWizard.Core;
-using FallingWizard.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -48,6 +47,15 @@ namespace FallingWizard.Player
 
         public Staff.Pole Pole => pole;
         public bool HasPole => pole != null && pole.HasPole;
+
+        // The wizard has ONE staff, so whatever it is already doing rules out everything else.
+        // Driven in as a bridge, it is not there to be climbed; being climbed, it is not there
+        // to be laid flat. Every staff spell asks these two rather than checking IsPlanted, which
+        // says the pole is busy but not what it is busy with.
+        public bool StaffIsFree => HasPole && !pole.IsPlanted && State == PlayerState.Normal;
+
+        public bool StaffIsPlantedAs(StaffMode mode) =>
+            HasPole && pole.IsPlanted && pole.Mode == mode;
         public Modifiers Stats => spellbook.stats;
         public PlayerState State { get; private set; }
         public bool IsOnStaff => State == PlayerState.OnStaff;
@@ -55,7 +63,7 @@ namespace FallingWizard.Player
 
         public void Attach(Rigidbody2D body, SpriteRenderer sprite, Collider2D hitbox, Staff.Pole staffPole)
         {
-            movement.Attach(body, sprite, hitbox);
+            movement.Attach(body, sprite);
             ragdoll.Attach(body, sprite != null ? sprite.transform : null);
             health.RestoreToFull();
 
@@ -185,6 +193,12 @@ namespace FallingWizard.Player
             if (State != PlayerState.Normal || !HasPole)
                 return false;
 
+            // The real invariant, not just a courtesy to the spells that call this: re-planting a
+            // pole that is already in the ground pulls it out from wherever it was - including out
+            // from under a wizard standing on their own bridge.
+            if (pole.IsPlanted)
+                return false;
+
             if (!movement.TryFindLedgeEdge(out float edgeX))
                 return false;
 
@@ -229,7 +243,6 @@ namespace FallingWizard.Player
             pole?.Face(movement.Facing);
 
             CheckLanding();
-            CheckForTrip();
         }
 
         void UpdateOnStaff(float fixedDeltaTime)
@@ -279,17 +292,6 @@ namespace FallingWizard.Player
             pendingWind = Vector2.zero;
             pendingRampup = 0f;
             pendingGroundScale = 1f;
-        }
-
-        void CheckForTrip()
-        {
-            RoughGround ground = movement.Ground;
-
-            if (ground == null || !ground.trips || !movement.IsGrounded)
-                return;
-
-            if (movement.HorizontalSpeed > ground.tripSpeed)
-                Trip();
         }
 
         void CheckLanding()
@@ -435,16 +437,15 @@ namespace FallingWizard.Player
         {
             const float MinGravityScale = 0.01f;
 
-            // A hair of clearance so probes start just off a surface rather than exactly on it.
-            const float StepSkin = 0.02f;
-
             // Below this the wizard counts as standing still, and which way they are LOOKING is
             // a better answer than which way they are drifting.
             const float MinTravelSpeed = 0.1f;
 
+            // How long to wait before deciding the wizard is never going to find the floor.
+            const float GroundlessWarning = 3f;
+
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(8);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
-            static readonly List<RaycastHit2D> Casts = new List<RaycastHit2D>(4);
 
             // Tuned in boxes: one box is 32 px, one world unit, and about one mage.
             [Header("Speed")]
@@ -524,25 +525,12 @@ namespace FallingWizard.Player
                      "them to catch on scenery deliberately.")]
             [Range(0f, 1f)] public float surfaceFriction = 0f;
 
-            [Header("Step Up")]
-            [Tooltip("Ledges this tall or shorter are climbed instead of stopping the wizard. " +
-                     "About a third of a box suits the art. 0 turns it off.")]
-            [Min(0f)] public float stepHeight = 0.35f;
-
-            [Tooltip("How far ahead to look for a step, in boxes. Roughly one step's worth of " +
-                     "travel at running speed.")]
-            [Min(0.01f)] public float stepProbe = 0.12f;
-
-            [Tooltip("How fast they rise onto a step, in boxes per second.")]
-            [Min(0.1f)] public float stepSpeed = 14f;
-
             [Header("External Force")]
             [Tooltip("How fast wind fades once you leave the zone, in boxes per second squared.")]
             [Min(0f)] public float windDecay = 24f;
 
             [NonSerialized] Rigidbody2D body;
             [NonSerialized] SpriteRenderer sprite;
-            [NonSerialized] Collider2D hitbox;
             [NonSerialized] ContactFilter2D groundFilter;
 
             [NonSerialized] float baseGravityScale;
@@ -553,6 +541,10 @@ namespace FallingWizard.Player
             [NonSerialized] bool hasLanded;
             [NonSerialized] bool rising;
             [NonSerialized] int airJumpsUsed;
+
+            [NonSerialized] bool everGrounded;
+            [NonSerialized] bool warnedGroundless;
+            [NonSerialized] float groundlessFor;
 
             [NonSerialized] Vector2 wind;
             [NonSerialized] float lockout;
@@ -577,20 +569,15 @@ namespace FallingWizard.Player
                     ? (approachVelocityX < 0f ? -1 : 1)
                     : Facing;
 
-            // What they are standing on, when it is worth knowing about.
-            public RoughGround Ground { get; private set; }
-            public bool GroundIsRough => Ground != null;
-
             public int Facing { get; private set; } = 1;
             public Vector2 Position => body == null ? Vector2.zero : body.position;
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
             public float VerticalSpeed => body == null ? 0f : body.linearVelocityY;
 
-            public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer, Collider2D bodyHitbox)
+            public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer)
             {
                 body = rigidbody2d;
                 sprite = spriteRenderer;
-                hitbox = bodyHitbox;
                 baseGravityScale = Mathf.Max(MinGravityScale, body.gravityScale);
                 highestPoint = body.position.y;
 
@@ -638,7 +625,6 @@ namespace FallingWizard.Player
                 UpdateFacing(command.Steer);
                 UpdateGroundedState(fixedDeltaTime);
                 Run(command, stats, fixedDeltaTime);
-                TryStepUp(command.Steer, fixedDeltaTime);
                 TryJump(stats);
                 ApplyShortHop(command.JumpHeld);
 
@@ -805,16 +791,12 @@ namespace FallingWizard.Player
 
                 groundFilter.layerMask = groundLayers;
 
-                // Every overlap, not just the first: a rock sitting on a wide platform used to be
-                // a coin flip as to whether the ground underfoot read as rough.
                 int count = Physics2D.OverlapBox(
                     body.position + groundCheckOffset, groundCheckSize, 0f, groundFilter, Overlaps);
 
                 IsGrounded = count > 0;
-                Ground = null;
 
-                for (int i = 0; i < count && Ground == null; i++)
-                    Ground = Overlaps[i].GetComponentInParent<RoughGround>();
+                WatchForMissingGround(fixedDeltaTime);
 
                 IsAtEdge = IsGrounded && !HasGroundAt(ledgeCheckAhead);
 
@@ -838,72 +820,59 @@ namespace FallingWizard.Player
                 }
             }
 
+            // The single most expensive mistake in this project is ground that is not on the
+            // ground layer: the wizard stands on it perfectly well, because physics does not care
+            // about this mask, but every query here comes back empty. Jumping stops working,
+            // movement runs on air control, ledges stop being detected and the staff refuses to
+            // plant - all with nothing in the console. Tilemaps land on Default by default, which
+            // is exactly how you walk into it. So say so, once, out loud.
+            void WatchForMissingGround(float fixedDeltaTime)
+            {
+                if (IsGrounded)
+                {
+                    everGrounded = true;
+                    return;
+                }
+
+                if (everGrounded || warnedGroundless)
+                    return;
+
+                groundlessFor += fixedDeltaTime;
+                if (groundlessFor < GroundlessWarning)
+                    return;
+
+                warnedGroundless = true;
+
+                Debug.LogWarning(
+                    $"The wizard has not found the ground in {GroundlessWarning:0} seconds. " +
+                    $"Movement.groundLayers is set to [{LayerNames(groundLayers)}], and anything " +
+                    "they are meant to stand on must be on one of those layers - tilemaps " +
+                    "included, which start on Default. Jumping, ledge detection and the staff " +
+                    "all read this one mask.");
+            }
+
+            static string LayerNames(LayerMask mask)
+            {
+                var listed = new List<string>();
+
+                for (int layer = 0; layer < 32; layer++)
+                {
+                    if ((mask.value & (1 << layer)) == 0)
+                        continue;
+
+                    string name = LayerMask.LayerToName(layer);
+                    listed.Add(string.IsNullOrEmpty(name) ? layer.ToString() : name);
+                }
+
+                return listed.Count > 0 ? string.Join(", ", listed) : "nothing";
+            }
+
             bool HasGroundAt(float ahead)
             {
                 Vector2 probe = body.position + new Vector2(Facing * ahead, groundCheckOffset.y);
                 groundFilter.layerMask = groundLayers;
 
                 return Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, ledgeCheckDepth) > 0;
-            }
-
-            // A kerb, a lip, the seam between two platforms - none of them should stop a
-            // wizard dead. Anything up to stepHeight is climbed instead of collided with.
-            //
-            // This casts the wizard's OWN collider rather than firing thin rays: a ray can slip
-            // through the corner it was meant to find, and can hit a sliver of geometry the body
-            // would never actually touch. The shape either fits or it does not.
-            //
-            // Up only, on purpose. Snapping down small drops as well would stop the wizard
-            // running off ledges, and running off ledges is the whole game.
-            void TryStepUp(float steer, float fixedDeltaTime)
-            {
-                if (stepHeight <= 0f || !IsGrounded || hitbox == null)
-                    return;
-
-                if (Mathf.Abs(steer) <= steerDeadzone)
-                    return;
-
-                Bounds bounds = hitbox.bounds;
-
-                // Never more than half their own height, whatever the field says, or a big
-                // enough number turns into wall climbing.
-                float rider = Mathf.Min(stepHeight, bounds.size.y * 0.5f);
-                if (rider <= 0f)
-                    return;
-
-                Vector2 forward = steer < 0f ? Vector2.left : Vector2.right;
-                Vector2 centre = bounds.center;
-
-                // Shrunk a hair on every side so the cast cannot catch on the floor they are
-                // already standing on, or on a wall they are already flush against.
-                Vector2 shape = (Vector2)bounds.size - Vector2.one * (StepSkin * 2f);
-
-                groundFilter.layerMask = groundLayers;
-
-                // Anything in the way at all?
-                if (Physics2D.BoxCast(centre, shape, 0f, forward, groundFilter, Casts, stepProbe) == 0)
-                    return;
-
-                // Would the body clear it once lifted? Still blocked means it is a wall.
-                if (Physics2D.BoxCast(centre + Vector2.up * rider, shape, 0f, forward,
-                                      groundFilter, Casts, stepProbe) > 0)
-                    return;
-
-                // How high is it really. Look down onto the step from the lifted position.
-                Vector2 probe = centre
-                              + Vector2.up * rider
-                              + forward * (bounds.extents.x + stepProbe);
-
-                if (Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, rider + StepSkin) == 0)
-                    return;
-
-                float rise = Rays[0].point.y - bounds.min.y;
-                if (rise <= StepSkin || rise > rider)
-                    return;
-
-                // Spread over a couple of physics steps so it reads as a step, not a jump cut.
-                float lift = Mathf.Min(rise + StepSkin, stepSpeed * fixedDeltaTime);
-                body.position += Vector2.up * lift;
             }
 
             void Run(Command command, Modifiers stats, float fixedDeltaTime)
@@ -1014,6 +983,11 @@ namespace FallingWizard.Player
             [Tooltip("Minimum seconds spent tumbling before they can start getting up.")]
             [Min(0f)] public float minimumDuration = 0.9f;
 
+            [Tooltip("Hard limit on a tumble, in seconds. They get up after this whether or not " +
+                     "they ever found the ground. Without it, one trip somewhere the ground check " +
+                     "cannot see is a wizard who never moves again.")]
+            [Min(0.1f)] public float maximumDuration = 3f;
+
             [Tooltip("How fast the skid bleeds off once they are back on the ground, in boxes " +
                      "per second squared. This rather than physics friction, so the same trip " +
                      "always slides the same distance.")]
@@ -1030,6 +1004,7 @@ namespace FallingWizard.Player
             [NonSerialized] float angle;
             [NonSerialized] float spin;
             [NonSerialized] float tumbleTimer;
+            [NonSerialized] float elapsed;
             [NonSerialized] float standUpTimer;
             [NonSerialized] float standUpFrom;
 
@@ -1073,6 +1048,7 @@ namespace FallingWizard.Player
 
                 tumbleTimer = minimumDuration;
                 standUpTimer = -1f;
+                elapsed = 0f;
             }
 
             public bool Tick(float fixedDeltaTime, bool grounded, float horizontalSpeed)
@@ -1085,6 +1061,7 @@ namespace FallingWizard.Player
                 Show();
 
                 tumbleTimer -= fixedDeltaTime;
+                elapsed += fixedDeltaTime;
 
                 // Bleed the skid by a number rather than leaving it to the physics material.
                 // Airborne they keep all of it.
@@ -1092,7 +1069,13 @@ namespace FallingWizard.Player
                     body.linearVelocityX =
                         Mathf.MoveTowards(body.linearVelocityX, 0f, slideFriction * fixedDeltaTime);
 
-                if (tumbleTimer > 0f || !grounded || horizontalSpeed > recoverSpeed)
+                // Normally they get up once they are down and slow. The time limit is the escape
+                // hatch: a tumble that waits for ground it can never find is a wizard with no
+                // movement and no jump, for the rest of the level.
+                bool waitedLongEnough = elapsed >= maximumDuration;
+
+                if (!waitedLongEnough &&
+                    (tumbleTimer > 0f || !grounded || horizontalSpeed > recoverSpeed))
                     return false;
 
                 standUpFrom = angle;
@@ -1111,6 +1094,7 @@ namespace FallingWizard.Player
             public void Validate()
             {
                 standUpDuration = Mathf.Max(0.01f, standUpDuration);
+                maximumDuration = Mathf.Max(maximumDuration, minimumDuration + 0.1f);
 
                 // A tumble that cannot slow below the speed it needs to get up never ends.
                 if (slideFriction <= 0f && recoverSpeed < minimumLaunch)

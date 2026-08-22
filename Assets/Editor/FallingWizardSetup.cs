@@ -54,6 +54,7 @@ namespace FallingWizard.EditorTools
         // Above the level geometry, so a new hazard is never hidden behind a platform that
         // happens to sit closer to the camera.
         const int HazardSortingOrder = 3;
+        static readonly Vector2 CheckpointSize = new Vector2(1f, 2f);
 
         const string UiLayerName = "UI";
         const int HudSortingOrder = 10;                 // above the game, below the pause menu
@@ -217,7 +218,7 @@ namespace FallingWizard.EditorTools
         [MenuItem("Tools/Falling Wizard/Create Ground Platform In Open Scene", false, 31)]
         static void CreateGroundPlatform()
         {
-            Selection.activeGameObject = CreatePlatform("Platform", SpawnPoint(), PlatformSize, false);
+            Selection.activeGameObject = CreatePlatform("Platform", SpawnPoint(), PlatformSize);
             MarkSceneDirty();
         }
 
@@ -226,18 +227,18 @@ namespace FallingWizard.EditorTools
         {
             // Laid out in boxes: one box is 32 px, one world unit, and about one mage. A run of
             // flat ground, then stairs, then two drops either side of what the staff is worth.
-            CreatePlatform("Start Ledge", new Vector2(-9f, -0.5f), new Vector2(12f, 1f), false);
+            CreatePlatform("Start Ledge", new Vector2(-9f, -0.5f), new Vector2(12f, 1f));
 
             CreateStaircase(new Vector2(StairStartX, 0f));
 
-            CreatePlatform("Mid Ledge", new Vector2(4.5f, -3f), new Vector2(9f, 1f), false);
+            CreatePlatform("Mid Ledge", new Vector2(4.5f, -3f), new Vector2(9f, 1f));
 
             // Four boxes down: one heart taken bare, free if you climb down the staff first.
-            CreatePlatform("Lower Ledge", new Vector2(14f, -7f), new Vector2(10f, 1f), false);
-            CreatePlatform("Rock", new Vector2(14f, -6f), new Vector2(2f, 1f), true);
+            CreatePlatform("Lower Ledge", new Vector2(14f, -7f), new Vector2(10f, 1f));
+            CreatePlatform("Rock", new Vector2(14f, -6f), new Vector2(2f, 1f));
 
             // Seven boxes down: four hearts bare, two off the staff. Survivable either way.
-            CreatePlatform("Bottom", new Vector2(25f, -14f), new Vector2(12f, 1f), false);
+            CreatePlatform("Bottom", new Vector2(25f, -14f), new Vector2(12f, 1f));
 
             GameObject player = SpawnPlayer(new Vector3(-13f, 1f, 0f));
             AttachFollowCamera();
@@ -271,7 +272,6 @@ namespace FallingWizard.EditorTools
             outline.Add(new Vector2(0f, -depth));                              // back along the base
 
             stairs.AddComponent<PolygonCollider2D>().points = outline.ToArray();
-            stairs.AddComponent<RoughGround>();
 
             for (int step = 0; step < StairStepCount; step++)
             {
@@ -331,7 +331,7 @@ namespace FallingWizard.EditorTools
             return staff;
         }
 
-        static GameObject CreatePlatform(string name, Vector2 center, Vector2 size, bool rough)
+        static GameObject CreatePlatform(string name, Vector2 center, Vector2 size)
         {
             var platform = new GameObject(name);
             platform.layer = LayerOrDefault(GroundLayerName);
@@ -339,11 +339,7 @@ namespace FallingWizard.EditorTools
             Undo.RegisterCreatedObjectUndo(platform, "Create Platform");
 
             platform.AddComponent<BoxCollider2D>().size = size;
-            CreateSpriteBox("Visual", platform.transform, size,
-                rough ? RoughColor : PlatformColor, PlatformSortingOrder);
-
-            if (rough)
-                platform.AddComponent<RoughGround>();
+            CreateSpriteBox("Visual", platform.transform, size, PlatformColor, PlatformSortingOrder);
 
             return platform;
         }
@@ -579,7 +575,41 @@ namespace FallingWizard.EditorTools
             MarkSceneDirty();
         }
 
-        [MenuItem("Tools/Falling Wizard/Add Game Scenes To Build Settings", false, 40)]
+        [MenuItem("Tools/Falling Wizard/Create Checkpoint In Open Scene", false, 38)]
+        static void CreateCheckpoint()
+        {
+            var post = new GameObject("Checkpoint");
+            post.transform.position = SpawnPoint();
+            Undo.RegisterCreatedObjectUndo(post, "Create Checkpoint");
+
+            var trigger = post.AddComponent<BoxCollider2D>();
+            trigger.size = CheckpointSize;
+            trigger.isTrigger = true;
+
+            GameObject visual = CreateSpriteBox("Visual", post.transform, CheckpointSize,
+                Color.white, HazardSortingOrder);
+
+            var checkpoint = post.AddComponent<Checkpoint>();
+            checkpoint.visual = visual.GetComponent<SpriteRenderer>();
+
+            // Half its own height, so the wizard reappears standing on the floor rather than
+            // buried in whatever the checkpoint is sitting on.
+            checkpoint.respawnOffset = new Vector2(0f, CheckpointSize.y * 0.5f);
+
+            Finish(post);
+        }
+
+        [MenuItem("Tools/Falling Wizard/Clear Saved Progress", false, 39)]
+        static void ClearSavedProgress()
+        {
+            // Qualified: UnityEditor has a Progress class of its own, so the bare name is
+            // ambiguous in any editor script.
+            Core.Progress.ForgetAll();
+            Debug.Log("Saved progress cleared. The next run starts from the top with only the " +
+                      "starting spells.");
+        }
+
+        [MenuItem("Tools/Falling Wizard/Add Game Scenes To Build Settings", false, 50)]
         static void ConfigureBuildScenes()
         {
             string[] wanted =

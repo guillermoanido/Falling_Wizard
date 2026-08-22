@@ -1,6 +1,8 @@
+using System;
 using FallingWizard.Player;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace FallingWizard.UI
@@ -21,9 +23,19 @@ namespace FallingWizard.UI
         [Tooltip("The button to press. Hidden for passive spells, which have no button.")]
         public TextMeshProUGUI button;
 
+        [NonSerialized] InputAction shownAction;
+        [NonSerialized] string shownScheme;
+        [NonSerialized] bool shownWanted;
+        [NonSerialized] bool everShown;
+
         public void Show(PlayerLogic.Spellbook.Slot spell, PlayerHud hud)
         {
             bool known = spell.Owned && spell.Ability != null;
+
+            // Every frame, because learning a spell flips Owned on a slot that already exists -
+            // nothing rebuilds the bar, so the button has to notice for itself. The check inside
+            // makes that nearly free.
+            ShowButton(spell, hud.showButtons);
 
             gameObject.SetActive(known || hud.showLockedSlots);
 
@@ -60,6 +72,19 @@ namespace FallingWizard.UI
                 return;
 
             bool wanted = show && spell.Owned && spell.Action != null;
+            string scheme = Core.Controls.Scheme;
+
+            // Only three things can change what the button says: whether it should be there at
+            // all, which action it is, and which device is in hand. Working out the glyph builds
+            // a string, so do it when one of those moves and not sixty times a second.
+            if (everShown && wanted == shownWanted && spell.Action == shownAction && scheme == shownScheme)
+                return;
+
+            everShown = true;
+            shownWanted = wanted;
+            shownAction = spell.Action;
+            shownScheme = scheme;
+
             button.enabled = wanted;
 
             // Asked for by device, so it reads E on a keyboard and X on a pad. Never both.

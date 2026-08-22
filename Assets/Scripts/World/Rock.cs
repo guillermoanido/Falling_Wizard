@@ -5,8 +5,6 @@ namespace FallingWizard.World
 {
     // Something you clip rather than collide with. You pass straight through it and go over,
     // but only if you were actually running - walking past is fine.
-    //
-    // For a surface you STUMBLE ACROSS rather than trip over, use RoughGround instead.
     public class Rock : Hazard
     {
         void Reset()
