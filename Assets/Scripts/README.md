@@ -147,17 +147,16 @@ of the same two sets; neither is special-cased.
 attaching records the current height as the one to measure the next fall from, so moving afterwards
 would bill the wizard for the trip. Health comes back full because `Attach` restores it.
 
-Build one with **Tools ▸ Falling Wizard ▸ Create Checkpoint In Open Scene**. `respawnOffset` lifts
+A checkpoint is an empty object with a trigger `BoxCollider2D`, a `Checkpoint` and a sprite
+child. `respawnOffset` lifts
 the spawn point clear of the floor, and the live checkpoint tints itself — read back from
 `Progress` rather than remembered in a static, since the level reloads on every death and a static
 would be pointing at a destroyed object by the time it mattered.
 
 Each checkpoint also writes to `PlayerPrefs`. Nothing reads it back automatically, so pressing Play
 in the editor always starts you where you are rather than teleporting you to wherever you last got
-to. `Progress.HasSave` and `Progress.Load()` are there for a Continue button when you want one, and
-**Tools ▸ Falling Wizard ▸ Clear Saved Progress** wipes it.
-
-`UnityEditor` has a `Progress` class of its own, so any editor script has to say `Core.Progress`.
+to. `Progress.HasSave` and `Progress.Load()` are there for a Continue button when you want one,
+and `Progress.ForgetAll()` wipes it.
 
 ## Tripping
 
@@ -257,8 +256,7 @@ Two things worth knowing:
 
 ## HUD
 
-An ordinary screen-space `Canvas` you can open up and restyle. Build it with
-**Tools ▸ Falling Wizard ▸ Add HUD To Open Scene**:
+An ordinary screen-space `Canvas` you can open up and restyle:
 
 ```
 HUD              Canvas (Overlay, order 10) + CanvasScaler + PlayerHud
@@ -276,7 +274,7 @@ one per spell. Restyle a template — sprite, size, colour, add a border — and
 slot follows. `PlayerHud` only ever fills them in; it never builds layout.
 
 Set `CanvasScaler.referencePixelsPerUnit` to **32**, not the default 100, or every icon comes out
-at a third of its size. The builder does this for you.
+at a third of its size.
 
 It finds the wizard through the singleton and re-checks every frame, because dying destroys them
 and builds a new one — anything that had subscribed would be holding a destroyed object.
@@ -308,13 +306,38 @@ cooldown would sit frozen at full with nothing in the console.
 Looking down and climbing the staff read `Move`'s Y, so they need no action of their own. Spell
 buttons are looked up **by name from the asset**, so rebinding or adding one never touches code.
 
-## Editor commands
+## Setting a scene up by hand
 
-`Tools ▸ Falling Wizard ▸ …` builds ordinary scene objects and nothing else.
+There is no editor tooling any more. These are the things it used to know.
 
-Build Main Menu · Create Pause Menu Prefab · Add Pause Menu To Open Scene · Create Player ·
-Create Ground Platform · Build Test Level · **Add HUD** · **Create Hazard ▸ Rock / Slime / Wind** ·
-**Create Ability Shrine** · Add Game Scenes To Build Settings
+**Tilemap ground**, on the Tilemap that actually has tiles painted on it, never the Grid:
+
+| | |
+| --- | --- |
+| `TilemapCollider2D` | the shape of the painted tiles |
+| `Rigidbody2D`, **Static** | a composite needs a body, and a Dynamic one makes the level fall on Play |
+| `CompositeCollider2D` | welds the per-tile boxes into one outline, so you cannot catch on a seam |
+| `compositeOperation` = **Merge** on the tilemap collider | without it the composite stays empty |
+| layer **Ground** | or the wizard never registers as standing on it |
+
+A `Grid` is a coordinate system. A collider or a rigidbody on one is always a mistake.
+
+**Hazards.** A trigger collider plus a `Rock`, `Slime` or `WindZone2D`, on layer **Hazard**, at the
+scene root — several platforms carry non-uniform scales that would squash a child.
+`Hazard.passThrough` sets the collider to a trigger on Awake, so an existing one is fixed by
+ticking a box.
+
+**HUD.** A `Canvas` (Screen Space Overlay, order 10) with a `CanvasScaler` at
+`referencePixelsPerUnit` **32** and **no `GraphicRaycaster`**, laid out as the diagram above. The
+two templates start inactive; `PlayerHud` copies them.
+
+**Background.** One object per sheet, unparented, roughly where the camera starts, each with a
+`ParallaxLayer`. Put them on a sorting layer below `Default` — **and add that layer to the
+`Light2D`'s Target Sorting Layers**, or in URP 2D they render pure black. Simpler alternative:
+leave them on `Default` at negative sorting orders, which the existing light already covers.
+
+**Jump arc.** An empty object at the scene root with a `JumpArc`. Not parented to the wizard, or
+every dot gets dragged along as they fly.
 
 ## Worth knowing
 

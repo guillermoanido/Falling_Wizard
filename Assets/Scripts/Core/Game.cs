@@ -25,7 +25,6 @@ namespace FallingWizard.Core
 
         public static void StartNewGame()
         {
-            // A new game starts with nothing but the staff.
             Progress.ForgetAll();
             LoadFirstLevel();
         }

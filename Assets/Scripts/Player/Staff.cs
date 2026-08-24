@@ -3,17 +3,13 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // What the staff is currently being used as.
     public enum StaffMode
     {
-        // Driven in over the lip of a ledge and climbed down. The wizard hangs off it.
         Ladder,
 
-        // Laid flat over the drop as a plank. The wizard walks on it.
         Bridge,
     }
 
-    // What a step of holding on to the staff produced.
     public enum StaffHold
     {
         Holding,
@@ -21,9 +17,6 @@ namespace FallingWizard.Player
         LetGo,
     }
 
-    // The wizard's staff: a child of whoever carries it, and the Unity shell around Pole, which
-    // is where the whole mechanic lives. The pole's hitbox height is its reach, so a taller
-    // collider is a longer climb and nothing else has to be told about it.
     [RequireComponent(typeof(BoxCollider2D))]
     public class Staff : MonoBehaviour
     {
@@ -51,7 +44,6 @@ namespace FallingWizard.Player
 
         bool bound;
 
-        // Everything the staff actually does.
         public Pole Logic
         {
             get
@@ -61,7 +53,6 @@ namespace FallingWizard.Player
             }
         }
 
-        // The pole's height, straight off the hitbox.
         public float Length => hitbox != null ? Pole.LocalSpan(hitbox).y : 0f;
 
         void Reset()
@@ -87,19 +78,14 @@ namespace FallingWizard.Player
         {
             Bind();
 
-            // A bridge you never cast must not be standing there holding the wizard up.
             if (bridgeCollider != null)
                 bridgeCollider.enabled = false;
         }
 
-        // The wielder moves in FixedUpdate and drags every child along, so a planted pole is put
-        // back afterwards, once per rendered frame.
         void LateUpdate() => pole.HoldPolePosition();
 
         void OnDrawGizmosSelected() => pole.DrawGizmos();
 
-        // Idempotent, and reachable from the Logic getter, so it does not matter whether the
-        // staff or the wielder wakes up first.
         void Bind()
         {
             if (bound)
@@ -117,14 +103,10 @@ namespace FallingWizard.Player
                 return;
             }
 
-            // The pole measures a descent, it does not push anything around.
             hitbox.isTrigger = true;
             pole.BindPole(hitbox, visual, bridgeCollider);
         }
 
-        // ============================================================================== Pole ====
-
-        // The staff mechanic, with no Unity component around it.
         [Serializable]
         public class Pole
         {
@@ -196,14 +178,11 @@ namespace FallingWizard.Player
             public Vector2 HangPosition => PositionAt(depth);
             public Vector2 Anchor => anchor;
 
-            // How far under the wielder's middle their feet are.
             float WielderFeetOffset =>
                 wielder != null && wielderHitbox != null
                     ? wielder.position.y - wielderHitbox.bounds.min.y
                     : 0f;
 
-            // How far below the end of the pole the wielder finishes: everything between their
-            // grip and their feet still hangs past it.
             float HangBelowTip => WielderFeetOffset + gripHeight;
 
             public void BindPole(Collider2D poleHitbox, SpriteRenderer poleVisual, Collider2D bridgeCollider)
@@ -216,7 +195,6 @@ namespace FallingWizard.Player
                 if (pole == null)
                     return;
 
-                // Authored on one side; which side it is carried on is up to the wielder.
                 restPosition = pole.localPosition;
                 carriedParent = pole.parent;
                 sideOffset = Mathf.Abs(restPosition.x);
@@ -231,8 +209,6 @@ namespace FallingWizard.Player
                     wielderBodyType = body.bodyType;
             }
 
-            // Carry the staff on the side the wielder is looking, sprite flipped to match. A
-            // planted pole ignores this: it has been driven in and is part of the world.
             public void Face(int wielderFacing)
             {
                 if (IsPlanted || wielderFacing == 0)
@@ -242,9 +218,6 @@ namespace FallingWizard.Player
                 ShoulderPole();
             }
 
-            // The height of the hitbox in its own local space, scaled. Deliberately NOT
-            // bounds.size.y: bounds is a world AABB, so once the pole is laid flat as a bridge
-            // that would silently start reporting the pole's thickness as its reach.
             public float MeasureReach()
             {
                 if (hitbox == null || pole == null)
@@ -258,8 +231,6 @@ namespace FallingWizard.Player
                     ? PlantAsBridge(wielderFacing, edgeX)
                     : PlantAsLadder(wielderFacing, edgeX);
 
-            // Move along the pole. Positive lean climbs and negative lowers. Both ends of the
-            // hitbox are hard stops, not places you slide past.
             public StaffHold Slide(float lean, float fixedDeltaTime)
             {
                 if (!IsPlanted || !HasWielder || Mode != StaffMode.Ladder)
@@ -271,7 +242,6 @@ namespace FallingWizard.Player
                 if (AtTop && lean > leanThreshold)
                     return StaffHold.BackOnLedge;
 
-                // Reaching the bottom is not the drop. Still pushing down once there is.
                 if (AtBottom && lean < -leanThreshold)
                 {
                     dropTimer += fixedDeltaTime;
@@ -287,7 +257,6 @@ namespace FallingWizard.Player
                 return StaffHold.Holding;
             }
 
-            // Hand the body back to physics and shoulder the staff again.
             public void Release()
             {
                 bool wasLadder = IsPlanted && Mode == StaffMode.Ladder;
@@ -313,7 +282,6 @@ namespace FallingWizard.Player
                 if (!HasWielder)
                     return;
 
-                // Bridge mode never took the body, so it has nothing to hand back.
                 if (wasLadder)
                 {
                     wielder.bodyType = wielderBodyType;
@@ -321,16 +289,12 @@ namespace FallingWizard.Player
                 }
             }
 
-            // Called once the wielder has moved. A planted pole lives in world space, so it has
-            // to shrug off the parent transform that would otherwise carry it down the drop.
             public void HoldPolePosition()
             {
                 if (IsPlanted && pole != null)
                     pole.SetPositionAndRotation(plantedPosition, plantedRotation);
             }
 
-            // Where the wielder sits at a given depth. The planted pole is the fixed thing: they
-            // let go of the ledge, swing onto its line, then follow it down.
             public Vector2 PositionAt(float atDepth)
             {
                 float ontoPole = swingDepth <= Epsilon ? 1f : Mathf.Clamp01(atDepth / swingDepth);
@@ -359,17 +323,12 @@ namespace FallingWizard.Player
                 Gizmos.DrawWireSphere(PositionAt(reach), 0.12f);
             }
 
-            // The hitbox's vertical span in its own local space, as (centre, height). Rotation
-            // independent, unlike bounds.
             public static Vector2 LocalSpan(Collider2D collider2d)
             {
                 LocalBox(collider2d, out Vector2 centre, out Vector2 size);
                 return new Vector2(centre.y, size.y);
             }
 
-            // The collider in its own local space: where its centre sits and how big it is.
-            // Rotation independent, unlike bounds, which is a world AABB and would report a
-            // laid-flat pole's thickness as its length.
             public static void LocalBox(Collider2D collider2d, out Vector2 centre, out Vector2 size)
             {
                 centre = Vector2.zero;
@@ -394,7 +353,6 @@ namespace FallingWizard.Player
                     bounds.size.y / Mathf.Max(MinScale, Mathf.Abs(owner.lossyScale.y)));
             }
 
-            // Drive the pole in over the lip of the ledge and take over the wielder's body.
             bool PlantAsLadder(int wielderFacing, float edgeX)
             {
                 if (!HasPole || !HasWielder)
@@ -406,9 +364,6 @@ namespace FallingWizard.Player
                 depth = 0f;
                 dropTimer = 0f;
 
-                // The pole stops being something the wielder carries and becomes part of the
-                // world: hung just past the lip with its top flush to the ledge, so its far end
-                // is where the feet will end up and the drop can be read straight off it.
                 float surfaceY = anchor.y - WielderFeetOffset;
                 float topAboveOrigin = TopAboveOrigin();
 
@@ -437,8 +392,6 @@ namespace FallingWizard.Player
                 return true;
             }
 
-            // Lay the staff flat over the drop as a plank. The wizard keeps their body and just
-            // walks out onto it.
             bool PlantAsBridge(int wielderFacing, float edgeX)
             {
                 if (!HasPole || !HasWielder)
@@ -456,8 +409,6 @@ namespace FallingWizard.Player
                 anchor = wielder.position;
                 float surfaceY = anchor.y - WielderFeetOffset;
 
-                // Measure the plank itself, not the pole's climbing hitbox - they are the same
-                // shape today, but the thing the wizard stands on is the one that has to line up.
                 LocalBox(bridge, out Vector2 localCentre, out Vector2 localSize);
 
                 float scaleX = Mathf.Abs(pole.lossyScale.x);
@@ -465,17 +416,11 @@ namespace FallingWizard.Player
                 float length = localSize.y * scaleY;
                 float thickness = localSize.x * scaleX;
 
-                // The wizard stands on it, so it must not be dragged around by their own motion.
                 if (pole.parent != null)
                     pole.SetParent(null, true);
 
-                // Laying the pole flat maps its local +Y onto world X. Turn it the way they are
-                // looking, or the plank reaches back over the ledge instead of out over the drop.
                 plantedRotation = Quaternion.Euler(0f, 0f, facing > 0 ? -90f : 90f);
 
-                // That turn also carries the collider's own local offset somewhere else entirely,
-                // so solve for the origin that puts the PLANK where it belongs rather than
-                // assuming the pole's pivot is the middle of it.
                 var carried = new Vector2(
                     facing * localCentre.y * scaleY,
                     -facing * localCentre.x * scaleX);
@@ -497,10 +442,9 @@ namespace FallingWizard.Player
 
                 Mode = StaffMode.Bridge;
                 IsPlanted = true;
-                return true;       // body stays dynamic: a bridge is scenery, not a ride
+                return true;
             }
 
-            // How far the top of the hitbox sits above the pole's own origin, in world units.
             float TopAboveOrigin()
             {
                 Vector2 span = LocalSpan(hitbox);
@@ -519,8 +463,6 @@ namespace FallingWizard.Player
                     visual.flipX = facing < 0;
             }
 
-            // MovePosition on a kinematic body drives straight through solid ground, so look down
-            // the pole from the ledge surface and shorten the reach where the feet would land.
             float ClearReach(float rawReach)
             {
                 if (rawReach <= Epsilon)

@@ -5,16 +5,6 @@ using UnityEngine.UI;
 
 namespace FallingWizard.UI
 {
-    // Hearts along the top, spells along the bottom. The layout is an ordinary Canvas you can see
-    // and restyle in the editor - this only fills it in and keeps it up to date.
-    //
-    // Hearts and spell slots are copies of the two templates, so whatever you do to a template is
-    // what every heart or every slot looks like. Build the whole thing with
-    // Tools > Falling Wizard > Add HUD To Open Scene.
-    //
-    // It finds the wizard through the singleton and re-checks every frame, because dying reloads
-    // the level and builds a brand new one - anything that had subscribed would be holding a
-    // destroyed object.
     public class PlayerHud : MonoBehaviour
     {
         [Header("Rig")]
@@ -57,7 +47,6 @@ namespace FallingWizard.UI
 
         void Awake()
         {
-            // The templates are patterns, not part of the display.
             if (heartTemplate != null)
                 heartTemplate.gameObject.SetActive(false);
 

@@ -2,9 +2,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // A passive spell that simply changes what the wizard is capable of. Higher jump, faster
-    // run, softer landings and extra jumps are all this one class - make an asset, set a
-    // multiplier, drag it into the spellbook. No code needed for the next one.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Stat", fileName = "Stat Spell")]
     public class StatAbility : Ability
     {
@@ -27,7 +24,6 @@ namespace FallingWizard.Player
 
         public override void ModifyStats(PlayerLogic.Modifiers stats)
         {
-            // Multiply, never assign: two spells touching one stat must stack, not clobber.
             stats.MoveSpeedMultiplier *= moveSpeed;
             stats.JumpHeightMultiplier *= jumpHeight;
             stats.FallSpeedMultiplier *= fallSpeed;

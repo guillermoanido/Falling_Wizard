@@ -6,8 +6,6 @@ namespace FallingWizard.Core
     {
         static T instance;
 
-        // Unity's == reports a destroyed object as null, so a leftover from the previous
-        // play session can never masquerade as a live instance here.
         public static T Instance => instance;
 
         public static bool Exists => instance != null;

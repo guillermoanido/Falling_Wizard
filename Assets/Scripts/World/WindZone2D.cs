@@ -3,10 +3,6 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // A volume that pushes the wizard while they are inside it. One component covers a gale from
-    // either side, an updraught and a downdraught - it is just a vector.
-    //
-    // Named WindZone2D because UnityEngine.WindZone already exists and would shadow it.
     public class WindZone2D : Hazard
     {
         [Header("Wind")]
@@ -21,7 +17,6 @@ namespace FallingWizard.World
                  "you while you are in the air.")]
         [Range(0f, 1f)] public float groundScale = 0.35f;
 
-        // Wind is not a hit, it is a place you are standing.
         protected override bool Continuous => true;
 
         void Reset()
@@ -30,7 +25,6 @@ namespace FallingWizard.World
             damage = 0;
         }
 
-        // Walking in does nothing on its own; being in it is the whole effect.
         protected override void Affect(PlayerLogic wizard) { }
 
         protected override void OnPlayerInside(PlayerCharacter wizard, float fixedDeltaTime)

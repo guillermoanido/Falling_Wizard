@@ -2,11 +2,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // Slows a fall for a second. Needs no new movement code at all: FallSpeedMultiplier is
-    // already threaded through both the gravity scale and the terminal speed clamp, and jump
-    // height is worked out from the BASE gravity, so a glide never makes jumps taller.
-    //
-    // Never write body.gravityScale from a spell - movement reassigns it 50 times a second.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Glide", fileName = "Glide")]
     public class GlideAbility : Ability
     {
@@ -17,7 +12,6 @@ namespace FallingWizard.Player
         [Tooltip("Touching down ends the glide early and starts the cooldown.")]
         public bool endsOnLanding = true;
 
-        // Only worth casting in the air, and only when actually falling.
         public override bool CanCast(PlayerLogic wizard) =>
             wizard.State == PlayerState.Normal && !wizard.movement.IsGrounded;
 

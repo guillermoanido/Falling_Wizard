@@ -5,9 +5,6 @@ using UnityEngine.InputSystem;
 
 namespace FallingWizard.Core
 {
-    // Every input lookup in the game goes through here, so there is one place that knows the
-    // action paths, one place that knows which device the player is actually holding, and one
-    // place that turns an action into the letter or button to print on the HUD.
     public static class Controls
     {
         public const string KeyboardScheme = "Keyboard&Mouse";
@@ -16,15 +13,11 @@ namespace FallingWizard.Core
         const string PausePath = "UI/Pause";
         const string SkipPath = "UI/Skip";
 
-        // Only actions this game asked for. InputSystem.actions.Enable() switches on every map,
-        // including UI/Point and Player/Look, which fire on any mouse twitch; without this filter
-        // the HUD would flip to keyboard letters mid gamepad play every time the mouse moved.
         static readonly HashSet<InputAction> Watched = new HashSet<InputAction>();
 
         static InputAction pause;
         static InputAction skip;
 
-        // Which kind of device the player last actually used, for the HUD to print against.
         public static string Scheme { get; private set; } = KeyboardScheme;
 
         public static event Action SchemeChanged;
@@ -54,8 +47,6 @@ namespace FallingWizard.Core
             return action;
         }
 
-        // "E" on a keyboard, "X" on an Xbox pad, "Square" on a DualSense. Passing the group is the
-        // whole trick: without it the Input System helpfully returns "E | X" for every action.
         public static string Glyph(InputAction action)
         {
             if (action == null)
@@ -102,8 +93,6 @@ namespace FallingWizard.Core
             SchemeChanged?.Invoke();
         }
 
-        // Unplugging the pad mid game has to fall back, or the HUD keeps promising buttons that
-        // are no longer attached to anything.
         static void OnDeviceChange(InputDevice device, InputDeviceChange change)
         {
             bool lost = change == InputDeviceChange.Removed || change == InputDeviceChange.Disconnected;

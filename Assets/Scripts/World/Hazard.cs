@@ -4,11 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // Something in the world that does something unpleasant to the wizard. Everything shared by
-    // rocks, slimes and wind lives here - speed gating, re-arming, damage, and whether it can
-    // reach a wizard who is hanging off their staff or already tumbling.
-    //
-    // Adding a hazard is one subclass with one Affect method. Put them on the Hazard layer (8).
     public abstract class Hazard : PlayerTrigger
     {
         [Header("Hazard")]
@@ -40,11 +35,8 @@ namespace FallingWizard.World
 
         [NonSerialized] float readyAt;
 
-        // What this particular hazard does. Speed, re-arming and damage are already handled.
         protected abstract void Affect(PlayerLogic wizard);
 
-        // Safe to do here: nothing has touched anything yet. Flipping isTrigger on a collider
-        // that is mid-contact makes Unity re-evaluate the contact and can eject the wizard.
         protected virtual void Awake()
         {
             var hitbox = GetComponent<Collider2D>();

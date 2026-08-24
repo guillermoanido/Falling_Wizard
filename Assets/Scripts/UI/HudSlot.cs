@@ -7,9 +7,6 @@ using UnityEngine.UI;
 
 namespace FallingWizard.UI
 {
-    // One spell on the bar. Its own component rather than something the HUD builds, so the whole
-    // slot - frame, icon, wipe, button - is an ordinary bit of UI you can restyle in the editor,
-    // and PlayerHud only ever fills it in.
     public class HudSlot : MonoBehaviour
     {
         [Header("Rig")]
@@ -32,9 +29,6 @@ namespace FallingWizard.UI
         {
             bool known = spell.Owned && spell.Ability != null;
 
-            // Every frame, because learning a spell flips Owned on a slot that already exists -
-            // nothing rebuilds the bar, so the button has to notice for itself. The check inside
-            // makes that nearly free.
             ShowButton(spell, hud.showButtons);
 
             gameObject.SetActive(known || hud.showLockedSlots);
@@ -55,8 +49,6 @@ namespace FallingWizard.UI
             if (charge == null)
                 return;
 
-            // Whichever clock is running: the spell's own lit window while it lasts, then the
-            // cooldown until it can be cast again.
             float fill = spell.IsLit ? spell.LitProgress
                        : spell.CooldownLeft > 0f ? spell.CooldownProgress
                        : 0f;
@@ -74,9 +66,6 @@ namespace FallingWizard.UI
             bool wanted = show && spell.Owned && spell.Action != null;
             string scheme = Core.Controls.Scheme;
 
-            // Only three things can change what the button says: whether it should be there at
-            // all, which action it is, and which device is in hand. Working out the glyph builds
-            // a string, so do it when one of those moves and not sixty times a second.
             if (everShown && wanted == shownWanted && spell.Action == shownAction && scheme == shownScheme)
                 return;
 
@@ -87,7 +76,6 @@ namespace FallingWizard.UI
 
             button.enabled = wanted;
 
-            // Asked for by device, so it reads E on a keyboard and X on a pad. Never both.
             button.text = wanted ? Core.Controls.Glyph(spell.Action) : string.Empty;
         }
     }

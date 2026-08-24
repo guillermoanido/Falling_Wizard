@@ -3,13 +3,9 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // The order of the spell bar, and what the wizard starts a new game with. One asset for the
-    // whole game, at Assets/Resources/Spellbook.asset, so nothing in any scene has to be touched
-    // to reorder the bar or add a spell.
     [CreateAssetMenu(menuName = "Falling Wizard/Spellbook", fileName = "Spellbook")]
     public class AbilityBook : ScriptableObject
     {
-        // Where Spellbook.Attach looks when no book is wired up by hand.
         public const string ResourcePath = "Spellbook";
 
         [Header("Order")]

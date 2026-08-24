@@ -4,12 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // Touch it and this becomes where you come back from. It banks the spells you have learned so
-    // far as well as the spot, so dying costs you whatever you picked up since - and the shrine
-    // that granted it is standing there again.
-    //
-    // Not a Hazard: it has no speed gate, no re-arm and nothing to be immune to. It just shares
-    // the same contact plumbing, which is what stops the staff's own trigger firing it twice.
     [RequireComponent(typeof(Collider2D))]
     public class Checkpoint : PlayerTrigger
     {
@@ -38,9 +32,6 @@ namespace FallingWizard.World
             if (visual == null)
                 visual = GetComponentInChildren<SpriteRenderer>();
 
-            // Read the lit state back from Progress rather than remembering which one was last
-            // touched: the level reloads on every death, so anything held in a static would be
-            // pointing at a destroyed object by the time it mattered.
             Tint(IsLive);
         }
 

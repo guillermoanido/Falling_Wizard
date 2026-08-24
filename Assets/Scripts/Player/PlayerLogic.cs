@@ -13,13 +13,6 @@ namespace FallingWizard.Player
         Ragdoll,
     }
 
-    // Everything the wizard is, with no Unity component around it. Movement, tumbling, health,
-    // stat modifiers and the spellbook are all nested here rather than scattered across their own
-    // files: they are parts of a wizard, they are meaningless on their own, and a hazard or a
-    // spell should only ever have to know about PlayerLogic.
-    //
-    // The outside world talks to the wizard through the verbs in the middle of this file - Trip,
-    // Bounce, Push, Shove, Hurt - and never by reaching in and setting a tuning number.
     [Serializable]
     public class PlayerLogic
     {
@@ -48,10 +41,6 @@ namespace FallingWizard.Player
         public Staff.Pole Pole => pole;
         public bool HasPole => pole != null && pole.HasPole;
 
-        // The wizard has ONE staff, so whatever it is already doing rules out everything else.
-        // Driven in as a bridge, it is not there to be climbed; being climbed, it is not there
-        // to be laid flat. Every staff spell asks these two rather than checking IsPlanted, which
-        // says the pole is busy but not what it is busy with.
         public bool StaffIsFree => HasPole && !pole.IsPlanted && State == PlayerState.Normal;
 
         public bool StaffIsPlantedAs(StaffMode mode) =>
@@ -73,8 +62,6 @@ namespace FallingWizard.Player
             spellbook.Attach(this);
         }
 
-        // One rendered frame of input. Presses are latched because a frame can hold any number of
-        // physics steps, including none at all.
         public void Observe(in Intent frame, float deltaTime)
         {
             input = frame;
@@ -89,8 +76,6 @@ namespace FallingWizard.Player
                         (State == PlayerState.Normal && input.LookingDown);
         }
 
-        // One physics step. The order matters: a spell cast this step must be reflected in the
-        // stats this step, and external force must land before movement gets to write velocity.
         public void Simulate(float fixedDeltaTime)
         {
             if (!health.IsAlive)
@@ -134,10 +119,6 @@ namespace FallingWizard.Player
             pole?.DrawGizmos();
         }
 
-        // ---------------------------------------------------------------- the world's verbs ----
-        // Hazards and spells act through these. Each one decides for itself whether it applies,
-        // so nothing outside has to know what state the wizard is in.
-
         public bool Trip()
         {
             if (State != PlayerState.Normal || !health.IsAlive)
@@ -157,7 +138,6 @@ namespace FallingWizard.Player
             return true;
         }
 
-        // Wind, gathered from every zone the wizard is inside and spent on the next physics step.
         public void Push(Vector2 boxesPerSecond, float rampup, float groundScale)
         {
             pendingWind += boxesPerSecond;
@@ -186,16 +166,11 @@ namespace FallingWizard.Player
 
         public void BeginFallFrom(float worldY) => movement.BeginFallFrom(worldY);
 
-        // ------------------------------------------------------------------------- the staff ----
-
         public bool TryPlantStaff(StaffMode mode)
         {
             if (State != PlayerState.Normal || !HasPole)
                 return false;
 
-            // The real invariant, not just a courtesy to the spells that call this: re-planting a
-            // pole that is already in the ground pulls it out from wherever it was - including out
-            // from under a wizard standing on their own bridge.
             if (pole.IsPlanted)
                 return false;
 
@@ -205,14 +180,12 @@ namespace FallingWizard.Player
             if (!pole.Plant(mode, movement.Facing, edgeX))
                 return false;
 
-            // A ladder takes the body over. A bridge is just scenery you can walk on.
             if (mode == StaffMode.Ladder)
                 State = PlayerState.OnStaff;
 
             return true;
         }
 
-        // Climbed back to the top, or picked a bridge back up. Not a fall either way.
         public void RecoverStaff()
         {
             pole?.Release();
@@ -233,13 +206,10 @@ namespace FallingWizard.Player
             State = PlayerState.Normal;
         }
 
-        // ------------------------------------------------------------------------- internals ----
-
         void UpdateNormal(float fixedDeltaTime)
         {
             movement.FixedTick(input.Movement, Stats, fixedDeltaTime);
 
-            // Movement decided which way they are looking; the staff swaps shoulders to match.
             pole?.Face(movement.Facing);
 
             CheckLanding();
@@ -261,7 +231,6 @@ namespace FallingWizard.Player
 
         void UpdateRagdoll(float fixedDeltaTime)
         {
-            // No control at all here: physics owns the body until they get back up.
             movement.SenseGround(fixedDeltaTime);
             CheckLanding();
 
@@ -269,18 +238,14 @@ namespace FallingWizard.Player
                 State = PlayerState.Normal;
         }
 
-        // Wind reaches the wizard differently depending on what is holding them up.
         void ApplyExternalForce(float fixedDeltaTime)
         {
             switch (State)
             {
                 case PlayerState.OnStaff:
-                    // The pole is driven into the ground and they are holding on to it. Wind does
-                    // not get a say, which is exactly what makes the staff a shelter.
                     break;
 
                 case PlayerState.Ragdoll:
-                    // FixedTick never runs while tumbling, so there is nothing to fold into.
                     movement.NudgeVelocity(pendingWind * fixedDeltaTime);
                     break;
 
@@ -314,24 +279,17 @@ namespace FallingWizard.Player
             if (State == PlayerState.OnStaff)
                 pole.Release();
 
-            // A tumble unfreezes rotation and leaves the body spinning. Dying mid trip must not
-            // leave it that way, or the corpse keeps rolling until the level reloads.
             if (State == PlayerState.Ragdoll)
                 ragdoll.Cancel();
 
             State = PlayerState.Normal;
             movement.Stop();
 
-            // Timers and lit spells go. What the wizard KNOWS lives outside them, so it survives.
             spellbook.ResetForRespawn();
 
             Died?.Invoke();
         }
 
-        // ============================================================================ Intent ====
-
-        // One frame of what the player is asking for. Ability buttons are deliberately absent:
-        // the spellbook reads its own actions, so adding a spell never touches this struct.
         public struct Intent
         {
             public Vector2 Move;
@@ -350,7 +308,6 @@ namespace FallingWizard.Player
             };
         }
 
-        // The slice of Intent that locomotion cares about.
         public struct Command
         {
             public float Steer;
@@ -358,10 +315,6 @@ namespace FallingWizard.Player
             public bool Walk;
         }
 
-        // ========================================================================= Modifiers ====
-
-        // What spells do to the wizard. Rebuilt from scratch every physics step, so there is no
-        // such thing as a stale modifier.
         public class Modifiers
         {
             public float MoveSpeedMultiplier;
@@ -381,8 +334,6 @@ namespace FallingWizard.Player
                 ExtraJumps = 0;
             }
         }
-
-        // ============================================================================ Health ====
 
         [Serializable]
         public class Health
@@ -427,27 +378,18 @@ namespace FallingWizard.Player
             }
         }
 
-        // ========================================================================== Movement ====
-
-        // Locomotion, ground sensing, and the one place external force is allowed in. Run writes
-        // linearVelocityX absolutely every step, so anything a hazard wants to contribute has to
-        // go through the wind or impulse channel below, or it is erased within a quarter second.
         [Serializable]
         public class Movement
         {
             const float MinGravityScale = 0.01f;
 
-            // Below this the wizard counts as standing still, and which way they are LOOKING is
-            // a better answer than which way they are drifting.
             const float MinTravelSpeed = 0.1f;
 
-            // How long to wait before deciding the wizard is never going to find the floor.
             const float GroundlessWarning = 3f;
 
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(8);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
 
-            // Tuned in boxes: one box is 32 px, one world unit, and about one mage.
             [Header("Speed")]
             [Tooltip("Top speed at a normal run, in boxes per second. Running off a ledge drops you.")]
             [Min(0f)] public float runSpeed = 6f;
@@ -554,16 +496,8 @@ namespace FallingWizard.Player
 
             [NonSerialized] float approachVelocityX;
 
-            // How fast they were travelling going into the current physics solve. Hazards gate on
-            // this rather than on live velocity: a collision callback runs AFTER the solver, so
-            // running flat into a solid rock reports a speed of nearly zero at the moment of
-            // contact, and every speed-gated hazard would refuse to fire.
             public float ApproachSpeed => Mathf.Abs(approachVelocityX);
 
-            // Which way they were actually going, for anything that wants to send them onward
-            // rather than bounce them back. Not the same as Facing - a shove or a slope can carry
-            // them backwards - and not readable from live velocity during a collision callback,
-            // for the same reason ApproachSpeed is not.
             public int TravelDirection =>
                 Mathf.Abs(approachVelocityX) > MinTravelSpeed
                     ? (approachVelocityX < 0f ? -1 : 1)
@@ -581,8 +515,6 @@ namespace FallingWizard.Player
                 baseGravityScale = Mathf.Max(MinGravityScale, body.gravityScale);
                 highestPoint = body.position.y;
 
-                // useTriggers false is load bearing: this project queries triggers by default, so
-                // without it any trigger sitting on the Ground layer becomes walkable floor.
                 groundFilter = new ContactFilter2D
                 {
                     useLayerMask = true,
@@ -593,11 +525,6 @@ namespace FallingWizard.Player
                 ApplySurfaceFriction();
             }
 
-            // Horizontal speed is written outright every step, so contact friction never helps
-            // the wizard move - it only ever fights them, catching on the corner of a platform or
-            // the seam between two of them and bleeding speed for no visible reason. A dedicated
-            // material means the wizard slides along the world cleanly and the only thing that
-            // slows them down is groundFriction, which is a number you can see.
             void ApplySurfaceFriction()
             {
                 if (body == null)
@@ -628,7 +555,6 @@ namespace FallingWizard.Player
                 TryJump(stats);
                 ApplyShortHop(command.JumpHeld);
 
-                // Lift goes in before the terminal clamp, so an updraught can actually beat gravity.
                 if (wind.y != 0f)
                     body.linearVelocityY += wind.y * fixedDeltaTime;
 
@@ -651,7 +577,6 @@ namespace FallingWizard.Player
                 wind = Vector2.zero;
             }
 
-            // Ground sensing without any of the control, for states that let physics take over.
             public void SenseGround(float fixedDeltaTime) => UpdateGroundedState(fixedDeltaTime);
 
             public void BeginFallFrom(float height)
@@ -662,9 +587,6 @@ namespace FallingWizard.Player
                 rising = false;
             }
 
-            // Called every step whether or not a zone is pushing. With no zone the target is
-            // zero and this is what fades the wind back out, which is why FixedTick must NOT
-            // decay it as well - doing both capped the wind at one step's worth of ramp.
             public void ApplyWind(Vector2 target, float rampup, float groundScale, float fixedDeltaTime)
             {
                 float scale = IsGrounded ? groundScale : 1f;
@@ -672,16 +594,13 @@ namespace FallingWizard.Player
                 wind = Vector2.MoveTowards(wind, target * scale, rate * fixedDeltaTime);
             }
 
-            // Applied straight away rather than queued for the next FixedTick, because the
-            // thing that shoves you is usually the same thing that trips you - and FixedTick
-            // never runs while tumbling, so a queued shove would fire when they stood back up.
             public void AddImpulse(Vector2 velocity, float controlLockout)
             {
                 if (body == null)
                     return;
 
                 body.linearVelocity += velocity;
-                rising = false;             // a shove is not a jump, so no short-hop clipping
+                rising = false;
                 lockout = Mathf.Max(lockout, controlLockout);
             }
 
@@ -691,8 +610,6 @@ namespace FallingWizard.Player
                     body.linearVelocity += velocity;
             }
 
-            // A slime bounce. Height is in boxes and the launch speed comes from gravity, exactly
-            // like a jump, so "3 boxes" really is three boxes.
             public void Launch(float heightInBoxes, float sideways, bool resetsFall)
             {
                 float gravity = Mathf.Abs(Physics2D.gravity.y) * baseGravityScale;
@@ -702,12 +619,11 @@ namespace FallingWizard.Player
                 if (sideways != 0f)
                     body.linearVelocityX += sideways;
 
-                rising = false;                 // or releasing jump would halve the bounce
+                rising = false;
 
                 if (!resetsFall)
                     return;
 
-                // Without this the wizard is billed for the whole flight when they finally land.
                 highestPoint = body.position.y;
                 IsGrounded = false;
                 coyoteTimer = 0f;
@@ -730,8 +646,6 @@ namespace FallingWizard.Player
                 float footing = 0f;
                 float air = ledgeCheckAhead;
 
-                // The feet are wide enough to stay grounded with the middle already out over the
-                // drop, so when there is nothing underneath, back up until they find rock again.
                 if (!HasGroundAt(footing))
                 {
                     footing = -groundCheckSize.x * 0.5f;
@@ -757,7 +671,7 @@ namespace FallingWizard.Player
             public void Validate()
             {
                 runSpeed = Mathf.Max(0f, runSpeed);
-                walkSpeed = Mathf.Clamp(walkSpeed, 0f, runSpeed);   // walking cannot outrun running
+                walkSpeed = Mathf.Clamp(walkSpeed, 0f, runSpeed);
                 groundCheckSize = Vector2.Max(groundCheckSize, new Vector2(0.05f, 0.01f));
 
                 int playerLayer = LayerMask.NameToLayer("Player");
@@ -820,12 +734,6 @@ namespace FallingWizard.Player
                 }
             }
 
-            // The single most expensive mistake in this project is ground that is not on the
-            // ground layer: the wizard stands on it perfectly well, because physics does not care
-            // about this mask, but every query here comes back empty. Jumping stops working,
-            // movement runs on air control, ledges stop being detected and the staff refuses to
-            // plant - all with nothing in the console. Tilemaps land on Default by default, which
-            // is exactly how you walk into it. So say so, once, out loud.
             void WatchForMissingGround(float fixedDeltaTime)
             {
                 if (IsGrounded)
@@ -878,19 +786,15 @@ namespace FallingWizard.Player
             void Run(Command command, Modifiers stats, float fixedDeltaTime)
             {
                 if (lockout > 0f)
-                    return;                     // just been shoved: no steering out of it yet
+                    return;
 
                 float steer = command.Steer;
                 float topSpeed = command.Walk ? walkSpeed : runSpeed;
                 float targetSpeed = steer * topSpeed * stats.MoveSpeedMultiplier;
 
-                // Walking is careful: it refuses to carry the wizard over the lip of a drop.
                 if (command.Walk && IsGrounded && IsAtEdge && Mathf.Abs(steer) > steerDeadzone)
                     targetSpeed = 0f;
 
-                // Wind belongs in the target rather than added afterwards: you can lean into it
-                // and partly win, it self-limits instead of accelerating forever, and it is the
-                // only form Run cannot immediately erase.
                 targetSpeed += wind.x;
 
                 float rate = Mathf.Abs(steer) > steerDeadzone ? acceleration : groundFriction;
@@ -946,8 +850,6 @@ namespace FallingWizard.Player
                     body.linearVelocityY = -terminalSpeed;
             }
         }
-
-        // =========================================================================== Ragdoll ====
 
         [Serializable]
         public class Ragdoll
@@ -1019,22 +921,11 @@ namespace FallingWizard.Player
                 Show();
             }
 
-            // direction is the way they were TRAVELLING, so they roll onward rather than being
-            // spun about by whichever way they happened to be looking.
-            //
-            // The SPRITE tumbles. The collider stays an upright box, and that is deliberate: a
-            // rotating box levers itself up on its corners, because its half-diagonal is longer
-            // than its half-height - about a tenth of a body here - so the solver has to lift it
-            // clear every time a corner swings down, and that reads as bouncing along the floor.
-            // It also makes how far you slide depend on which corner happens to be down, which
-            // is the opposite of consistent. Spinning the art instead costs nothing.
             public void Begin(int direction)
             {
                 spin = -direction * spinSpeed;
                 angle = 0f;
 
-                // Carry the run into the tumble and add a shove ONWARD, so catching a rock at a
-                // sprint and catching one at a jog differ in how far you go, not in what happens.
                 float thrown = body.linearVelocityX * momentumKept + direction * launchForward;
 
                 if (Mathf.Abs(thrown) < minimumLaunch)
@@ -1042,8 +933,6 @@ namespace FallingWizard.Player
 
                 body.linearVelocityX = thrown;
 
-                // Up, not down. Driving them into the floor pins them there for the whole tumble
-                // and scrubs the speed straight off.
                 body.linearVelocityY = Mathf.Max(body.linearVelocityY, launchUp);
 
                 tumbleTimer = minimumDuration;
@@ -1063,15 +952,10 @@ namespace FallingWizard.Player
                 tumbleTimer -= fixedDeltaTime;
                 elapsed += fixedDeltaTime;
 
-                // Bleed the skid by a number rather than leaving it to the physics material.
-                // Airborne they keep all of it.
                 if (grounded && slideFriction > 0f)
                     body.linearVelocityX =
                         Mathf.MoveTowards(body.linearVelocityX, 0f, slideFriction * fixedDeltaTime);
 
-                // Normally they get up once they are down and slow. The time limit is the escape
-                // hatch: a tumble that waits for ground it can never find is a wizard with no
-                // movement and no jump, for the rest of the level.
                 bool waitedLongEnough = elapsed >= maximumDuration;
 
                 if (!waitedLongEnough &&
@@ -1096,7 +980,6 @@ namespace FallingWizard.Player
                 standUpDuration = Mathf.Max(0.01f, standUpDuration);
                 maximumDuration = Mathf.Max(maximumDuration, minimumDuration + 0.1f);
 
-                // A tumble that cannot slow below the speed it needs to get up never ends.
                 if (slideFriction <= 0f && recoverSpeed < minimumLaunch)
                     Debug.LogWarning("Ragdoll.slideFriction is 0 and recoverSpeed is below " +
                                      "minimumLaunch, so a tripped wizard can never slow down " +
@@ -1125,10 +1008,6 @@ namespace FallingWizard.Player
             }
         }
 
-        // ========================================================================= Spellbook ====
-
-        // What the wizard knows and what it is currently doing. Ability assets are stateless
-        // flyweights shared by everyone; every mutable value lives in a Slot here.
         [Serializable]
         public class Spellbook
         {
@@ -1208,7 +1087,6 @@ namespace FallingWizard.Player
                 return true;
             }
 
-            // End a lit spell early - a glide that lands, for instance.
             public void Extinguish(Ability ability)
             {
                 Slot slot = Array.Find(slots, s => s.Ability == ability);
@@ -1229,9 +1107,6 @@ namespace FallingWizard.Player
 
             public void Observe(float deltaTime)
             {
-                // Spells read their own actions, so unlike movement they do not go through the
-                // Intent that PlayerCharacter blanks while paused. Without this, tapping a spell
-                // button behind the pause menu buffers it and casts the moment you resume.
                 bool paused = Game.IsPaused;
 
                 foreach (Slot slot in slots)
@@ -1258,22 +1133,17 @@ namespace FallingWizard.Player
                     if (!slot.Ability.CanCast(owner))
                         continue;
 
-                    // A refused cast keeps its buffer, so pressing the staff button a moment
-                    // before reaching the ledge still works.
                     if (!slot.Ability.OnCast(owner))
                         continue;
 
                     slot.Buffer = 0f;
                     slot.LitLeft = slot.Ability.activeDuration;
 
-                    // A spell that lingers starts cooling down when it ENDS. One that acts
-                    // instantly has nothing to wait for, so it starts now.
                     if (slot.LitLeft <= 0f)
                         slot.CooldownLeft = slot.Ability.cooldown;
                 }
             }
 
-            // From scratch, every physics step. No dirty flags means no stale modifiers.
             public void Rebuild()
             {
                 stats.Reset();
@@ -1299,9 +1169,6 @@ namespace FallingWizard.Player
 
                     slot.Ability.OnLit(owner, fixedDeltaTime);
 
-                    // OnLit is allowed to end the spell itself - a glide that touches down does
-                    // exactly that - and Extinguish has already fired OnEnded. Without this
-                    // check the countdown below would fire it a second time.
                     if (!slot.IsLit)
                         continue;
 
@@ -1316,8 +1183,6 @@ namespace FallingWizard.Player
                 }
             }
 
-            // Death clears what is running. It never clears what is KNOWN - that is the whole
-            // point of a permanent spell.
             public void ResetForRespawn()
             {
                 foreach (Slot slot in slots)

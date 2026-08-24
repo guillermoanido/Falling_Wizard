@@ -4,9 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // Walk into it and the spell is yours for good. This replaces the old PowerUpPickup: there
-    // is one field to set, and the icon, the name and the sparkle all come from the spell asset,
-    // so a shrine is never out of step with what it grants.
     [RequireComponent(typeof(Collider2D))]
     public class AbilityShrine : PlayerTrigger
     {
@@ -26,8 +23,6 @@ namespace FallingWizard.Player
 
         void OnValidate() => PullArt();
 
-        // Permanent means permanent: a shrine already drained does not come back when the level
-        // reloads after a death.
         void Awake()
         {
             if (ability != null && Progress.Knows(ability.Key))

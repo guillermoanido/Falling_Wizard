@@ -4,9 +4,6 @@ using UnityEngine.InputSystem;
 
 namespace FallingWizard.Player
 {
-    // The wizard in the scene, and the scene's only one, so anything that needs them can ask for
-    // Instance rather than being wired up by hand. The component itself does nothing but plug
-    // Unity into PlayerLogic: components in, input in, death out.
     [RequireComponent(typeof(Rigidbody2D))]
     public class PlayerCharacter : SingletonBehaviour<PlayerCharacter>
     {
@@ -33,11 +30,8 @@ namespace FallingWizard.Player
 
         public PlayerLogic Logic => logic;
 
-        // The staff they carry, if they carry one.
         public Staff Staff { get; private set; }
 
-        // The body collider specifically. Hazards filter on this so the staff's own trigger,
-        // which shares this rigidbody, does not fire everything a second time.
         public Collider2D Hitbox { get; private set; }
 
         void Reset()
@@ -61,16 +55,12 @@ namespace FallingWizard.Player
             Staff = GetComponentInChildren<Staff>(true);
             controls = new Controls();
 
-            // Before Attach, not after: attaching records where the wizard is as the height to
-            // measure the next fall from, and moving them afterwards would bill them for the trip.
             MoveToCheckpoint();
 
             logic.Attach(GetComponent<Rigidbody2D>(), FindBodySprite(), Hitbox, Staff?.Logic);
             logic.Died += OnDied;
         }
 
-        // Where the wizard starts is wherever they last touched a checkpoint. With none, they
-        // start where they were placed in the scene.
         void MoveToCheckpoint()
         {
             if (!Progress.CheckpointIsHere)
@@ -95,8 +85,6 @@ namespace FallingWizard.Player
 
         void OnDrawGizmosSelected() => logic.DrawGizmos(transform.position);
 
-        // The staff carries a sprite of its own and may well sit first in the hierarchy, so the
-        // wizard's own renderer is the first one that is not part of it.
         SpriteRenderer FindBodySprite()
         {
             foreach (SpriteRenderer sprite in GetComponentsInChildren<SpriteRenderer>(true))
@@ -110,8 +98,6 @@ namespace FallingWizard.Player
 
         void OnDied()
         {
-            // Roll back to the last checkpoint. Spells learned since are lost, and their shrines
-            // are standing again when the level comes back.
             Progress.Rewind();
 
             if (restartLevelOnDeath)
@@ -120,10 +106,6 @@ namespace FallingWizard.Player
 
         void RestartLevel() => Game.ReloadCurrentScene();
 
-        // ========================================================================== Controls ====
-
-        // Move, jump and walk only. Every spell reads its own button through the spellbook, so
-        // adding one never touches this class.
         public class Controls
         {
             readonly InputAction move = Core.Controls.Player("Move");

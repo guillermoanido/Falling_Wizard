@@ -4,15 +4,6 @@ using UnityEngine.SceneManagement;
 
 namespace FallingWizard.Core
 {
-    // What the wizard has learned and where they came back from, kept outside the wizard. Dying
-    // reloads the scene and builds a brand new PlayerCharacter, so anything stored on the player
-    // would be forgotten on death - which is the one thing progress must not do.
-    //
-    // Two sets, and the difference between them is the whole checkpoint system:
-    //   learned  what the wizard knows right now
-    //   banked   what they knew when they last touched a checkpoint
-    // Reaching a checkpoint copies learned into banked. Dying copies banked back over learned, so
-    // a spell picked up after the checkpoint is lost - and the shrine that granted it comes back.
     public static class Progress
     {
         const string Prefix = "FallingWizard.";
@@ -28,7 +19,6 @@ namespace FallingWizard.Core
         public static Vector2 CheckpointPoint { get; private set; }
         public static string CheckpointScene { get; private set; } = string.Empty;
 
-        // Is the wizard due to come back here, in the scene that is loaded right now?
         public static bool CheckpointIsHere =>
             HasCheckpoint && CheckpointScene == SceneManager.GetActiveScene().name;
 
@@ -42,7 +32,6 @@ namespace FallingWizard.Core
 
         public static void Forget(string key) => learned.Remove(key);
 
-        // Reached a checkpoint: bank everything known so far, and remember the way back.
         public static void MarkCheckpoint(Vector2 point)
         {
             banked.Clear();
@@ -55,14 +44,12 @@ namespace FallingWizard.Core
             Save();
         }
 
-        // Died. Roll back to the last checkpoint. Anything learned since is gone.
         public static void Rewind()
         {
             learned.Clear();
             learned.UnionWith(banked);
         }
 
-        // A new game. Everything goes, including the save on disk.
         public static void ForgetAll()
         {
             learned.Clear();
@@ -74,11 +61,6 @@ namespace FallingWizard.Core
 
             DeleteSave();
         }
-
-        // ------------------------------------------------------------------------ the save ----
-        // Written at every checkpoint. Nothing reads it back on its own: Load is there for a
-        // Continue button, so pressing Play in the editor always starts you where you are rather
-        // than teleporting you to wherever you last got to.
 
         public static bool HasSave => PlayerPrefs.HasKey(SceneKey);
 
@@ -129,8 +111,6 @@ namespace FallingWizard.Core
             PlayerPrefs.Save();
         }
 
-        // Statics outlive a scene load, which is exactly what makes this work - but they also
-        // outlive leaving play mode when domain reloading is off.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetOnPlay()
         {
