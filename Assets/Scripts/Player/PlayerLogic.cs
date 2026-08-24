@@ -118,6 +118,22 @@ namespace FallingWizard.Player
             spellbook.TickTimers(fixedDeltaTime);
         }
 
+        // Where an aimed jump would actually go. The dots a view draws from this are a promise
+        // rather than a guess, because it is worked out with the same gravity the jump will use.
+        public int PredictJumpArc(List<Vector2> into, out Movement.ArcEnd end)
+        {
+            // Only ever while they are stood there winding one up. Tumbling or hanging off the
+            // staff, there is no shot to draw.
+            if (State != PlayerState.Normal || !health.IsAlive)
+            {
+                into.Clear();
+                end = default;
+                return 0;
+            }
+
+            return movement.PredictArc(Stats, into, out end);
+        }
+
         public void Validate()
         {
             movement.Validate();
@@ -143,6 +159,7 @@ namespace FallingWizard.Player
             if (State != PlayerState.Normal || !health.IsAlive)
                 return false;
 
+            movement.CancelAim();
             ragdoll.Begin(movement.TravelDirection);
             State = PlayerState.Ragdoll;
             return true;
@@ -320,6 +337,7 @@ namespace FallingWizard.Player
                 ragdoll.Cancel();
 
             State = PlayerState.Normal;
+            movement.CancelAim();
             movement.Stop();
 
             // Timers and lit spells go. What the wizard KNOWS lives outside them, so it survives.
@@ -345,6 +363,7 @@ namespace FallingWizard.Player
             public Command Movement => new Command
             {
                 Steer = Move.x,
+                Lean = Move.y,
                 JumpHeld = JumpHeld,
                 Walk = Walk,
             };
@@ -354,6 +373,7 @@ namespace FallingWizard.Player
         public struct Command
         {
             public float Steer;
+            public float Lean;
             public bool JumpHeld;
             public bool Walk;
         }
@@ -525,6 +545,9 @@ namespace FallingWizard.Player
                      "them to catch on scenery deliberately.")]
             [Range(0f, 1f)] public float surfaceFriction = 0f;
 
+            [Header("Aimed Jump")]
+            public Aim aim = new Aim();
+
             [Header("External Force")]
             [Tooltip("How fast wind fades once you leave the zone, in boxes per second squared.")]
             [Min(0f)] public float windDecay = 24f;
@@ -545,6 +568,10 @@ namespace FallingWizard.Player
             [NonSerialized] bool everGrounded;
             [NonSerialized] bool warnedGroundless;
             [NonSerialized] float groundlessFor;
+
+            [NonSerialized] ContactFilter2D arcFilter;
+            [NonSerialized] bool aimedFlight;
+            [NonSerialized] bool jumpWasHeld;
 
             [NonSerialized] Vector2 wind;
             [NonSerialized] float lockout;
@@ -591,6 +618,15 @@ namespace FallingWizard.Player
                 };
 
                 ApplySurfaceFriction();
+
+                // Unlike the ground queries this one WANTS triggers: hazards are pass-through, and
+                // an arc that sails through a slime without mentioning it is worse than no arc.
+                arcFilter = new ContactFilter2D
+                {
+                    useLayerMask = true,
+                    layerMask = aim.previewLayers,
+                    useTriggers = true,
+                };
             }
 
             // Horizontal speed is written outright every step, so contact friction never helps
@@ -624,9 +660,17 @@ namespace FallingWizard.Player
 
                 UpdateFacing(command.Steer);
                 UpdateGroundedState(fixedDeltaTime);
-                Run(command, stats, fixedDeltaTime);
-                TryJump(stats);
-                ApplyShortHop(command.JumpHeld);
+
+                if (aim.enabled)
+                {
+                    UpdateAimedJump(command, fixedDeltaTime);
+                }
+                else
+                {
+                    Run(command, stats, fixedDeltaTime);
+                    TryJump(stats);
+                    ApplyShortHop(command.JumpHeld);
+                }
 
                 // Lift goes in before the terminal clamp, so an updraught can actually beat gravity.
                 if (wind.y != 0f)
@@ -683,6 +727,13 @@ namespace FallingWizard.Player
                 body.linearVelocity += velocity;
                 rising = false;             // a shove is not a jump, so no short-hop clipping
                 lockout = Mathf.Max(lockout, controlLockout);
+            }
+
+            // Dropped mid wind-up - tripped, hurt, killed. The arc goes with it.
+            public void CancelAim()
+            {
+                aim.Cancel();
+                jumpWasHeld = false;
             }
 
             public void NudgeVelocity(Vector2 velocity)
@@ -759,6 +810,7 @@ namespace FallingWizard.Player
                 runSpeed = Mathf.Max(0f, runSpeed);
                 walkSpeed = Mathf.Clamp(walkSpeed, 0f, runSpeed);   // walking cannot outrun running
                 groundCheckSize = Vector2.Max(groundCheckSize, new Vector2(0.05f, 0.01f));
+                aim.Validate();
 
                 int playerLayer = LayerMask.NameToLayer("Player");
                 if (playerLayer >= 0 && (groundLayers.value & (1 << playerLayer)) != 0)
@@ -812,6 +864,7 @@ namespace FallingWizard.Player
                     highestPoint = body.position.y;
                     airJumpsUsed = 0;
                     rising = false;
+                    aimedFlight = false;      // back on the floor, steering is yours again
                 }
                 else
                 {
@@ -875,6 +928,120 @@ namespace FallingWizard.Player
                 return Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, ledgeCheckDepth) > 0;
             }
 
+            // Hold Jump to plant and wind up, aim with the stick, release to launch. While the
+            // wizard is winding up they do not walk - the stick is aiming, not steering, and a
+            // shot you can drift out of is not a shot.
+            void UpdateAimedJump(Command command, float fixedDeltaTime)
+            {
+                // Shoved off the ledge mid wind-up: the shot is lost. Firing it from mid air
+                // would send them somewhere the arc never drew.
+                if (aim.IsAiming && !IsGrounded)
+                {
+                    aim.Cancel();
+                    jumpWasHeld = false;
+                }
+
+                if (command.JumpHeld && IsGrounded && !aimedFlight)
+                {
+                    aim.Hold(command.Steer, command.Lean, Facing, fixedDeltaTime);
+
+                    // Plant. Winding up is a commitment, so no shuffling about mid-shot.
+                    body.linearVelocityX =
+                        Mathf.MoveTowards(body.linearVelocityX, 0f, groundFriction * fixedDeltaTime);
+
+                    jumpWasHeld = true;
+                    return;
+                }
+
+                if (jumpWasHeld && aim.IsAiming)
+                {
+                    Vector2 launch = aim.Release(Facing);
+
+                    body.linearVelocity = launch;
+                    rising = false;                  // an aimed shot has no short hop
+                    aimedFlight = true;
+                    coyoteTimer = 0f;
+                    highestPoint = body.position.y;
+                }
+
+                jumpWasHeld = false;
+
+                // In flight the shot flies as drawn. Steering here would make the dots a lie.
+                if (aimedFlight && aim.lockSteeringInFlight)
+                    return;
+
+                Run(command, ScratchStats, fixedDeltaTime);
+            }
+
+            // The aimed path never consults spell modifiers for its horizontal target - it only
+            // ever runs when the wizard is on the ground and free to walk.
+            static readonly Modifiers ScratchStats = new Modifiers();
+
+            // Steps the arc with the same gravity, the same fall multiplier and the same terminal
+            // speed the real jump will meet, then stops at the first thing that would change it.
+            // Past that point any dot drawn would be a lie.
+            public int PredictArc(Modifiers stats, List<Vector2> into, out ArcEnd end)
+            {
+                into.Clear();
+                end = default;
+
+                if (body == null || !aim.IsAiming)
+                    return 0;
+
+                arcFilter.layerMask = aim.previewLayers;
+
+                float baseGravity = Mathf.Abs(Physics2D.gravity.y) * baseGravityScale;
+                float floatiness = stats != null ? stats.FallSpeedMultiplier : 1f;
+                float terminal = maxFallSpeed * floatiness;
+                float step = Mathf.Max(0.005f, aim.previewStep);
+
+                Vector2 point = body.position;
+                Vector2 velocity = aim.LaunchVelocity(Facing);
+                float travelled = 0f;
+
+                into.Add(point);
+
+                for (int i = 0; i < aim.previewSteps && travelled < aim.previewDistance; i++)
+                {
+                    float gravity = velocity.y < 0f
+                        ? baseGravity * fallGravityMultiplier * floatiness
+                        : baseGravity;
+
+                    velocity.y -= gravity * step;
+
+                    if (velocity.y < -terminal)
+                        velocity.y = -terminal;
+
+                    Vector2 next = point + velocity * step;
+                    Vector2 leg = next - point;
+                    float length = leg.magnitude;
+
+                    if (length > Mathf.Epsilon &&
+                        Physics2D.Raycast(point, leg / length, arcFilter, Rays, length) > 0)
+                    {
+                        Collider2D what = Rays[0].collider;
+
+                        end = new ArcEnd
+                        {
+                            Point = Rays[0].point,
+                            Stopped = true,
+                            Hazard = (groundLayers.value & (1 << what.gameObject.layer)) == 0,
+                            What = what,
+                        };
+
+                        into.Add(end.Point);
+                        return into.Count;
+                    }
+
+                    travelled += length;
+                    point = next;
+                    into.Add(point);
+                }
+
+                end = new ArcEnd { Point = point };
+                return into.Count;
+            }
+
             void Run(Command command, Modifiers stats, float fixedDeltaTime)
             {
                 if (lockout > 0f)
@@ -932,6 +1099,15 @@ namespace FallingWizard.Player
                 rising = false;
             }
 
+            // What the arc ran into, if anything.
+            public struct ArcEnd
+            {
+                public Vector2 Point;
+                public bool Stopped;
+                public bool Hazard;
+                public Collider2D What;
+            }
+
             void ApplyFallGravity(Modifiers stats)
             {
                 float floatiness = stats.FallSpeedMultiplier;
@@ -944,6 +1120,133 @@ namespace FallingWizard.Player
                 float terminalSpeed = maxFallSpeed * floatiness;
                 if (body.linearVelocityY < -terminalSpeed)
                     body.linearVelocityY = -terminalSpeed;
+            }
+        }
+
+        // ============================================================================== Aim ====
+
+        // A wound-up jump, mini golf style: hold to charge, aim with the stick, let go to fire.
+        // Nothing here touches the wizard - it works out a launch velocity and hands it back, so
+        // the same numbers drive both the shot and the dotted line that predicted it. Anything
+        // that reads one and not the other is how a preview starts lying.
+        [Serializable]
+        public class Aim
+        {
+            const float StickDeadzone = 0.2f;
+
+            [Header("Aimed Jump")]
+            [Tooltip("Hold Jump to wind up and aim, release to fire. Off falls back to the plain " +
+                     "press-to-jump, hold-for-height jump.")]
+            public bool enabled = true;
+
+            [Tooltip("Launch speed at no charge, in boxes per second.")]
+            [Min(0f)] public float minSpeed = 7f;
+
+            [Tooltip("Launch speed at full charge, in boxes per second. The 2 box standing jump " +
+                     "leaves at about 10.9, for scale.")]
+            [Min(0f)] public float maxSpeed = 15f;
+
+            [Tooltip("Seconds of holding to wind up to full power.")]
+            [Min(0.05f)] public float chargeTime = 0.7f;
+
+            [Header("Angle")]
+            [Tooltip("Flattest shot, in degrees above horizontal - stick pushed all the way down.")]
+            [Range(0f, 90f)] public float minAngle = 15f;
+
+            [Tooltip("Steepest shot, in degrees - stick pushed all the way up.")]
+            [Range(0f, 90f)] public float maxAngle = 80f;
+
+            [Tooltip("Angle used when the stick is neutral, so a bare hold-and-release is still " +
+                     "a sensible jump.")]
+            [Range(0f, 90f)] public float restAngle = 55f;
+
+            [Header("In Flight")]
+            [Tooltip("Take steering away until they land. On, the shot flies exactly as drawn - " +
+                     "which is the point. Off, the dots are a suggestion.")]
+            public bool lockSteeringInFlight = true;
+
+            [Header("Preview")]
+            [Tooltip("What the arc is allowed to notice. Ground to know where you land, Hazard to " +
+                     "know what you land on.")]
+            public LayerMask previewLayers = (1 << 6) | (1 << 8);
+
+            [Tooltip("Seconds per simulated step. Smaller is a smoother, more accurate curve.")]
+            [Min(0.005f)] public float previewStep = 0.02f;
+
+            [Tooltip("Most steps to simulate, whatever else happens.")]
+            [Range(8, 400)] public int previewSteps = 200;
+
+            [Tooltip("How far ahead to look, in boxes. The arc stops here even if it never lands.")]
+            [Min(1f)] public float previewDistance = 14f;
+
+            [NonSerialized] float charge;
+            [NonSerialized] float angle;
+            [NonSerialized] int direction = 1;
+            [NonSerialized] bool aiming;
+
+            public bool IsAiming => aiming;
+
+            // 0 to 1, for a power bar or for tinting the dots.
+            public float Charge => Mathf.Clamp01(charge);
+
+            public float Angle => angle;
+
+            public void Hold(float steer, float lean, int facing, float fixedDeltaTime)
+            {
+                if (!aiming)
+                {
+                    aiming = true;
+                    charge = 0f;
+                    angle = restAngle;
+                    direction = facing;
+                }
+
+                charge = Mathf.Min(1f, charge + fixedDeltaTime / Mathf.Max(0.05f, chargeTime));
+
+                var stick = new Vector2(steer, lean);
+
+                if (stick.sqrMagnitude < StickDeadzone * StickDeadzone)
+                    return;
+
+                if (Mathf.Abs(steer) > StickDeadzone)
+                    direction = steer < 0f ? -1 : 1;
+
+                // Stick up steepens, stick down flattens, dead centre sits at the rest angle.
+                angle = lean >= 0f
+                    ? Mathf.Lerp(restAngle, maxAngle, lean)
+                    : Mathf.Lerp(restAngle, minAngle, -lean);
+            }
+
+            public Vector2 LaunchVelocity(int facing)
+            {
+                float speed = Mathf.Lerp(minSpeed, maxSpeed, Charge);
+                float radians = Mathf.Deg2Rad * Mathf.Clamp(angle, 0f, 90f);
+                int way = aiming ? direction : facing;
+
+                return new Vector2(way * Mathf.Cos(radians), Mathf.Sin(radians)) * speed;
+            }
+
+            public Vector2 Release(int facing)
+            {
+                Vector2 launch = LaunchVelocity(facing);
+
+                aiming = false;
+                charge = 0f;
+
+                return launch;
+            }
+
+            public void Cancel()
+            {
+                aiming = false;
+                charge = 0f;
+            }
+
+            public void Validate()
+            {
+                maxSpeed = Mathf.Max(maxSpeed, minSpeed);
+                maxAngle = Mathf.Max(maxAngle, minAngle);
+                restAngle = Mathf.Clamp(restAngle, minAngle, maxAngle);
             }
         }
 

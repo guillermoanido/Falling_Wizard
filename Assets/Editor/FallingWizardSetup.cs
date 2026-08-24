@@ -599,6 +599,26 @@ namespace FallingWizard.EditorTools
             Finish(post);
         }
 
+        [MenuItem("Tools/Falling Wizard/Add Jump Arc To Open Scene", false, 33)]
+        static void AddJumpArc()
+        {
+            if (Object.FindFirstObjectByType<JumpArc>() != null)
+            {
+                Debug.LogWarning("This scene already has a jump arc.");
+                return;
+            }
+
+            // Stands on its own at the scene root: it finds the wizard through the singleton, and
+            // parenting it to them would drag every dot along as they fly.
+            var arc = new GameObject("Jump Arc", typeof(JumpArc));
+            Undo.RegisterCreatedObjectUndo(arc, "Add Jump Arc");
+
+            Debug.Log("Jump arc added. Hold Jump on the ground to wind up, aim with the stick, " +
+                      "release to fire. Turn it off on PlayerLogic > Movement > Aimed Jump.");
+
+            Finish(arc);
+        }
+
         [MenuItem("Tools/Falling Wizard/Clear Saved Progress", false, 39)]
         static void ClearSavedProgress()
         {
