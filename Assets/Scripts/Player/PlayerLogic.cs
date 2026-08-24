@@ -386,6 +386,7 @@ namespace FallingWizard.Player
             const float MinTravelSpeed = 0.1f;
 
             const float GroundlessWarning = 3f;
+            const float NearbyGround = 1f;
 
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(8);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
@@ -751,12 +752,38 @@ namespace FallingWizard.Player
 
                 warnedGroundless = true;
 
+                if (GroundIsNearby())
+                {
+                    Debug.LogWarning(
+                        $"The wizard has not found the ground in {GroundlessWarning:0} seconds, " +
+                        "but there IS something on the right layer within a box of their feet - " +
+                        "so the mask is fine and the probe is missing it. Two usual causes: " +
+                        "groundCheckOffset sits the probe below the surface instead of across " +
+                        "it, or the ground is a CompositeCollider2D set to Outlines, which is a " +
+                        "zero-thickness line the probe can sit underneath. Switch the composite " +
+                        "to Polygons, or raise groundCheckOffset until the probe straddles the " +
+                        "wizard's feet.");
+
+                    return;
+                }
+
                 Debug.LogWarning(
-                    $"The wizard has not found the ground in {GroundlessWarning:0} seconds. " +
+                    $"The wizard has not found the ground in {GroundlessWarning:0} seconds, and " +
+                    "there is nothing on the right layer anywhere near them. " +
                     $"Movement.groundLayers is set to [{LayerNames(groundLayers)}], and anything " +
                     "they are meant to stand on must be on one of those layers - tilemaps " +
                     "included, which start on Default. Jumping, ledge detection and the staff " +
                     "all read this one mask.");
+            }
+
+            bool GroundIsNearby()
+            {
+                groundFilter.layerMask = groundLayers;
+
+                Vector2 wide = groundCheckSize + Vector2.one * NearbyGround;
+
+                return Physics2D.OverlapBox(
+                    body.position + groundCheckOffset, wide, 0f, groundFilter, Overlaps) > 0;
             }
 
             static string LayerNames(LayerMask mask)
