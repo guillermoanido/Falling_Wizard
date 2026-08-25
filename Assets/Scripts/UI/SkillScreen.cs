@@ -40,24 +40,7 @@ namespace FallingWizard.UI
         {
             Ui.Shroud(transform);
 
-            Image panel = Ui.Plate("Panel", transform, Ui.Panel, PanelWidth, 0f);
-            var rect = (RectTransform)panel.transform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
-
-            var fitter = panel.gameObject.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-            var layout = panel.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.spacing = 14f;
-            layout.padding = new RectOffset(36, 36, 32, 32);
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-
-            body = (RectTransform)panel.transform;
+            body = Ui.Sheet("Panel", transform, Ui.Panel, PanelWidth, 34f, 14f);
 
             Redraw();
         }

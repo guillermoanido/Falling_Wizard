@@ -210,6 +210,16 @@ player standing over dead loot — and is spent all the same, so there is no hea
 stands** (quarter-box resolution, scene-qualified) unless you type an `id`. That survives renaming
 and re-parenting; moving one makes it a new pickup. Give two pickups sharing a spot explicit ids.
 
+The name is worked out once, in `Awake`, and kept. It has to be: the idle bob would otherwise drag
+the position across a quarter-box boundary and quietly rename the pickup between being seen and
+being touched. For the same reason **only the art bobs** — `Dress` refuses to bob a
+`SpriteRenderer` sitting on the root, because that would walk the trigger around with it.
+
+Drag in `Assets/Prefabs/Wisp` and `Assets/Prefabs/Heart Upgrade` and they work as they land: a
+trigger `CircleCollider2D`, the component, and an `Art` child to drop a sprite onto. Leave that
+sprite empty and a flat tinted block stands in, so a freshly placed pickup is always visible rather
+than invisibly working.
+
 `RestSite` is a `Checkpoint` that stops to ask. Reaching one marks the respawn point, then offers
 **rest and press on** (full hearts, charges back, cooldowns cleared) or **turn back** (bank, end
 the run, open the skill screen). Death offers the mirror image: back to the last rest, or give the
@@ -218,8 +228,18 @@ run up and go spend what is banked.
 `ChoiceScreen` and `SkillScreen` build their own canvas at runtime out of `Ui`, which is the old
 editor `UiFactory` with the editor-only parts taken out — including
 `AssetDatabase.GetBuiltinExtraResource`, which does not exist in a player and silently produced
-untinted white boxes when it was tried. Both set `Screens.ModalOpen`, and `MenuScreen.Update`
-checks it, so the pause menu underneath does not eat Escape.
+untinted white boxes when it was tried. They sit at sorting order 200 and 220, above the Pause
+Menu's 100. Both set `Screens.ModalOpen`, and `MenuScreen.Update` checks it, so the pause menu
+underneath does not eat Escape.
+
+**A panel that sizes itself must be built with `Ui.Sheet`, never `Ui.Plate` plus a
+`ContentSizeFitter`.** `Ui.SetSize` attaches a `LayoutElement`, and a `LayoutElement` outranks a
+`VerticalLayoutGroup` when a `ContentSizeFitter` asks how tall the thing wants to be — so a panel
+built that way with height 0 fits itself to **zero**. The group then has less room than its
+children need and shrinks every one of them toward its minimum. The result is a screen you can read
+and cannot use: the text still draws, but each button is 0 pixels tall and has no area to click.
+`SetSize` now writes `minWidth`/`minHeight` as well as the preferred pair, so nothing built through
+it can ever be squeezed to nothing again.
 
 ## The vine
 

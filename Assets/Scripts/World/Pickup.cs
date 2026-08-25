@@ -12,12 +12,18 @@ namespace FallingWizard.World
         [Header("Identity")]
         [Tooltip("Leave empty and this pickup is remembered by where it stands, which survives " +
                  "renaming it and re-parenting it. Moving it makes it a new pickup. Fill it in " +
-                 "when two pickups share a spot, or when you want to move one without the run " +
+                 "when two pickups share a spot, or when you want to move one without the game " +
                  "forgetting it was taken.")]
         public string id = "";
 
         [Header("Look")]
-        [Tooltip("Height of the idle bob, in boxes. 0 holds it still.")]
+        [Tooltip("Colour of the stand-in block drawn when there is no sprite anywhere underneath. " +
+                 "Once you give it real art this does nothing.")]
+        public Color tint = Color.white;
+
+        [Tooltip("Height of the idle bob, in boxes. 0 holds it still. Only the art bobs - the " +
+                 "trigger and the object itself never move, because a pickup that drifts would " +
+                 "keep changing the name it is remembered by.")]
         [Min(0f)] public float bobHeight = 0.15f;
 
         [Tooltip("Bobs per second.")]
@@ -26,6 +32,7 @@ namespace FallingWizard.World
         [Tooltip("Optional prefab spawned where it stood.")]
         public GameObject collectedEffect;
 
+        [NonSerialized] string key;
         [NonSerialized] Transform visual;
         [NonSerialized] Vector3 restingPoint;
 
@@ -35,21 +42,7 @@ namespace FallingWizard.World
 
         protected abstract bool Take(PlayerCharacter wizard);
 
-        public string Key
-        {
-            get
-            {
-                string scene = SceneManager.GetActiveScene().name;
-
-                if (!string.IsNullOrEmpty(id))
-                    return $"{Prefix}{scene}:{id}";
-
-                Vector2 point = transform.position;
-
-                return $"{Prefix}{scene}:" +
-                       $"{Mathf.RoundToInt(point.x * 4f)},{Mathf.RoundToInt(point.y * 4f)}";
-            }
-        }
+        public string Key => key ??= NameIt();
 
         void Reset() => GetComponent<Collider2D>().isTrigger = true;
 
@@ -61,11 +54,7 @@ namespace FallingWizard.World
                 return;
             }
 
-            var art = GetComponentInChildren<SpriteRenderer>();
-            visual = art != null ? art.transform : null;
-
-            if (visual != null)
-                restingPoint = visual.localPosition;
+            Dress();
         }
 
         void Update()
@@ -88,6 +77,45 @@ namespace FallingWizard.World
                 Instantiate(collectedEffect, transform.position, Quaternion.identity);
 
             Destroy(gameObject);
+        }
+
+        string NameIt()
+        {
+            string scene = SceneManager.GetActiveScene().name;
+
+            if (!string.IsNullOrEmpty(id))
+                return $"{Prefix}{scene}:{id}";
+
+            Vector2 point = transform.position;
+
+            return $"{Prefix}{scene}:" +
+                   $"{Mathf.RoundToInt(point.x * 4f)},{Mathf.RoundToInt(point.y * 4f)}";
+        }
+
+        void Dress()
+        {
+            var art = GetComponentInChildren<SpriteRenderer>();
+
+            if (art == null)
+            {
+                var child = new GameObject("Art");
+                child.transform.SetParent(transform, false);
+
+                art = child.AddComponent<SpriteRenderer>();
+                art.sortingOrder = 1;
+            }
+
+            if (art.sprite == null)
+            {
+                art.sprite = Placeholder.Box;
+                art.color = tint;
+            }
+
+            if (art.transform == transform)
+                return;
+
+            visual = art.transform;
+            restingPoint = visual.localPosition;
         }
     }
 }

@@ -63,6 +63,36 @@ namespace FallingWizard.UI
             return art;
         }
 
+        public static RectTransform Sheet(string name, Transform parent, Color colour,
+            float width, float padding = 36f, float spacing = 16f)
+        {
+            var go = new GameObject(name, typeof(Image), typeof(VerticalLayoutGroup),
+                typeof(ContentSizeFitter));
+            Attach(go, parent);
+
+            go.GetComponent<Image>().color = colour;
+
+            var rect = (RectTransform)go.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(width, 0f);
+
+            var layout = go.GetComponent<VerticalLayoutGroup>();
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.spacing = spacing;
+            layout.padding = new RectOffset((int)padding, (int)padding, (int)padding, (int)padding);
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            var fitter = go.GetComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            return rect;
+        }
+
         public static RectTransform Column(string name, Transform parent, float width,
             float spacing = 18f, TextAnchor align = TextAnchor.UpperCenter)
         {
@@ -186,6 +216,9 @@ namespace FallingWizard.UI
 
             element.preferredWidth = width;
             element.preferredHeight = height;
+
+            element.minWidth = width;
+            element.minHeight = height;
         }
 
         public static void Attach(GameObject go, Transform parent) =>

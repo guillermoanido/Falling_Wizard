@@ -1,3 +1,4 @@
+using FallingWizard.Core;
 using UnityEngine;
 
 namespace FallingWizard.Player
@@ -138,7 +139,7 @@ namespace FallingWizard.Player
             body.layer = root.layer;
 
             var art = body.AddComponent<SpriteRenderer>();
-            art.sprite = wallArt != null ? wallArt : Block.White;
+            art.sprite = wallArt != null ? wallArt : Placeholder.Box;
             art.color = tint;
             art.sortingOrder = sortingOrder;
             art.drawMode = SpriteDrawMode.Simple;
@@ -179,38 +180,5 @@ namespace FallingWizard.Player
             public float age;
         }
 
-        static class Block
-        {
-            static Sprite sprite;
-
-            public static Sprite White
-            {
-                get
-                {
-                    if (sprite != null)
-                        return sprite;
-
-                    var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false)
-                    {
-                        filterMode = FilterMode.Point,
-                        hideFlags = HideFlags.HideAndDontSave,
-                    };
-
-                    var pixels = new Color32[16];
-
-                    for (int i = 0; i < pixels.Length; i++)
-                        pixels[i] = new Color32(255, 255, 255, 255);
-
-                    texture.SetPixels32(pixels);
-                    texture.Apply();
-
-                    sprite = Sprite.Create(texture, new Rect(0f, 0f, 4f, 4f),
-                        new Vector2(0.5f, 0.5f), 4f);
-                    sprite.hideFlags = HideFlags.HideAndDontSave;
-
-                    return sprite;
-                }
-            }
-        }
     }
 }

@@ -35,32 +35,16 @@ namespace FallingWizard.UI
         {
             Ui.Shroud(transform);
 
-            Image panel = Ui.Plate("Panel", transform, Ui.Panel, PanelWidth, 0f);
-            var rect = (RectTransform)panel.transform;
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
+            column = Ui.Sheet("Panel", transform, Ui.Panel, PanelWidth, 40f, 16f);
 
-            var fitter = panel.gameObject.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            float inner = PanelWidth - 80f;
 
-            var layout = panel.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.spacing = 16f;
-            layout.padding = new RectOffset(40, 40, 40, 40);
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-
-            column = (RectTransform)panel.transform;
-
-            Ui.Label(title, column, 56f, PanelWidth - 80f, 70f);
+            Ui.Label(title, column, 56f, inner, 70f);
 
             if (!string.IsNullOrEmpty(blurb))
-                Ui.Label(blurb, column, 26f, PanelWidth - 80f, 40f).color = Ui.FadedInk;
+                Ui.Label(blurb, column, 26f, inner, 72f).color = Ui.FadedInk;
 
-            status = Ui.Label(string.Empty, column, 28f, PanelWidth - 80f, 40f);
+            status = Ui.Label(string.Empty, column, 28f, inner, 40f);
             status.color = Ui.Wisp;
         }
 
