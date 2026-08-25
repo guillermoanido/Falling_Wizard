@@ -8,9 +8,14 @@ namespace FallingWizard.Player
     public class AbilityShrine : PlayerTrigger
     {
         [Header("Shrine")]
-        [Tooltip("The spell learned here. It must also be listed in the spellbook, or it has no " +
-                 "place on the bar and cannot be learned.")]
+        [Tooltip("The spell taught here, free and for good. Most spells should be bought with " +
+                 "Wisps at the skill screen - a shrine is for the one you want every player to " +
+                 "meet, whether or not they went looking.")]
         public Ability ability;
+
+        [Tooltip("Put it straight into the first empty slot, so it can be used the moment it is " +
+                 "found. With all four slots full it is learned but left on the bench.")]
+        public bool equipOnPickup = true;
 
         [Tooltip("Wear the spell's own icon in the editor, so a shrine is recognisable at a glance.")]
         public bool showAbilityIcon = true;
@@ -25,14 +30,26 @@ namespace FallingWizard.Player
 
         void Awake()
         {
-            if (ability != null && Progress.Knows(ability.Key))
+            if (ability != null && Progress.Owns(ability.Key))
                 Destroy(gameObject);
         }
 
         protected override void OnPlayerEntered(PlayerCharacter wizard)
         {
-            if (ability == null || !wizard.Logic.spellbook.Learn(ability))
+            if (ability == null || Progress.Owns(ability.Key))
                 return;
+
+            Progress.Grant(ability.Key);
+
+            if (equipOnPickup)
+            {
+                int slot = Progress.FirstEmptySlot();
+
+                if (slot >= 0)
+                    Progress.Equip(slot, ability.Key);
+            }
+
+            wizard.Logic.spellbook.Reload();
 
             if (ability.collectedEffect != null)
                 Instantiate(ability.collectedEffect, transform.position, Quaternion.identity);

@@ -20,10 +20,21 @@ namespace FallingWizard.Player
                  "point filter.")]
         public Sprite icon;
 
+        [Header("Learning")]
+        [Tooltip("Wisps spent to learn this at the skill screen.")]
+        [Min(0)] public int cost = 1;
+
+        [Tooltip("Cannot be moved out of its slot at the skill screen. Only the Staff wants this.")]
+        public bool locked = false;
+
+        [Tooltip("The slot a locked spell always sits in. 0 is the first button, 1 the second, " +
+                 "and so on. -1 for anything the player is free to place.")]
+        [Range(-1, 3)] public int fixedSlot = -1;
+
         [Header("Input")]
-        [Tooltip("Action name inside the Player map - 'Staff', 'Glide', 'Bridge'. LEAVE EMPTY " +
-                 "for a passive spell: it always applies and shows no button on the bar.")]
-        public string actionName = "";
+        [Tooltip("A passive has no button. It still takes up one of the four slots, so bringing " +
+                 "one is a real choice.")]
+        public bool passive = false;
 
         [Tooltip("A press this many seconds early still counts, so you can hit the button just " +
                  "before reaching a ledge.")]
@@ -37,15 +48,21 @@ namespace FallingWizard.Player
         [Tooltip("Seconds before it can be cast again, counted from when it ends.")]
         [Min(0f)] public float cooldown = 0f;
 
+        [Tooltip("Casts allowed between rests. 0 is unlimited. Use this for something powerful " +
+                 "enough that a cooldown alone would not hold it back.")]
+        [Min(0)] public int usesPerRun = 0;
+
         [Header("Pickup")]
         [Tooltip("Optional prefab spawned where the shrine was, for a puff of sparkles.")]
         public GameObject collectedEffect;
 
-        public bool IsPassive => string.IsNullOrEmpty(actionName);
+        public bool IsPassive => passive;
 
         public string Key => string.IsNullOrEmpty(id) ? name : id;
 
-        public virtual void OnLearned(PlayerLogic wizard) { }
+        public virtual void OnEquipped(PlayerLogic wizard) { }
+
+        public virtual void OnUnequipped(PlayerLogic wizard) { }
 
         public virtual void OnRunReset(PlayerLogic wizard) { }
 

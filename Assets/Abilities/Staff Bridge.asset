@@ -16,8 +16,12 @@ MonoBehaviour:
   displayName: Staff Bridge
   description: Lay the staff flat to extend a ledge.
   icon: {fileID: 0}
-  actionName: Bridge
+  cost: 1
+  locked: 0
+  fixedSlot: -1
+  passive: 0
   pressBuffer: 0.12
   activeDuration: 0
+  usesPerRun: 0
   cooldown: 0
   collectedEffect: {fileID: 0}

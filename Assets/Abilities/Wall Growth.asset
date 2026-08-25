@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76359a9eaf3cbb844aa5d591242a1627, type: 3}
+  m_Name: Wall Growth
+  m_EditorClassIdentifier: 
+  id: wall
+  displayName: Wall Growth
+  description: Grow a wall of stone out of the floor ahead of you.
+  icon: {fileID: 0}
+  cost: 1
+  locked: 0
+  fixedSlot: -1
+  passive: 0
+  pressBuffer: 0.12
+  activeDuration: 8
+  usesPerRun: 0
+  cooldown: 3
+  collectedEffect: {fileID: 0}
+  wallPrefab: {fileID: 0}
+  wallArt: {fileID: 0}
+  tint: {r: 0.42, g: 0.62, b: 0.38, a: 1}
+  size: {x: 1, y: 3}
+  distanceAhead: 1.1
+  growTime: 0.3
+  rootDepth: 2
+  groundLayer: Ground
+  sortingOrder: -1

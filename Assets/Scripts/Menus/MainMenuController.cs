@@ -15,7 +15,7 @@ namespace FallingWizard.Menus
 
         protected override void WireButtons()
         {
-            playButton.onClick.AddListener(Game.StartNewGame);
+            playButton.onClick.AddListener(Game.StartRun);
             settingsButton.onClick.AddListener(OpenSettings);
             exitButton.onClick.AddListener(Game.Quit);
         }

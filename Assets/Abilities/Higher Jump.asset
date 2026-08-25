@@ -16,9 +16,13 @@ MonoBehaviour:
   displayName: Higher Jump
   description: Jump half again as high. Always on.
   icon: {fileID: 0}
-  actionName: 
+  cost: 1
+  locked: 0
+  fixedSlot: -1
+  passive: 1
   pressBuffer: 0.12
   activeDuration: 0
+  usesPerRun: 0
   cooldown: 0
   collectedEffect: {fileID: 0}
   moveSpeed: 1

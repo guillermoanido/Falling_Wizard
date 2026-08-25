@@ -13,13 +13,19 @@ MonoBehaviour:
   m_Name: Glide
   m_EditorClassIdentifier: 
   id: glide
-  displayName: Glide
-  description: Slow a fall for a second.
+  displayName: Feather Fall
+  description: Drift for a moment, and forget how far you have already fallen.
   icon: {fileID: 0}
-  actionName: Glide
+  cost: 1
+  locked: 0
+  fixedSlot: -1
+  passive: 0
   pressBuffer: 0.12
   activeDuration: 1
+  usesPerRun: 0
   cooldown: 0.5
   collectedEffect: {fileID: 0}
   fallSpeed: 0.25
+  forgivesFall: 1
   endsOnLanding: 1
+  steering: 1

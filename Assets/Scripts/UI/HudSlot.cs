@@ -20,6 +20,10 @@ namespace FallingWizard.UI
         [Tooltip("The button to press. Hidden for passive spells, which have no button.")]
         public TextMeshProUGUI button;
 
+        [Tooltip("Casts left before the next rest, for a spell that only has so many. Blank for " +
+                 "everything else.")]
+        public TextMeshProUGUI uses;
+
         [NonSerialized] InputAction shownAction;
         [NonSerialized] string shownScheme;
         [NonSerialized] bool shownWanted;
@@ -27,23 +31,30 @@ namespace FallingWizard.UI
 
         public void Show(PlayerLogic.Spellbook.Slot spell, PlayerHud hud)
         {
-            bool known = spell.Owned && spell.Ability != null;
+            bool filled = spell.Ability != null;
 
             ShowButton(spell, hud.showButtons);
 
-            gameObject.SetActive(known || hud.showLockedSlots);
+            gameObject.SetActive(filled || hud.showEmptySlots);
 
             if (!gameObject.activeSelf)
                 return;
 
             if (icon != null)
             {
-                if (spell.Ability != null && spell.Ability.icon != null)
-                    icon.sprite = spell.Ability.icon;
+                icon.sprite = filled ? spell.Ability.icon : hud.emptySlotIcon;
 
-                icon.color = !known ? hud.lockedTint
+                icon.color = !filled ? hud.emptyTint
                            : spell.IsReady ? hud.readyTint
                            : hud.notReadyTint;
+            }
+
+            if (uses != null)
+            {
+                bool counted = filled && spell.Ability.usesPerRun > 0;
+
+                uses.enabled = counted;
+                uses.text = counted ? spell.UsesLeft.ToString() : string.Empty;
             }
 
             if (charge == null)
@@ -54,7 +65,7 @@ namespace FallingWizard.UI
                        : 0f;
 
             charge.color = hud.chargeTint;
-            charge.enabled = known && fill > 0f;
+            charge.enabled = filled && fill > 0f;
             charge.fillAmount = fill;
         }
 
@@ -63,7 +74,8 @@ namespace FallingWizard.UI
             if (button == null)
                 return;
 
-            bool wanted = show && spell.Owned && spell.Action != null;
+            bool passive = spell.Ability != null && spell.Ability.IsPassive;
+            bool wanted = show && spell.Action != null && !passive;
             string scheme = Core.Controls.Scheme;
 
             if (everShown && wanted == shownWanted && spell.Action == shownAction && scheme == shownScheme)

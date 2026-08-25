@@ -9,19 +9,20 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f2bc13338a928b504f50bab232aaa8c2, type: 3}
-  m_Name: Staff
+  m_Script: {fileID: 11500000, guid: 0eea9e5036795658a6d9a51915589e78, type: 3}
+  m_Name: Vine Grasp
   m_EditorClassIdentifier: 
-  id: staff
-  displayName: Staff
-  description: Plant the staff over a ledge and climb down it.
+  id: vine
+  displayName: Vine Grasp
+  description: Catch a hanging vine and swing from it. Jump to let go.
   icon: {fileID: 0}
-  cost: 0
-  locked: 1
-  fixedSlot: 1
+  cost: 1
+  locked: 0
+  fixedSlot: -1
   passive: 0
   pressBuffer: 0.12
   activeDuration: 0
   usesPerRun: 0
   cooldown: 0
   collectedEffect: {fileID: 0}
+  pressAgainToLetGo: 1

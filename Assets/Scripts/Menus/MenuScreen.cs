@@ -29,6 +29,9 @@ namespace FallingWizard.Menus
 
         void Update()
         {
+            if (UI.Screens.ModalOpen)
+                return;
+
             if (Controls.PausePressed)
                 OnBackPressed();
         }

@@ -11,6 +11,7 @@ namespace FallingWizard.Player
         Normal,
         OnStaff,
         Ragdoll,
+        OnVine,
     }
 
     [Serializable]
@@ -20,6 +21,7 @@ namespace FallingWizard.Player
         public Movement movement = new Movement();
         public Ragdoll ragdoll = new Ragdoll();
         public Health health = new Health();
+        public Vine vine = new Vine();
         public Spellbook spellbook = new Spellbook();
 
         [Header("Fall Damage")]
@@ -46,6 +48,7 @@ namespace FallingWizard.Player
         public bool StaffIsPlantedAs(StaffMode mode) =>
             HasPole && pole.IsPlanted && pole.Mode == mode;
         public Modifiers Stats => spellbook.stats;
+        public Intent Steering => input;
         public PlayerState State { get; private set; }
         public bool IsOnStaff => State == PlayerState.OnStaff;
         public bool IsPeeking { get; private set; }
@@ -54,6 +57,9 @@ namespace FallingWizard.Player
         {
             movement.Attach(body, sprite);
             ragdoll.Attach(body, sprite != null ? sprite.transform : null);
+            vine.Attach(body);
+
+            health.SetBonus(Progress.BonusHearts);
             health.RestoreToFull();
 
             pole = staffPole;
@@ -95,6 +101,10 @@ namespace FallingWizard.Player
                     UpdateRagdoll(fixedDeltaTime);
                     break;
 
+                case PlayerState.OnVine:
+                    UpdateOnVine(fixedDeltaTime);
+                    break;
+
                 default:
                     UpdateNormal(fixedDeltaTime);
                     break;
@@ -108,6 +118,7 @@ namespace FallingWizard.Player
             movement.Validate();
             ragdoll.Validate();
             health.Validate();
+            vine.Validate();
 
             safeFallDistance = Mathf.Max(0f, safeFallDistance);
             damagePerBox = Mathf.Max(0f, damagePerBox);
@@ -117,6 +128,7 @@ namespace FallingWizard.Player
         {
             movement.DrawGizmos(origin);
             pole?.DrawGizmos();
+            vine.DrawGizmos();
         }
 
         public bool Trip()
@@ -131,7 +143,7 @@ namespace FallingWizard.Player
 
         public bool Bounce(float heightInBoxes, float sideways, bool resetsFall)
         {
-            if (!health.IsAlive || State == PlayerState.OnStaff)
+            if (!health.IsAlive || State == PlayerState.OnStaff || State == PlayerState.OnVine)
                 return false;
 
             movement.Launch(heightInBoxes, sideways, resetsFall);
@@ -147,7 +159,7 @@ namespace FallingWizard.Player
 
         public void Shove(Vector2 velocity, float controlLockout)
         {
-            if (State != PlayerState.OnStaff)
+            if (State != PlayerState.OnStaff && State != PlayerState.OnVine)
                 movement.AddImpulse(velocity, controlLockout);
         }
 
@@ -163,6 +175,21 @@ namespace FallingWizard.Player
         }
 
         public void Heal(int hearts) => health.Heal(hearts);
+
+        public void RestoreHealth() => health.RestoreToFull();
+
+        public bool GrowHeart(int hearts)
+        {
+            int taken = Mathf.Min(hearts, health.Room);
+
+            if (taken <= 0)
+                return false;
+
+            Progress.TakeHearts(taken);
+            health.SetBonus(Progress.BonusHearts);
+            health.Heal(taken);
+            return true;
+        }
 
         public void BeginFallFrom(float worldY) => movement.BeginFallFrom(worldY);
 
@@ -192,6 +219,38 @@ namespace FallingWizard.Player
 
             if (State == PlayerState.OnStaff)
                 State = PlayerState.Normal;
+        }
+
+        public bool IsOnVine => State == PlayerState.OnVine;
+
+        public bool CanGrabVine =>
+            health.IsAlive && State == PlayerState.Normal && vine.CanGrab;
+
+        public bool TryGrabVine(Vector2 anchor, float length, float maxSwingDegrees)
+        {
+            if (!CanGrabVine)
+                return false;
+
+            if (!vine.Grab(anchor, length, maxSwingDegrees, movement.Position))
+                return false;
+
+            State = PlayerState.OnVine;
+            return true;
+        }
+
+        public void LetGoOfVine()
+        {
+            if (State != PlayerState.OnVine)
+                return;
+
+            float from = vine.HangPosition.y;
+            Vector2 launch = vine.Release();
+
+            State = PlayerState.Normal;
+
+            movement.Stop();
+            movement.BeginFallFrom(from);
+            movement.AddImpulse(launch, 0f);
         }
 
         public void DropFromStaff()
@@ -229,6 +288,12 @@ namespace FallingWizard.Player
             }
         }
 
+        void UpdateOnVine(float fixedDeltaTime)
+        {
+            if (input.JumpPressed || !vine.Ride(input.Move, fixedDeltaTime))
+                LetGoOfVine();
+        }
+
         void UpdateRagdoll(float fixedDeltaTime)
         {
             movement.SenseGround(fixedDeltaTime);
@@ -243,6 +308,7 @@ namespace FallingWizard.Player
             switch (State)
             {
                 case PlayerState.OnStaff:
+                case PlayerState.OnVine:
                     break;
 
                 case PlayerState.Ragdoll:
@@ -282,10 +348,13 @@ namespace FallingWizard.Player
             if (State == PlayerState.Ragdoll)
                 ragdoll.Cancel();
 
+            if (State == PlayerState.OnVine)
+                vine.Cancel();
+
             State = PlayerState.Normal;
             movement.Stop();
 
-            spellbook.ResetForRespawn();
+            spellbook.ResetForRun();
 
             Died?.Invoke();
         }
@@ -339,20 +408,36 @@ namespace FallingWizard.Player
         public class Health
         {
             [Header("Health")]
-            [Tooltip("Hearts the wizard starts and tops out at.")]
+            [Tooltip("Hearts a brand new save starts with, before any heart found in a level.")]
             [Min(1)] public int maxHealth = 5;
+
+            [Tooltip("Most hearts that can ever be added on top, across the whole save. Place " +
+                     "fewer hearts than this in the game and the cap never comes up - it is here " +
+                     "so a generous level cannot quietly make the wizard unkillable.")]
+            [Min(0)] public int maxBonusHearts = 4;
 
             [Tooltip("Seconds of immunity after a hit, so one hazard cannot chain-kill.")]
             [Min(0f)] public float invulnerabilityTime = 0.6f;
 
             [NonSerialized] float invulnerableUntil;
+            [NonSerialized] int bonus;
 
-            public int Max => maxHealth;
+            public int Max => maxHealth + bonus;
+            public int Bonus => bonus;
             public int Current { get; private set; }
             public bool IsAlive => Current > 0;
             public bool IsInvulnerable => Time.time < invulnerableUntil;
 
-            public void RestoreToFull() => Current = maxHealth;
+            public int Room => Mathf.Max(0, maxBonusHearts - bonus);
+            public bool HasRoomToGrow => Room > 0;
+
+            public void SetBonus(int extra)
+            {
+                bonus = Mathf.Clamp(extra, 0, maxBonusHearts);
+                Current = Mathf.Min(Current, Max);
+            }
+
+            public void RestoreToFull() => Current = Max;
 
             public void TakeDamage(int amount)
             {
@@ -368,12 +453,13 @@ namespace FallingWizard.Player
                 if (amount <= 0 || !IsAlive)
                     return;
 
-                Current = Mathf.Min(maxHealth, Current + amount);
+                Current = Mathf.Min(Max, Current + amount);
             }
 
             public void Validate()
             {
                 maxHealth = Mathf.Max(1, maxHealth);
+                maxBonusHearts = Mathf.Max(0, maxBonusHearts);
                 invulnerabilityTime = Mathf.Max(0f, invulnerabilityTime);
             }
         }
@@ -506,6 +592,7 @@ namespace FallingWizard.Player
 
             public int Facing { get; private set; } = 1;
             public Vector2 Position => body == null ? Vector2.zero : body.position;
+            public float FeetY => Position.y + groundCheckOffset.y;
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
             public float VerticalSpeed => body == null ? 0f : body.linearVelocityY;
 
@@ -1036,10 +1123,182 @@ namespace FallingWizard.Player
         }
 
         [Serializable]
+        public class Vine
+        {
+            const float Epsilon = 0.0001f;
+
+            [Header("Riding")]
+            [Tooltip("Speed left and right along the swing, in boxes per second. It is the same " +
+                     "however high up the vine you are, so a swing always takes as long as it " +
+                     "looks like it should.")]
+            [Min(0f)] public float swingSpeed = 4f;
+
+            [Tooltip("Speed climbing up and down the vine, in boxes per second.")]
+            [Min(0f)] public float climbSpeed = 4f;
+
+            [Tooltip("How far the vine will lean either side of straight down, in degrees. " +
+                     "Past about 80 it starts to look like a pole rather than a rope.")]
+            [Range(0f, 89f)] public float maxSwing = 65f;
+
+            [Tooltip("Closest you can climb to where the vine is tied, in boxes. Keeps the wizard " +
+                     "out of the ceiling.")]
+            [Min(0.1f)] public float minDepth = 0.75f;
+
+            [Header("Letting Go")]
+            [Tooltip("Speed you leave at, in boxes per second, along whichever way you were " +
+                     "swinging. Fixed on purpose - a swing you can measure by eye is a swing you " +
+                     "can aim.")]
+            [Min(0f)] public float releaseSpeed = 7f;
+
+            [Tooltip("Extra upward speed on letting go, in boxes per second, so a release near " +
+                     "the bottom still clears something.")]
+            [Min(0f)] public float releaseLift = 3f;
+
+            [Tooltip("Seconds before another vine can be caught. Stops one press re-grabbing the " +
+                     "vine you just left.")]
+            [Min(0f)] public float regrabDelay = 0.35f;
+
+            [Tooltip("Let go the moment the vine runs out under you, rather than hanging on at " +
+                     "the very end.")]
+            public bool letGoAtTheEnd = false;
+
+            [NonSerialized] Rigidbody2D body;
+            [NonSerialized] RigidbodyType2D restoreType;
+
+            [NonSerialized] Vector2 anchor;
+            [NonSerialized] float length;
+            [NonSerialized] float limit;
+            [NonSerialized] float depth;
+            [NonSerialized] float angle;
+            [NonSerialized] float lastLean;
+            [NonSerialized] float readyAt;
+
+            public bool IsRiding { get; private set; }
+
+            public bool CanGrab => body != null && Time.time >= readyAt;
+
+            public Vector2 Anchor => anchor;
+
+            public Vector2 HangPosition => PositionAt(angle, depth);
+
+            public float Depth => depth;
+
+            public int SwingDirection => lastLean < 0f ? -1 : 1;
+
+            public void Attach(Rigidbody2D wielder)
+            {
+                body = wielder;
+
+                if (body != null)
+                    restoreType = body.bodyType;
+
+                IsRiding = false;
+                readyAt = 0f;
+            }
+
+            public bool Grab(Vector2 anchorPoint, float vineLength, float maxSwingDegrees,
+                Vector2 from)
+            {
+                if (body == null || IsRiding || vineLength <= minDepth)
+                    return false;
+
+                anchor = anchorPoint;
+                length = vineLength;
+                limit = Mathf.Min(maxSwing, Mathf.Abs(maxSwingDegrees)) * Mathf.Deg2Rad;
+
+                Vector2 reach = from - anchor;
+
+                depth = Mathf.Clamp(reach.magnitude, minDepth, length);
+                angle = reach.sqrMagnitude < Epsilon
+                    ? 0f
+                    : Mathf.Clamp(Mathf.Atan2(reach.x, -reach.y), -limit, limit);
+
+                lastLean = 0f;
+
+                restoreType = body.bodyType;
+                body.bodyType = RigidbodyType2D.Kinematic;
+                body.linearVelocity = Vector2.zero;
+                body.MovePosition(HangPosition);
+
+                IsRiding = true;
+                return true;
+            }
+
+            public bool Ride(Vector2 lean, float fixedDeltaTime)
+            {
+                if (!IsRiding || body == null)
+                    return false;
+
+                if (Mathf.Abs(lean.x) > Epsilon)
+                    lastLean = lean.x;
+
+                float sweep = depth <= Epsilon ? 0f : swingSpeed / depth;
+
+                angle = Mathf.Clamp(angle + lean.x * sweep * fixedDeltaTime, -limit, limit);
+                depth = Mathf.Clamp(depth - lean.y * climbSpeed * fixedDeltaTime, minDepth, length);
+
+                body.MovePosition(HangPosition);
+
+                return !letGoAtTheEnd || depth < length - Epsilon || lean.y >= 0f;
+            }
+
+            public Vector2 Release()
+            {
+                if (body != null)
+                    body.bodyType = restoreType;
+
+                IsRiding = false;
+                readyAt = Time.time + regrabDelay;
+
+                Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * SwingDirection;
+
+                return along * releaseSpeed + Vector2.up * releaseLift;
+            }
+
+            public void Cancel()
+            {
+                if (body != null)
+                    body.bodyType = restoreType;
+
+                IsRiding = false;
+                readyAt = 0f;
+            }
+
+            public void Validate()
+            {
+                swingSpeed = Mathf.Max(0f, swingSpeed);
+                climbSpeed = Mathf.Max(0f, climbSpeed);
+                maxSwing = Mathf.Clamp(maxSwing, 0f, 89f);
+                minDepth = Mathf.Max(0.1f, minDepth);
+                releaseSpeed = Mathf.Max(0f, releaseSpeed);
+                releaseLift = Mathf.Max(0f, releaseLift);
+                regrabDelay = Mathf.Max(0f, regrabDelay);
+            }
+
+            public void DrawGizmos()
+            {
+                if (!IsRiding)
+                    return;
+
+                Gizmos.color = new Color(0.42f, 0.75f, 0.38f);
+                Gizmos.DrawLine(anchor, HangPosition);
+                Gizmos.DrawWireSphere(HangPosition, 0.2f);
+            }
+
+            Vector2 PositionAt(float lean, float distance) =>
+                anchor + new Vector2(Mathf.Sin(lean), -Mathf.Cos(lean)) * distance;
+        }
+
+        [Serializable]
         public class Spellbook
         {
+            public const int SlotCount = Progress.SlotCount;
+
+            public static readonly string[] SlotActions =
+                { "Spell1", "Spell2", "Spell3", "Spell4" };
+
             [Header("Spells")]
-            [Tooltip("The order of the spell bar. Leave empty and the wizard loads " +
+            [Tooltip("The catalogue every slot draws from. Leave empty and the wizard loads " +
                      "Assets/Resources/Spellbook.asset.")]
             public AbilityBook book;
 
@@ -1047,9 +1306,16 @@ namespace FallingWizard.Player
             [NonSerialized] Slot[] slots = Array.Empty<Slot>();
             [NonSerialized] PlayerLogic owner;
 
+            [NonSerialized] readonly Dictionary<Ability, object> scratch =
+                new Dictionary<Ability, object>();
+
             public event Action Changed;
 
+            public int Version { get; private set; }
+
             public IReadOnlyList<Slot> Slots => slots;
+
+            public AbilityBook Book => book;
 
             public void Attach(PlayerLogic player)
             {
@@ -1067,70 +1333,107 @@ namespace FallingWizard.Player
                     return;
                 }
 
-                slots = new Slot[book.spells.Count];
+                slots = new Slot[SlotCount];
 
-                for (int i = 0; i < slots.Length; i++)
+                for (int i = 0; i < SlotCount; i++)
+                    slots[i] = new Slot { Action = Controls.Player(SlotActions[i]) };
+
+                foreach (Ability spell in book.known)
+                    if (spell != null)
+                        Progress.Grant(spell.Key);
+
+                Reload();
+            }
+
+            public void Reload()
+            {
+                if (slots.Length == 0)
+                    return;
+
+                foreach (Ability spell in book.spells)
+                    if (spell != null && spell.locked && spell.fixedSlot >= 0 &&
+                        Progress.Owns(spell.Key) && Progress.SlotHolding(spell.Key) < 0)
+                        Progress.Equip(spell.fixedSlot, spell.Key);
+
+                for (int i = 0; i < SlotCount; i++)
                 {
-                    Ability ability = book.spells[i];
+                    Slot slot = slots[i];
+                    Ability next = book.Find(Progress.EquippedIn(i));
 
-                    slots[i] = new Slot
+                    if (next != null && !Progress.Owns(next.Key))
+                        next = null;
+
+                    if (slot.Ability == next)
+                        continue;
+
+                    if (slot.Ability != null)
                     {
-                        Ability = ability,
-                        Action = ability == null || ability.IsPassive
-                            ? null
-                            : Controls.Player(ability.actionName),
-                        Owned = ability != null &&
-                                (book.known.Contains(ability) || Progress.Knows(ability.Key)),
-                    };
+                        if (slot.IsLit)
+                            slot.Ability.OnEnded(owner);
 
-                    if (slots[i].Owned)
-                        ability.OnLearned(owner);
+                        slot.Ability.OnUnequipped(owner);
+                    }
+
+                    slot.Ability = next;
+                    slot.Buffer = 0f;
+                    slot.LitLeft = 0f;
+                    slot.CooldownLeft = 0f;
+                    slot.UsesLeft = next != null ? next.usesPerRun : 0;
+
+                    next?.OnEquipped(owner);
                 }
 
+                Version++;
                 Changed?.Invoke();
             }
 
-            public bool Learn(Ability ability)
+            public bool Equip(Ability spell, int slot)
             {
-                if (ability == null)
+                if ((uint)slot >= SlotCount)
                     return false;
 
-                Slot slot = Array.Find(slots, s => s.Ability == ability);
-
-                if (slot == null)
-                {
-                    Debug.LogWarning($"'{ability.name}' is not listed in the spellbook, so it has " +
-                                     "no place on the bar and cannot be learned.", ability);
-                    return false;
-                }
-
-                if (slot.Owned)
+                if (spell != null && (!Progress.Owns(spell.Key) || spell.locked))
                     return false;
 
-                slot.Owned = true;
-                Progress.Learn(ability.Key);
-                ability.OnLearned(owner);
-                Changed?.Invoke();
+                Ability leaving = book.Find(Progress.EquippedIn(slot));
+
+                if (leaving != null && leaving.locked)
+                    return false;
+
+                Progress.Equip(slot, spell != null ? spell.Key : string.Empty);
+                Reload();
                 return true;
             }
 
-            public void Extinguish(Ability ability)
+            public T StateOf<T>(Ability spell) where T : class, new()
             {
-                Slot slot = Array.Find(slots, s => s.Ability == ability);
+                if (spell == null)
+                    return null;
+
+                if (scratch.TryGetValue(spell, out object held) && held is T kept)
+                    return kept;
+
+                var fresh = new T();
+                scratch[spell] = fresh;
+                return fresh;
+            }
+
+            public void Extinguish(Ability spell)
+            {
+                Slot slot = Array.Find(slots, s => s.Ability == spell);
 
                 if (slot == null || !slot.IsLit)
                     return;
 
                 slot.LitLeft = 0f;
-                slot.CooldownLeft = ability.cooldown;
-                ability.OnEnded(owner);
+                slot.CooldownLeft = spell.cooldown;
+                spell.OnEnded(owner);
             }
 
-            public bool Knows(Ability ability)
-            {
-                Slot slot = Array.Find(slots, s => s.Ability == ability);
-                return slot != null && slot.Owned;
-            }
+            public bool Knows(Ability spell) => spell != null && Progress.Owns(spell.Key);
+
+            public bool IsEquipped(Ability spell) =>
+                spell != null && Array.Exists(slots, s => s.Ability == spell);
 
             public void Observe(float deltaTime)
             {
@@ -1138,7 +1441,7 @@ namespace FallingWizard.Player
 
                 foreach (Slot slot in slots)
                 {
-                    if (paused || !slot.Owned || slot.Action == null)
+                    if (paused || slot.Ability == null || slot.Action == null)
                     {
                         slot.Buffer = 0f;
                         continue;
@@ -1154,7 +1457,7 @@ namespace FallingWizard.Player
             {
                 foreach (Slot slot in slots)
                 {
-                    if (!slot.Owned || slot.Buffer <= 0f || !slot.IsReady || slot.Ability == null)
+                    if (slot.Ability == null || slot.Buffer <= 0f || !slot.IsReady)
                         continue;
 
                     if (!slot.Ability.CanCast(owner))
@@ -1166,6 +1469,9 @@ namespace FallingWizard.Player
                     slot.Buffer = 0f;
                     slot.LitLeft = slot.Ability.activeDuration;
 
+                    if (slot.Ability.usesPerRun > 0)
+                        slot.UsesLeft = Mathf.Max(0, slot.UsesLeft - 1);
+
                     if (slot.LitLeft <= 0f)
                         slot.CooldownLeft = slot.Ability.cooldown;
                 }
@@ -1176,11 +1482,11 @@ namespace FallingWizard.Player
                 stats.Reset();
 
                 foreach (Slot slot in slots)
-                    if (slot.Owned && slot.Ability != null)
+                    if (slot.Ability != null)
                         slot.Ability.ModifyStats(stats);
 
                 foreach (Slot slot in slots)
-                    if (slot.IsLit && slot.Ability != null)
+                    if (slot.IsLit)
                         slot.Ability.ModifyStatsWhileLit(stats);
             }
 
@@ -1191,7 +1497,7 @@ namespace FallingWizard.Player
                     if (slot.CooldownLeft > 0f)
                         slot.CooldownLeft = Mathf.Max(0f, slot.CooldownLeft - fixedDeltaTime);
 
-                    if (!slot.IsLit || slot.Ability == null)
+                    if (!slot.IsLit)
                         continue;
 
                     slot.Ability.OnLit(owner, fixedDeltaTime);
@@ -1210,16 +1516,17 @@ namespace FallingWizard.Player
                 }
             }
 
-            public void ResetForRespawn()
+            public void ResetForRun()
             {
                 foreach (Slot slot in slots)
                 {
-                    if (slot.IsLit && slot.Ability != null)
+                    if (slot.IsLit)
                         slot.Ability.OnEnded(owner);
 
                     slot.Buffer = 0f;
                     slot.LitLeft = 0f;
                     slot.CooldownLeft = 0f;
+                    slot.UsesLeft = slot.Ability != null ? slot.Ability.usesPerRun : 0;
                     slot.Ability?.OnRunReset(owner);
                 }
             }
@@ -1228,13 +1535,19 @@ namespace FallingWizard.Player
             {
                 public Ability Ability;
                 public InputAction Action;
-                public bool Owned;
                 public float Buffer;
                 public float LitLeft;
                 public float CooldownLeft;
+                public int UsesLeft;
+
+                public bool IsEmpty => Ability == null;
 
                 public bool IsLit => LitLeft > 0f;
-                public bool IsReady => Owned && CooldownLeft <= 0f;
+
+                public bool HasUsesLeft =>
+                    Ability == null || Ability.usesPerRun <= 0 || UsesLeft > 0;
+
+                public bool IsReady => Ability != null && CooldownLeft <= 0f && HasUsesLeft;
 
                 public float CooldownProgress =>
                     Ability == null || Ability.cooldown <= 0f ? 0f : CooldownLeft / Ability.cooldown;

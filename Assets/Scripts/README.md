@@ -92,8 +92,18 @@ A spell is a `ScriptableObject` asset. They are **stateless flyweights** — eve
 one asset, so all the mutable state lives in `PlayerLogic.Spellbook.Slot`. Adding a mutable field
 to an `Ability` would leak between play sessions and into the build.
 
-Passive or active is decided by one thing: **a spell with an empty `actionName` has no button**,
-shows no key on the HUD, and simply applies while it is owned.
+**A spell does not own a button. A slot does.** There are four of them — Q, E, R, F, bound by
+index to the `Player/Spell1..Spell4` actions — and what a press does depends entirely on what is
+sitting in that slot. A spell you own but did not bring does nothing at all. This is the point of
+the whole design: you cannot carry everything, so what you bring is a decision you make before you
+go down.
+
+The Staff is the exception, and only because it is the one spell every route assumes: `locked: 1`
+and `fixedSlot: 1` pin it to **E** for good, and the skill screen will not let it out. That leaves
+**Q, R and F** to fight over.
+
+A spell with `passive: 1` has no button. It still takes a slot, so bringing one costs you an
+active — otherwise a passive is free and there is no choice in it.
 
 | Hook | When |
 | --- | --- |
@@ -102,46 +112,135 @@ shows no key on the HUD, and simply applies while it is owned.
 | `CanCast` | Whether the button would do anything. Greys the HUD slot. |
 | `OnCast` | Do it. **Return false for "not yet"** — the press stays buffered and retries, which is what lets you press the staff button just before reaching a ledge. |
 | `OnLit` / `OnEnded` | During and at the end of the lit window. |
-| `OnLearned` / `OnRunReset` | Picked up; and died. |
+| `OnEquipped` / `OnUnequipped` | Put into a slot; taken out of one. Undo anything you spawned in `OnUnequipped`. |
+| `OnRunReset` | Died, or rested. Refills `usesPerRun` and is where anything left lying in the level gets cleaned up. |
 
-The four that exist: **Staff** (ability #1, the one you start with), **Glide**, **Higher Jump**
-(a `StatAbility`, passive), **Staff Bridge**.
+`usesPerRun` above 0 gives a spell a number of casts that only a rest brings back — for something
+a cooldown alone cannot hold back. `Slot.UsesLeft` counts them and the HUD prints it.
+
+A spell that needs to remember something between frames — a wall it grew, a rope it is holding —
+keeps it in `spellbook.StateOf<T>(this)`, never in a field on itself. The asset is shared; a field
+on it would survive a scene load and follow you into the build.
+
+The six that exist: **Staff** (yours from the start, welded to E), **Feather Fall**, **Higher
+Jump** (a `StatAbility`, passive), **Staff Bridge**, **Wall Growth**, **Vine Grasp**.
+
+Feather Fall is worth reading before writing another movement spell. Slowing a fall does **not**
+make it survivable: fall damage counts boxes fallen, and gliding down a killing drop only kills you
+later. `forgivesFall` is what makes the spell worth a slot — while it is lit it keeps resetting the
+height the fall is measured from, so catching a long drop late saves you and *how* late you dare
+leave it is the whole skill.
 
 ### Adding spell #5
 
 1. One `.cs` in `Player/Abilities/` — or none at all, if it is only stat changes: make another
    `StatAbility` asset instead.
-2. One asset via **Assets ▸ Create ▸ Falling Wizard ▸ Abilities ▸ …**.
-3. If it needs a button, one action + two bindings in `Assets/InputSystem_Actions`, and put the
-   action's name in the asset's `actionName`.
-4. Drag it into `Assets/Resources/Spellbook.asset` → `spells`.
+2. One asset via **Assets ▸ Create ▸ Falling Wizard ▸ Abilities ▸ …**, with a `cost` in Wisps.
+3. Drag it into `Assets/Resources/Spellbook.asset` → `spells`.
 
-HUD slot, button glyph, press buffering, cooldown, unlocking and persistence all come for free.
+**No input edits, no scene edits, no HUD edits.** The buttons already exist and belong to the
+slots; the skill screen lists whatever is in the catalogue. Press buffering, cooldown, per-run
+charges, buying, equipping and persistence all come for free.
+
+A spell that wants to drive the wizard itself takes over a `PlayerState` — see the vine below,
+which is the worked example.
 
 ### Order and unlocking
 
-`Assets/Resources/Spellbook.asset` is the single source of truth. `spells` is the bar, left to
-right — **drag to reorder, nothing in any scene depends on it**. `known` is what a new game starts
-with; the Staff belongs there.
+`Assets/Resources/Spellbook.asset` is the single source of truth. `spells` is the skill screen's
+list, top to bottom — **drag to reorder, nothing in any scene depends on it**. `known` is granted
+free on a new game; the Staff belongs there and nothing else has to.
 
-Everything else is learned from an `AbilityShrine`: one component, one field, and the icon and
-sparkle come from the spell itself. `Core.Progress` holds what is known, outside the wizard,
-because dying reloads the level and builds a brand new one.
+Everything else is **bought with Wisps** at the skill screen. An `AbilityShrine` is still there for
+the one spell you want every player to meet whether or not they went looking — it grants
+permanently and free, and drops the spell into the first empty slot so it can be tried at once.
+
+`Core.Progress` holds all of it, outside the wizard, because dying reloads the level and builds a
+brand new one.
+
+## Wisps, hearts and runs
+
+The risk. Three tiers, and which tier a thing lives in is the entire design:
+
+| Tier | What | Survives death | Survives turning back | On disk |
+| --- | --- | --- | --- | --- |
+| **Dive** | `CarriedWisps`, `carrying` | **no** | banked | no |
+| **Run** | `found`, the checkpoint | yes | **no** | no |
+| **Permanent** | `Wisps`, `spent`, `BonusHearts`, `ranks`, the loadout | yes | yes | yes |
+
+**Dying costs the Wisps you are carrying and nothing else.** You keep the hearts, keep the run, and
+pick up from the last rest site. The pickups you already took stay taken — `found` is run-scoped,
+not dive-scoped — so there is nothing to farm by dying on purpose.
+
+**Turning back at a rest site banks the Wisps** and ends the run.
+
+### A level is a finite thing
+
+This is the part that makes the game move. Three id sets, and the difference between them is the
+whole economy:
+
+| Set | Holds | Emptied by |
+| --- | --- | --- |
+| `found` | every pickup touched this run | turning back |
+| `carrying` | the Wisps riding on you right now | **dying**, or banking |
+| `spent` | pickups whose value you actually kept | never |
+
+`Pickup.Awake` destroys itself if the id is in `found` **or** `spent`, and each pickup says how
+long being taken lasts:
+
+| | `StaysTaken` | What it means |
+| --- | --- | --- |
+| `WispPickup` | `OnceBanked` | Rides in `carrying`. **Bank it and that Wisp is gone from the world forever.** Die first and it never reaches `spent`, so it is standing there again next run. |
+| `HeartPickup` | `ForGood` | Into `spent` the instant it is touched. One heart, once, permanently. |
+
+So a level does not refill. Bank Level 1's Wisps and Level 1 has no more Wisps to give — you go
+deeper for the next ones. What Level 1 *does* still have is the parts of it you could not reach,
+and the spells you bought with those Wisps are how you reach them. **The first level opens up as
+you go deeper**, rather than being farmed.
+
+Dying gives the Wisp back. That is deliberate: the punishment for dying is losing the descent, not
+losing the pickup, so a bad run is repeatable and a greedy one is not free.
+
+Max HP is permanent and one-way. `Health.maxHealth` is what a brand new save starts with and
+`Health.maxBonusHearts` caps what can ever be added on top of it, across the whole save. A
+`HeartPickup` that finds the bar already at that cap pays out in Wisps instead — never leave a
+player standing over dead loot — and is spent all the same, so there is no heart to farm.
+
+`WispPickup` and `HeartPickup` both derive from `Pickup`, which remembers itself by **where it
+stands** (quarter-box resolution, scene-qualified) unless you type an `id`. That survives renaming
+and re-parenting; moving one makes it a new pickup. Give two pickups sharing a spot explicit ids.
+
+`RestSite` is a `Checkpoint` that stops to ask. Reaching one marks the respawn point, then offers
+**rest and press on** (full hearts, charges back, cooldowns cleared) or **turn back** (bank, end
+the run, open the skill screen). Death offers the mirror image: back to the last rest, or give the
+run up and go spend what is banked.
+
+`ChoiceScreen` and `SkillScreen` build their own canvas at runtime out of `Ui`, which is the old
+editor `UiFactory` with the editor-only parts taken out — including
+`AssetDatabase.GetBuiltinExtraResource`, which does not exist in a player and silently produced
+untinted white boxes when it was tried. Both set `Screens.ModalOpen`, and `MenuScreen.Update`
+checks it, so the pause menu underneath does not eat Escape.
+
+## The vine
+
+The worked example of a spell owning the wizard's movement, which is what Bubble and Telekinesis
+will want too.
+
+`PlayerState.OnVine` is a fourth state beside `Normal`, `OnStaff` and `Ragdoll` — **appended, not
+inserted**, because the enum serialises as an int in scene YAML. `PlayerLogic.Vine` rides it: it
+takes the rigidbody kinematic on grab exactly the way the staff does, and `MovePosition`s the
+wizard around an anchor point each fixed step.
+
+The speed is **fixed and linear**, not angular — `swingSpeed / depth` — so a swing near the bottom
+of a long vine covers ground at the same rate as one near the top, and you can judge a jump by eye.
+Letting go leaves at a flat `releaseSpeed` along the tangent plus `releaseLift` upward. Nothing
+about it is momentum-based, because a swing you cannot predict is a swing you cannot aim.
+
+`VineAnchor` is the level content — the knot, a length, a swing limit and a grab range measured to
+the nearest point *on the vine* rather than to the knot. `VineAbility` catches the nearest one in
+range. Jump always lets go.
 
 ## Checkpoints
-
-`Progress` keeps **two** sets, and the difference between them is the whole system:
-
-| | |
-| --- | --- |
-| `learned` | what the wizard knows right now |
-| `banked` | what they knew when they last touched a `Checkpoint` |
-
-Reaching a checkpoint copies `learned` into `banked` and remembers the spot. **Dying copies
-`banked` back over `learned`** — so a spell picked up after the checkpoint is lost, and because
-`AbilityShrine` destroys itself on `Awake` only when `Progress.Knows` its spell, **the shrine that
-granted it is standing there again**. Losing a spell and being able to go and get it back fall out
-of the same two sets; neither is special-cased.
 
 `PlayerCharacter` moves to `Progress.CheckpointPoint` in `OnAwake`, **before** `logic.Attach` —
 attaching records the current height as the one to measure the next fall from, so moving afterwards
@@ -153,10 +252,13 @@ the spawn point clear of the floor, and the live checkpoint tints itself — rea
 `Progress` rather than remembered in a static, since the level reloads on every death and a static
 would be pointing at a destroyed object by the time it mattered.
 
-Each checkpoint also writes to `PlayerPrefs`. Nothing reads it back automatically, so pressing Play
-in the editor always starts you where you are rather than teleporting you to wherever you last got
-to. `Progress.HasSave` and `Progress.Load()` are there for a Continue button when you want one,
-and `Progress.ForgetAll()` wipes it.
+**The checkpoint is deliberately not saved to disk.** It belongs to the run, and a run is a
+sitting; quitting halfway down loses the descent — and with it the Wisps you were carrying, which
+means the pickups they came from are waiting for you again. Only the permanent tier is written, and unlike
+the old save it is also **read back** — `Progress.Load()` runs on `BeforeSceneLoad`, after
+`ResetOnPlay` clears the statics. The previous save was write-only: three keys were written on
+every checkpoint and nothing ever called `Load()`, so banked anything would have quietly evaporated
+on the next launch. `Progress.ForgetAll()` (and `Game.EraseProgress`) wipes it.
 
 ## Tripping
 
@@ -297,14 +399,20 @@ cooldown would sit frozen at full with nothing in the console.
 | `Player/Move` | WASD / arrows | left stick | `PlayerCharacter.Controls` |
 | `Player/Jump` | Space | south | `PlayerCharacter.Controls` |
 | `Player/Walk` | Left Shift | left trigger | `PlayerCharacter.Controls` |
-| `Player/Staff` | E | west | `Staff.asset` |
-| `Player/Glide` | Q | right shoulder | `Glide.asset` |
-| `Player/Bridge` | F | left shoulder | `Staff Bridge.asset` |
+| `Player/Spell1` | Q | left shoulder | slot 1 |
+| `Player/Spell2` | E | west | slot 2 — the Staff, always |
+| `Player/Spell3` | R | right shoulder | slot 3 |
+| `Player/Spell4` | F | north | slot 4 |
 | `UI/Pause` | Esc | start | `Core.Controls` |
 | `UI/Skip` | Space, Enter, click | south, start | `Core.Controls` |
 
-Looking down and climbing the staff read `Move`'s Y, so they need no action of their own. Spell
-buttons are looked up **by name from the asset**, so rebinding or adding one never touches code.
+Looking down, climbing the staff and swinging on a vine all read `Move`, so they need no action of
+their own.
+
+The four spell actions are bound to the four slots **by index**, once, in `Spellbook.Attach` — the
+action never changes, only what is sitting in front of it. That is why adding a spell needs no
+input work at all, and why the HUD's per-slot glyph cache is safe: a slot's button is fixed for the
+life of the scene even as its contents change.
 
 ## Setting a scene up by hand
 

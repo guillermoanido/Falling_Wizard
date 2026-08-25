@@ -1,4 +1,5 @@
 using FallingWizard.Core;
+using FallingWizard.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -22,6 +23,10 @@ namespace FallingWizard.Player
 
         [Tooltip("Seconds to wait before that restart, so the death can be seen.")]
         [Min(0f)] public float respawnDelay = 1.25f;
+
+        [Tooltip("Ask where to go instead of dropping straight back at the last rest: carry on " +
+                 "from there, or give the run up and go back to spend what is already banked.")]
+        public bool offerChoiceOnDeath = true;
 
         [Header("Behaviour")]
         public PlayerLogic logic = new PlayerLogic();
@@ -98,10 +103,31 @@ namespace FallingWizard.Player
 
         void OnDied()
         {
-            Progress.Rewind();
+            Progress.LoseCarried();
 
-            if (restartLevelOnDeath)
+            if (offerChoiceOnDeath)
+                Invoke(nameof(AskWhereToGo), respawnDelay);
+            else if (restartLevelOnDeath)
                 Invoke(nameof(RestartLevel), respawnDelay);
+        }
+
+        void AskWhereToGo()
+        {
+            ChoiceScreen screen = ChoiceScreen.Open(
+                "You fell", "The wisps you were carrying went out with you, and are back " +
+                             "where you found them.");
+
+            screen.Status($"{Progress.Wisps} wisps still banked");
+
+            if (Progress.HasCheckpoint)
+                screen.Choice("Take it from the last rest",
+                    () => screen.CloseThen(Game.ReloadCurrentScene));
+
+            screen.Choice("Give up the run and go back", () => screen.CloseThen(() =>
+            {
+                Progress.EndRun();
+                SkillScreen.Open(Game.LoadFirstLevel);
+            }));
         }
 
         void RestartLevel() => Game.ReloadCurrentScene();

@@ -23,7 +23,19 @@ namespace FallingWizard.Core
 
         public static void LoadMainMenu() => Load(MainMenuScene);
 
-        public static void StartNewGame()
+        public static void StartRun()
+        {
+            Progress.ClearCheckpoint();
+            LoadFirstLevel();
+        }
+
+        public static void RestartRun()
+        {
+            Progress.EndRun();
+            LoadFirstLevel();
+        }
+
+        public static void EraseProgress()
         {
             Progress.ForgetAll();
             LoadFirstLevel();

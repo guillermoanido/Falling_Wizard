@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using FallingWizard.Core;
 using FallingWizard.Player;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -17,22 +19,35 @@ namespace FallingWizard.UI
         [Tooltip("Spell slots are laid out under here, in spellbook order.")]
         public RectTransform spellBar;
 
-        [Tooltip("One spell slot, copied once per spell. Restyle this and they all follow.")]
+        [Tooltip("One spell slot, copied once per button. Restyle this and they all follow.")]
         public HudSlot slotTemplate;
+
+        [Tooltip("Optional. Reads out what is being risked and what is safe. Leave empty for no " +
+                 "counter.")]
+        public TextMeshProUGUI wispLabel;
 
         [Header("Hearts")]
         public Color fullHeart = new Color(0.85f, 0.22f, 0.30f);
         public Color emptyHeart = new Color(0.20f, 0.16f, 0.22f);
 
+        [Header("Wisps")]
+        [Tooltip("How the counter reads. {0} is what you are carrying and would lose, {1} is " +
+                 "what is already safely banked.")]
+        public string wispFormat = "{0} carried    {1} banked";
+
         [Header("Spells")]
-        [Tooltip("Show a dimmed slot for spells not learned yet, so the bar never shifts around.")]
-        public bool showLockedSlots = true;
+        [Tooltip("Draw a dimmed slot for an empty button, so the bar never shifts around and the " +
+                 "player can see there is room for more.")]
+        public bool showEmptySlots = true;
 
         [Tooltip("Print the button under each spell. It follows whichever device is in use, so it " +
                  "reads E on a keyboard and X on a pad without anyone touching a setting.")]
         public bool showButtons = true;
 
-        public Color lockedTint = new Color(1f, 1f, 1f, 0.18f);
+        [Tooltip("Optional art for a button with nothing in it. Empty draws a plain box.")]
+        public Sprite emptySlotIcon;
+
+        public Color emptyTint = new Color(1f, 1f, 1f, 0.18f);
         public Color readyTint = Color.white;
         public Color notReadyTint = new Color(1f, 1f, 1f, 0.45f);
 
@@ -44,6 +59,7 @@ namespace FallingWizard.UI
 
         PlayerCharacter bound;
         int builtHearts = -1;
+        int builtVersion = -1;
 
         void Awake()
         {
@@ -54,8 +70,9 @@ namespace FallingWizard.UI
                 slotTemplate.gameObject.SetActive(false);
 
             if (heartRow == null || heartTemplate == null || spellBar == null || slotTemplate == null)
-                Debug.LogError("The HUD is missing part of its rig. Run " +
-                               "Tools > Falling Wizard > Add HUD To Open Scene to build it.", this);
+                Debug.LogError("The HUD is missing part of its rig. It wants a heart row with one " +
+                               "heart image to copy, and a spell bar with one HudSlot to copy. " +
+                               "Both templates stay switched off.", this);
         }
 
         void OnEnable() => Core.Controls.SchemeChanged += RefreshButtons;
@@ -70,12 +87,7 @@ namespace FallingWizard.UI
             {
                 bound = wizard;
                 builtHearts = -1;
-
-                if (bound != null)
-                {
-                    BuildSpellBar();
-                    RefreshButtons();
-                }
+                builtVersion = -1;
             }
 
             bool showing = bound != null;
@@ -86,8 +98,23 @@ namespace FallingWizard.UI
             if (spellBar != null)
                 spellBar.gameObject.SetActive(showing);
 
+            if (wispLabel != null)
+            {
+                wispLabel.enabled = showing;
+
+                if (showing)
+                    wispLabel.text = string.Format(wispFormat, Progress.CarriedWisps, Progress.Wisps);
+            }
+
             if (!showing)
                 return;
+
+            if (builtVersion != bound.Logic.spellbook.Version)
+            {
+                builtVersion = bound.Logic.spellbook.Version;
+                BuildSpellBar();
+                RefreshButtons();
+            }
 
             RefreshHearts();
             RefreshSpells();
