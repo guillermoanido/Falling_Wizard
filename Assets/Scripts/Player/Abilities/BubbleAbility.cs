@@ -6,6 +6,10 @@ namespace FallingWizard.Player
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Bubble", fileName = "Bubble")]
     public class BubbleAbility : Ability
     {
+        // Far enough either side of the wizard's own sorting order that nothing the level puts
+        // between them can end up sandwiched inside the bubble.
+        const int DrawOffset = 20;
+
         [Header("Bubble")]
         [Tooltip("Spawned around the wizard and carried by them. Leave empty and a plain round " +
                  "shape is built from the sprite below.")]
@@ -114,7 +118,7 @@ namespace FallingWizard.Player
             var art = shell.AddComponent<SpriteRenderer>();
             art.sprite = bubbleArt != null ? bubbleArt : Placeholder.Box;
             art.color = tint;
-            art.sortingOrder = drawInFront ? 20 : -20;
+            art.sortingOrder = drawInFront ? DrawOffset : -DrawOffset;
 
             return shell;
         }

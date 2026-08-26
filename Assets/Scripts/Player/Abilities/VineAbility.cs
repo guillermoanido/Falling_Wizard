@@ -23,7 +23,7 @@ namespace FallingWizard.Player
         {
             if (wizard.IsOnVine)
             {
-                wizard.LetGoOfVine();
+                LetGo(wizard);
                 return true;
             }
 
@@ -32,19 +32,38 @@ namespace FallingWizard.Player
             if (vine == null)
                 return false;
 
-            return wizard.TryGrabVine(vine.Knot, vine.length, vine.maxSwing);
+            if (!wizard.TryGrabVine(vine.Knot, vine.length, vine.maxSwing))
+                return false;
+
+            // The knot has been glowing at the player since they came into range; this is the
+            // moment it pays off and the vine actually drops.
+            vine.CallDown();
+
+            wizard.spellbook.StateOf<Grip>(this).held = vine;
+            return true;
         }
 
-        public override void OnRunReset(PlayerLogic wizard)
+        public override void OnRunReset(PlayerLogic wizard) => LetGo(wizard);
+
+        public override void OnUnequipped(PlayerLogic wizard) => LetGo(wizard);
+
+        void LetGo(PlayerLogic wizard)
         {
+            Grip grip = wizard.spellbook.StateOf<Grip>(this);
+
+            if (grip.held != null)
+            {
+                grip.held.RollUp();
+                grip.held = null;
+            }
+
             if (wizard.IsOnVine)
                 wizard.LetGoOfVine();
         }
 
-        public override void OnUnequipped(PlayerLogic wizard)
+        public class Grip
         {
-            if (wizard.IsOnVine)
-                wizard.LetGoOfVine();
+            public VineAnchor held;
         }
     }
 }

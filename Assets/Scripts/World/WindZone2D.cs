@@ -7,6 +7,23 @@ namespace FallingWizard.World
 {
     public class WindZone2D : Hazard
     {
+        const float Epsilon = 0.0001f;
+
+        // Gizmo shape, all as fractions of the zone or of the push, so an arrow is readable at
+        // any size of zone and any strength of wind.
+        const float ArrowLengthPerBox = 0.25f;
+        const float ArrowLengthOfZone = 0.4f;
+        const float ArrowSpreadOfZone = 0.3f;
+        const float ArrowHeadLength = 0.4f;
+        const float ArrowHeadWidth = 0.25f;
+        const int ArrowRows = 1;
+
+        const float UnselectedGizmo = 0.5f;
+        const float SelectedGizmo = 1f;
+
+        static readonly Color ZoneColour = new Color(0.55f, 0.85f, 1f, 0.35f);
+        static readonly Color ArrowColour = new Color(0.55f, 0.85f, 1f, 0.9f);
+
         [Header("Wind")]
         [Tooltip("Push in boxes per second. (-6,0) is a hard leftward gale, (0,4) an updraught. " +
                  "Compare against a run of 6 to judge how hard it fights the player.")]
@@ -27,6 +44,11 @@ namespace FallingWizard.World
 
         [Tooltip("Colour of that rectangle. Keep the alpha low - it covers whatever is behind it.")]
         public Color hazeTint = new Color(0.62f, 0.82f, 0.95f, 0.14f);
+
+        [Tooltip("Resize the haze to match the collider whenever the zone changes, so stretching " +
+                 "the zone is the only thing you have to do. Turn it OFF the moment you want to " +
+                 "size or place that art yourself - it will stop touching your transform.")]
+        public bool fitHazeToZone = true;
 
         [Header("Streaks")]
         [Tooltip("Drifting streaks, so the wind is something you can see moving rather than a " +
@@ -111,7 +133,7 @@ namespace FallingWizard.World
 
             Vector2 drift = Drift;
 
-            if (drift.sqrMagnitude < 0.0001f)
+            if (drift.sqrMagnitude < Epsilon)
                 return;
 
             Bounds zone = area.bounds;
@@ -148,7 +170,7 @@ namespace FallingWizard.World
             float here = sideways ? point.x : point.y;
 
             float span = high - low;
-            float along = span <= 0.0001f ? 0.5f : Mathf.Clamp01((here - low) / span);
+            float along = span <= Epsilon ? 0.5f : Mathf.Clamp01((here - low) / span);
 
             Color tint = streakTint;
             tint.a *= Mathf.Sin(along * Mathf.PI);
@@ -176,7 +198,10 @@ namespace FallingWizard.World
 
             Vector2 tall = haze.sprite.bounds.size;
 
-            if (tall.x <= 0.0001f || tall.y <= 0.0001f)
+            if (tall.x <= Epsilon || tall.y <= Epsilon)
+                return;
+
+            if (!fitHazeToZone)
                 return;
 
             haze.transform.localPosition = shape.offset;
@@ -220,7 +245,7 @@ namespace FallingWizard.World
 
                 Vector2 unit = art.sprite.bounds.size;
 
-                if (unit.x > 0.0001f && unit.y > 0.0001f)
+                if (unit.x > Epsilon && unit.y > Epsilon)
                     streak.transform.localScale =
                         new Vector3(streakSize.x / unit.x, streakSize.y / unit.y, 1f);
 
@@ -238,22 +263,21 @@ namespace FallingWizard.World
         void OnDrawGizmos()
         {
             if (alwaysShowArrows)
-                DrawArrows(0.5f);
+                DrawArrows(UnselectedGizmo);
         }
 
-        void OnDrawGizmosSelected() => DrawArrows(1f);
+        void OnDrawGizmosSelected() => DrawArrows(SelectedGizmo);
 
         void DrawArrows(float strength)
         {
             var shape = GetComponent<BoxCollider2D>();
 
-            if (shape == null || push.sqrMagnitude < 0.0001f)
+            if (shape == null || push.sqrMagnitude < Epsilon)
                 return;
 
             Bounds zone = shape.bounds;
 
-            var ink = new Color(0.55f, 0.85f, 1f, 0.35f * strength);
-            Gizmos.color = ink;
+            Gizmos.color = Faded(ZoneColour, strength);
             Gizmos.DrawWireCube(zone.center, zone.size);
 
             Vector2 way = push.normalized;
@@ -261,20 +285,32 @@ namespace FallingWizard.World
 
             // Arrow length reads the strength: a run is 6 boxes a second, so a gale you cannot
             // walk out of draws longer than the wizard is tall.
-            float length = Mathf.Min(push.magnitude * 0.25f, Mathf.Min(zone.size.x, zone.size.y) * 0.4f);
-            float spread = Mathf.Min(zone.size.x, zone.size.y) * 0.3f;
+            float narrow = Mathf.Min(zone.size.x, zone.size.y);
 
-            Gizmos.color = new Color(0.55f, 0.85f, 1f, 0.9f * strength);
+            float length = Mathf.Min(push.magnitude * ArrowLengthPerBox,
+                                     narrow * ArrowLengthOfZone);
+            float spread = narrow * ArrowSpreadOfZone;
 
-            for (int row = -1; row <= 1; row++)
+            Gizmos.color = Faded(ArrowColour, strength);
+
+            for (int row = -ArrowRows; row <= ArrowRows; row++)
             {
                 Vector2 middle = (Vector2)zone.center + across * (spread * row);
                 Vector2 tip = middle + way * length;
 
                 Gizmos.DrawLine(middle - way * length, tip);
-                Gizmos.DrawLine(tip, tip - way * (length * 0.4f) + across * (length * 0.25f));
-                Gizmos.DrawLine(tip, tip - way * (length * 0.4f) - across * (length * 0.25f));
+                Vector2 barb = tip - way * (length * ArrowHeadLength);
+                Vector2 flare = across * (length * ArrowHeadWidth);
+
+                Gizmos.DrawLine(tip, barb + flare);
+                Gizmos.DrawLine(tip, barb - flare);
             }
+        }
+
+        static Color Faded(Color colour, float strength)
+        {
+            colour.a *= strength;
+            return colour;
         }
     }
 }

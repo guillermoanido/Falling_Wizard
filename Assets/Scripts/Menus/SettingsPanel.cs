@@ -10,6 +10,9 @@ namespace FallingWizard.Menus
 {
     public class SettingsPanel : MonoBehaviour
     {
+        // The slider runs 0 to 1; players read volume as a percentage.
+        const float AsPercent = 100f;
+
         [SerializeField] TMP_Dropdown resolutionDropdown;
         [SerializeField] Toggle fullscreenToggle;
         [SerializeField] Slider volumeSlider;
@@ -71,7 +74,7 @@ namespace FallingWizard.Menus
         void UpdateVolumeLabel(float value)
         {
             if (volumeValueLabel != null)
-                volumeValueLabel.text = $"{Mathf.RoundToInt(value * 100f)}%";
+                volumeValueLabel.text = $"{Mathf.RoundToInt(value * AsPercent)}%";
         }
     }
 }

@@ -163,6 +163,13 @@ namespace FallingWizard.Player
             [NonSerialized] float dropTimer;
             [NonSerialized] int facing = 1;
 
+            // Planted flat, the pole turns a quarter turn - which way depends on which side
+            // of the wizard it is being laid out on.
+            const float QuarterTurn = 90f;
+
+            const float MinSlideSpeed = 0.01f;
+            const float TipMarkerRadius = 0.12f;
+
             public bool IsPlanted { get; private set; }
             public StaffMode Mode { get; private set; } = StaffMode.Ladder;
 
@@ -306,7 +313,7 @@ namespace FallingWizard.Player
 
             public void Validate()
             {
-                slideSpeed = Mathf.Max(0.01f, slideSpeed);
+                slideSpeed = Mathf.Max(MinSlideSpeed, slideSpeed);
                 swingDepth = Mathf.Max(0f, swingDepth);
                 dropHoldTime = Mathf.Max(0f, dropHoldTime);
             }
@@ -320,7 +327,7 @@ namespace FallingWizard.Player
                 Gizmos.DrawLine(PositionAt(0f), PositionAt(reach));
 
                 Gizmos.color = Color.red;
-                Gizmos.DrawWireSphere(PositionAt(reach), 0.12f);
+                Gizmos.DrawWireSphere(PositionAt(reach), TipMarkerRadius);
             }
 
             public static Vector2 LocalSpan(Collider2D collider2d)
@@ -419,7 +426,7 @@ namespace FallingWizard.Player
                 if (pole.parent != null)
                     pole.SetParent(null, true);
 
-                plantedRotation = Quaternion.Euler(0f, 0f, facing > 0 ? -90f : 90f);
+                plantedRotation = Quaternion.Euler(0f, 0f, facing > 0 ? -QuarterTurn : QuarterTurn);
 
                 var carried = new Vector2(
                     facing * localCentre.y * scaleY,

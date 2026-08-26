@@ -59,6 +59,12 @@ namespace FallingWizard.UI
         [Tooltip("Wipe drawn over a spell while it is running or cooling down.")]
         public Color chargeTint = new Color(0.25f, 0.65f, 1f, 0.55f);
 
+        // The corner counter, in reference-resolution pixels, when no label was wired by hand.
+        static readonly Vector2 WispCorner = new Vector2(-24f, -20f);
+        static readonly Vector2 WispSize = new Vector2(360f, 40f);
+        const float WispFontSize = 26f;
+        static readonly Color WispColour = new Color(0.55f, 0.85f, 1f);
+
         readonly List<Image> hearts = new List<Image>();
         readonly List<HudSlot> slots = new List<HudSlot>();
 
@@ -139,13 +145,13 @@ namespace FallingWizard.UI
             go.transform.SetParent(canvas.transform, false);
 
             var rect = (RectTransform)go.transform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
-            rect.anchoredPosition = new Vector2(-24f, -20f);
-            rect.sizeDelta = new Vector2(360f, 40f);
+            rect.anchorMin = rect.anchorMax = rect.pivot = Vector2.one;
+            rect.anchoredPosition = WispCorner;
+            rect.sizeDelta = WispSize;
 
             var label = go.AddComponent<TextMeshProUGUI>();
-            label.fontSize = 26f;
-            label.color = new Color(0.55f, 0.85f, 1f);
+            label.fontSize = WispFontSize;
+            label.color = WispColour;
             label.alignment = TMPro.TextAlignmentOptions.Right;
             label.raycastTarget = false;
 

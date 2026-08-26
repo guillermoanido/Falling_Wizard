@@ -21,7 +21,21 @@ namespace FallingWizard.UI
         public static readonly Color Heart = new Color(0.88f, 0.30f, 0.38f);
         public static readonly Color Warning = new Color(0.95f, 0.72f, 0.36f);
 
+        // Everything below is in reference-resolution pixels, and the scaler maps them onto
+        // whatever the player's screen actually is.
         static readonly Vector2 ReferenceResolution = new Vector2(1920f, 1080f);
+
+        // Split the difference between matching width and matching height, so an ultrawide and a
+        // tall window both keep the panels on screen.
+        const float ScalerBalance = 0.5f;
+
+        public const float SheetPadding = 36f;
+        public const float SheetSpacing = 16f;
+        public const float ColumnSpacing = 18f;
+        public const float RowSpacing = 16f;
+        public const float ButtonFontSize = 30f;
+
+        static readonly Vector2 Centre = new Vector2(0.5f, 0.5f);
 
 
         public static Canvas CreateCanvas(string name, int sortingOrder)
@@ -36,7 +50,7 @@ namespace FallingWizard.UI
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = ReferenceResolution;
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0.5f;
+            scaler.matchWidthOrHeight = ScalerBalance;
 
             EnsureEventSystem();
 
@@ -64,7 +78,7 @@ namespace FallingWizard.UI
         }
 
         public static RectTransform Sheet(string name, Transform parent, Color colour,
-            float width, float padding = 36f, float spacing = 16f)
+            float width, float padding = SheetPadding, float spacing = SheetSpacing)
         {
             var go = new GameObject(name, typeof(Image), typeof(VerticalLayoutGroup),
                 typeof(ContentSizeFitter));
@@ -73,7 +87,7 @@ namespace FallingWizard.UI
             go.GetComponent<Image>().color = colour;
 
             var rect = (RectTransform)go.transform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchorMin = rect.anchorMax = rect.pivot = Centre;
             rect.anchoredPosition = Vector2.zero;
             rect.sizeDelta = new Vector2(width, 0f);
 
@@ -94,7 +108,7 @@ namespace FallingWizard.UI
         }
 
         public static RectTransform Column(string name, Transform parent, float width,
-            float spacing = 18f, TextAnchor align = TextAnchor.UpperCenter)
+            float spacing = ColumnSpacing, TextAnchor align = TextAnchor.UpperCenter)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(VerticalLayoutGroup));
             Attach(go, parent);
@@ -114,7 +128,7 @@ namespace FallingWizard.UI
         }
 
         public static RectTransform Row(string name, Transform parent, float width, float height,
-            float spacing = 16f, TextAnchor align = TextAnchor.MiddleLeft)
+            float spacing = RowSpacing, TextAnchor align = TextAnchor.MiddleLeft)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(HorizontalLayoutGroup));
             Attach(go, parent);
@@ -176,7 +190,7 @@ namespace FallingWizard.UI
         }
 
         public static Button CreateButton(string text, Transform parent, float width, float height,
-            float fontSize = 30f)
+            float fontSize = ButtonFontSize)
         {
             GameObject go = TMP_DefaultControls.CreateButton(Plain);
             go.name = text + " Button";

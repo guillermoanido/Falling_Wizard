@@ -144,6 +144,14 @@ later. `forgivesFall` is what makes the spell worth a slot — while it is lit i
 height the fall is measured from, so catching a long drop late saves you and *how* late you dare
 leave it is the whole skill.
 
+That same forgiveness is what makes it **one cast per fall** (`oncePerFall`). A cooldown alone does
+not hold it: with a one second float and half a second to wait, you can re-cast in mid-air and each
+cast wipes the drop again, so chaining it makes every fall survivable and fall damage stops
+existing. The rule is enforced against `Movement.Airtime`, a counter that ticks up every time the
+wizard leaves the ground. The spell remembers the number it last fired on and refuses to fire on
+that number twice — which needs no per-frame hook, and cannot drift out of step the way a flag
+cleared somewhere else would. Touch the ground and the number moves on.
+
 **Bubble is the opposite trade, on purpose.** It does not forgive the drop — pop it high up and you
 are still high up. What it buys is that nothing can touch you (`Modifiers.Shielded`) and that wind
 pushes you three and a half times as hard (`Modifiers.WindMultiplier`). A gale you would normally
@@ -270,18 +278,81 @@ it can ever be squeezed to nothing again.
 The worked example of a spell owning the wizard's movement.
 
 `PlayerState.OnVine` is a fourth state beside `Normal`, `OnStaff` and `Ragdoll` — **appended, not
-inserted**, because the enum serialises as an int in scene YAML. `PlayerLogic.Vine` rides it: it
-takes the rigidbody kinematic on grab exactly the way the staff does, and `MovePosition`s the
-wizard around an anchor point each fixed step.
+inserted**, because the enum serialises as an int in scene YAML.
 
-The speed is **fixed and linear**, not angular — `swingSpeed / depth` — so a swing near the bottom
-of a long vine covers ground at the same rate as one near the top, and you can judge a jump by eye.
-Letting go leaves at a flat `releaseSpeed` along the tangent plus `releaseLift` upward. Nothing
-about it is momentum-based, because a swing you cannot predict is a swing you cannot aim.
+**The body stays Dynamic and is steered by velocity.** This is the one thing not to change. Going
+kinematic and teleporting with `MovePosition` — which is exactly what the staff does — swings the
+wizard *straight through the level*, because a kinematic body is not stopped by static geometry.
+The staff gets away with it by standing still against a ledge it has already checked; a swing
+covers ground, and the ground has walls in it.
 
-`VineAnchor` is the level content — the knot, a length, a swing limit and a grab range measured to
-the nearest point *on the vine* rather than to the knot. `VineAbility` catches the nearest one in
-range. Jump always lets go.
+So each step works out where the swing wants the wizard, and asks for the velocity that gets them
+there: `(wanted - position) / dt`. Physics then does what physics does, and a wall stops them. The
+next step reads their **actual** position back and re-derives the angle and the length from it, so
+the arc always agrees with where the wizard really is rather than grinding along the inside of a
+wall insisting otherwise. Ending a step more than `Blocked` boxes from where the last one asked
+means they hit something, and the swing is killed. That check is against **the step's own target**,
+not against the arc recomputed from their position — a rope pulling taut on the first step of a
+grab is not the same thing as hitting a wall, and confusing the two throws away the run they
+arrived with.
+
+**It is a real pendulum**, which is one line of the fixed tick:
+
+```
+spin += (-(gravity / rope) * sin(angle) + lean.x * (swingPush / rope)) * dt
+spin *= 1 - damping * dt
+```
+
+Gravity always pulls the wizard back under the knot and pulls harder the further out they are, so
+**letting go of the stick settles them at the bottom on its own**. Left and right are a *push*, not
+a speed: you pump a swing the way you would on a real one, and how much you get out depends on when
+you push. `damping` is what stops it swinging forever.
+
+Catching a vine keeps whatever you were already doing — the run you arrived with is projected onto
+the arc — and letting go leaves at the speed you were genuinely travelling, `spin * depth`, capped
+by `maxReleaseSpeed` so a long vine swung hard cannot fire the wizard across the level. The arc has
+been showing the player that speed for the last second or two, which is what makes it aimable.
+
+Hitting `maxSwing` only kills the swing if it is still trying to go *further* out. A swing that
+reaches the limit already on its way back keeps its speed, or every big swing stalls at the top.
+
+### The knot is the whole mechanic
+
+A vine hangs invisible. What the level shows is a **knot** tied to the ceiling, and it pulses
+between `dormant` and `glow` whenever the wizard is close enough to reach it. Press the button and
+`CallDown()` unrolls the vine over `unrollTime` and you are already swinging on it.
+
+That means a vine costs the player nothing to walk past and everything to notice — and it is why
+`glow` matters more than any number here. If a player never learns what a glowing knot means, no
+vine in the game ever gets used.
+
+`staysDown` (on by default) leaves a called vine hanging for the rest of the run: finding it was
+the achievement, not re-finding it. Turn it off and it rolls back up — and it rolls itself up by
+**asking** whether the wizard is still on it rather than waiting to be told, because letting go
+with Jump never passes through the spell at all.
+
+Reach is measured to the nearest point *on the vine* rather than to the knot, so a long vine can be
+caught anywhere down its length. Both the knot and the rope want a `sortingOrder` above the
+tilemap — at −1 a vine hangs behind the wall it is tied to and simply cannot be seen.
+
+The drawn rope leans with the swing: it is turned to the angle the wizard is actually hanging at,
+rather than standing bolt upright while they arc away from underneath it.
+
+## Components do not resize your art
+
+A component that builds a stand-in when you have given it nothing may size that stand-in however it
+likes. **A component that finds art you put there must not touch its transform.** `VineAnchor`
+tracks whether it built its own knot and rope and only fits the ones it made; `WindZone2D` has
+`fitHazeToZone` to switch its own fitting off.
+
+This is not a style point. `OnValidate` runs on every inspector change, so a component that writes
+`localScale` there will snap a prop back to its own idea of the right size the instant you finish
+dragging the handle — and it will do it every time, which reads as the editor being broken rather
+than as a component being helpful.
+
+The one exception is a size that *is* the mechanic: the vine's length, which is the rope unrolling,
+and the wall's height, which is it growing. Even then only that one axis is driven — the vine keeps
+whatever width it was authored at.
 
 ## Testing a spell without earning it
 

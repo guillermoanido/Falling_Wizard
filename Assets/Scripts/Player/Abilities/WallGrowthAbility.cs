@@ -43,6 +43,18 @@ namespace FallingWizard.Player
         [Tooltip("Sorting order of the built block. Above the tilemap, below the wizard.")]
         public int sortingOrder = -1;
 
+        // The floor hunt starts half a box above the feet so a wall can be rooted in the step
+        // the wizard is already standing on, not only in the one below them.
+        const float RayLift = 0.5f;
+
+        // Half a box up with unit size, so scaling the root grows the wall upward off its own
+        // footing instead of stretching it around its middle.
+        const float BodyRise = 0.5f;
+
+        // A wall of literally no height would have a degenerate collider, which Unity complains
+        // about every frame it exists.
+        const float MinGrown = 0.01f;
+
         static readonly RaycastHit2D[] Footings = new RaycastHit2D[1];
 
         public override bool CanCast(PlayerLogic wizard) =>
@@ -99,7 +111,7 @@ namespace FallingWizard.Player
             PlayerLogic.Movement walk = wizard.movement;
 
             float x = walk.Position.x + walk.Facing * distanceAhead;
-            float top = walk.FeetY + 0.5f;
+            float top = walk.FeetY + RayLift;
 
             footing = new Vector2(x, walk.FeetY);
 
@@ -111,7 +123,7 @@ namespace FallingWizard.Player
             };
 
             int found = Physics2D.Raycast(new Vector2(x, top), Vector2.down, filter, Footings,
-                rootDepth + 0.5f);
+                rootDepth + RayLift);
 
             if (found <= 0)
                 return false;
@@ -135,7 +147,7 @@ namespace FallingWizard.Player
 
             var body = new GameObject("Body");
             body.transform.SetParent(root.transform, false);
-            body.transform.localPosition = new Vector3(0f, 0.5f, 0f);
+            body.transform.localPosition = new Vector3(0f, BodyRise, 0f);
             body.layer = root.layer;
 
             var art = body.AddComponent<SpriteRenderer>();
@@ -157,7 +169,7 @@ namespace FallingWizard.Player
             if (growth.body == null)
                 growth.body = growth.wall.transform;
 
-            growth.body.localScale = new Vector3(size.x, Mathf.Max(0.01f, size.y * grown), 1f);
+            growth.body.localScale = new Vector3(size.x, Mathf.Max(MinGrown, size.y * grown), 1f);
         }
 
         int Layer()

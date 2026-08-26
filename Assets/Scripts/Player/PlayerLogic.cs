@@ -232,7 +232,8 @@ namespace FallingWizard.Player
             if (!CanGrabVine)
                 return false;
 
-            if (!vine.Grab(anchor, length, maxSwingDegrees, movement.Position))
+            if (!vine.Grab(anchor, length, maxSwingDegrees, movement.Position,
+                    movement.Velocity))
                 return false;
 
             State = PlayerState.OnVine;
@@ -475,6 +476,14 @@ namespace FallingWizard.Player
         {
             const float MinGravityScale = 0.01f;
 
+            // Unity has a fixed 32 layers, and the ground mask is checked against all of them
+            // when the wizard reports that it cannot find any floor.
+            const int LayerCount = 32;
+
+            // A ground probe thinner than this in either direction misses the floor between
+            // physics steps, so Validate refuses to let one be typed in.
+            static readonly Vector2 MinGroundCheck = new Vector2(0.05f, 0.01f);
+
             const float MinTravelSpeed = 0.1f;
 
             const float GroundlessWarning = 3f;
@@ -585,6 +594,12 @@ namespace FallingWizard.Player
             [NonSerialized] float lockout;
 
             public bool IsGrounded { get; private set; }
+
+            // Counts up every time the wizard leaves the ground. A spell that should only fire
+            // once per fall remembers the number it last fired on and compares - which needs no
+            // per-frame hook, and cannot drift out of step the way a flag being cleared somewhere
+            // else would.
+            public int Airtime { get; private set; }
             public bool IsAtEdge { get; private set; }
 
             [NonSerialized] float approachVelocityX;
@@ -601,6 +616,7 @@ namespace FallingWizard.Player
             public Transform Rig => body == null ? null : body.transform;
             public float FeetY => Position.y + groundCheckOffset.y;
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
+            public Vector2 Velocity => body == null ? Vector2.zero : body.linearVelocity;
             public float VerticalSpeed => body == null ? 0f : body.linearVelocityY;
 
             public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer)
@@ -677,6 +693,10 @@ namespace FallingWizard.Player
             public void BeginFallFrom(float height)
             {
                 highestPoint = height;
+
+                if (IsGrounded)
+                    Airtime++;
+
                 IsGrounded = false;
                 coyoteTimer = 0f;
                 rising = false;
@@ -767,7 +787,7 @@ namespace FallingWizard.Player
             {
                 runSpeed = Mathf.Max(0f, runSpeed);
                 walkSpeed = Mathf.Clamp(walkSpeed, 0f, runSpeed);
-                groundCheckSize = Vector2.Max(groundCheckSize, new Vector2(0.05f, 0.01f));
+                groundCheckSize = Vector2.Max(groundCheckSize, MinGroundCheck);
 
                 int playerLayer = LayerMask.NameToLayer("Player");
                 if (playerLayer >= 0 && (groundLayers.value & (1 << playerLayer)) != 0)
@@ -824,6 +844,9 @@ namespace FallingWizard.Player
                 }
                 else
                 {
+                    if (wasGrounded)
+                        Airtime++;
+
                     coyoteTimer -= fixedDeltaTime;
                     highestPoint = Mathf.Max(highestPoint, body.position.y);
                 }
@@ -884,7 +907,7 @@ namespace FallingWizard.Player
             {
                 var listed = new List<string>();
 
-                for (int layer = 0; layer < 32; layer++)
+                for (int layer = 0; layer < LayerCount; layer++)
                 {
                     if ((mask.value & (1 << layer)) == 0)
                         continue;
@@ -975,6 +998,11 @@ namespace FallingWizard.Player
         [Serializable]
         public class Ragdoll
         {
+            // A stand-up of zero seconds divides by nothing, and a tumble whose ceiling equals
+            // its floor leaves no room to recover in.
+            const float MinStandUp = 0.01f;
+            const float MinTumbleSpread = 0.1f;
+
             [Header("Tumble")]
             [Tooltip("How fast the wizard spins as they go over, in degrees per second. They " +
                      "always roll the way they were going.")]
@@ -1098,8 +1126,8 @@ namespace FallingWizard.Player
 
             public void Validate()
             {
-                standUpDuration = Mathf.Max(0.01f, standUpDuration);
-                maximumDuration = Mathf.Max(maximumDuration, minimumDuration + 0.1f);
+                standUpDuration = Mathf.Max(MinStandUp, standUpDuration);
+                maximumDuration = Mathf.Max(maximumDuration, minimumDuration + MinTumbleSpread);
 
                 if (slideFriction <= 0f && recoverSpeed < minimumLaunch)
                     Debug.LogWarning("Ragdoll.slideFriction is 0 and recoverSpeed is below " +
@@ -1111,7 +1139,7 @@ namespace FallingWizard.Player
             {
                 standUpTimer += fixedDeltaTime;
 
-                float t = Mathf.Clamp01(standUpTimer / Mathf.Max(0.01f, standUpDuration));
+                float t = Mathf.Clamp01(standUpTimer / Mathf.Max(MinStandUp, standUpDuration));
                 angle = Mathf.LerpAngle(standUpFrom, 0f, t);
                 Show();
 
@@ -1134,32 +1162,58 @@ namespace FallingWizard.Player
         {
             const float Epsilon = 0.0001f;
 
-            [Header("Riding")]
-            [Tooltip("Speed left and right along the swing, in boxes per second. It is the same " +
-                     "however high up the vine you are, so a swing always takes as long as it " +
-                     "looks like it should.")]
-            [Min(0f)] public float swingSpeed = 4f;
+            // Past this the rope has swung further than a rope plausibly can, and the maths for
+            // a vertical vine stops behaving.
+            const float MaxLean = 89f;
 
+            // Climbing right up to the knot would put the wizard inside whatever the vine hangs
+            // from, so there is always a little rope left.
+            const float MinReach = 0.1f;
+
+            static readonly Color RopeColour = new Color(0.42f, 0.75f, 0.38f);
+            const float GripRadius = 0.2f;
+
+            [Header("Swinging")]
+            [Tooltip("How hard the wizard hangs, against Unity's own gravity. Match it to the " +
+                     "Rigidbody2D's gravity scale and a swing takes as long as a fall of the " +
+                     "same size looks like it should. Lower is a slow, floaty rope.")]
+            [Min(0f)] public float weight = 3f;
+
+            [Tooltip("How hard left and right kick the swing, in boxes per second squared. This " +
+                     "is a push, not a speed: you pump a swing with it the way you would on a " +
+                     "real one, and how much you get out depends on when you push.")]
+            [Min(0f)] public float swingPush = 26f;
+
+            [Tooltip("How quickly a swing dies down with nobody steering it, per second. 0 swings " +
+                     "forever. High numbers hang almost still. This is what settles the wizard " +
+                     "back under the knot when they let the stick go.")]
+            [Range(0f, 8f)] public float damping = 1.1f;
+
+            [Tooltip("How far the vine will lean either side of straight down, in degrees. It " +
+                     "stops dead at the limit rather than bouncing off it.")]
+            [Range(0f, 89f)] public float maxSwing = 70f;
+
+            [Header("Climbing")]
             [Tooltip("Speed climbing up and down the vine, in boxes per second.")]
             [Min(0f)] public float climbSpeed = 4f;
-
-            [Tooltip("How far the vine will lean either side of straight down, in degrees. " +
-                     "Past about 80 it starts to look like a pole rather than a rope.")]
-            [Range(0f, 89f)] public float maxSwing = 65f;
 
             [Tooltip("Closest you can climb to where the vine is tied, in boxes. Keeps the wizard " +
                      "out of the ceiling.")]
             [Min(0.1f)] public float minDepth = 0.75f;
 
             [Header("Letting Go")]
-            [Tooltip("Speed you leave at, in boxes per second, along whichever way you were " +
-                     "swinging. Fixed on purpose - a swing you can measure by eye is a swing you " +
-                     "can aim.")]
-            [Min(0f)] public float releaseSpeed = 7f;
+            [Tooltip("How much of the swing you actually leave with. 1 is exactly the speed you " +
+                     "were travelling, which is what the arc has been showing you all along - " +
+                     "above that and a release throws further than it looked like it would.")]
+            [Min(0f)] public float releaseBoost = 1f;
 
             [Tooltip("Extra upward speed on letting go, in boxes per second, so a release near " +
-                     "the bottom still clears something.")]
+                     "the bottom of a swing still clears something.")]
             [Min(0f)] public float releaseLift = 3f;
+
+            [Tooltip("Fastest you can be flung off, in boxes per second. A long vine swung hard " +
+                     "would otherwise fire the wizard across the level.")]
+            [Min(0f)] public float maxReleaseSpeed = 14f;
 
             [Tooltip("Seconds before another vine can be caught. Stops one press re-grabbing the " +
                      "vine you just left.")]
@@ -1169,16 +1223,28 @@ namespace FallingWizard.Player
                      "the very end.")]
             public bool letGoAtTheEnd = false;
 
+            // Fastest the rope is ever allowed to drag the wizard, in boxes per second. A
+            // guard against a single mad frame, not a tuning knob - the swing itself is capped
+            // by maxReleaseSpeed long before this.
+            const float MaxHaul = 60f;
+
+            // How far the wizard can end a step from where the swing wanted them, in boxes,
+            // before it counts as having hit something.
+            const float Blocked = 0.25f;
+
             [NonSerialized] Rigidbody2D body;
-            [NonSerialized] RigidbodyType2D restoreType;
+            [NonSerialized] float restoreGravity;
 
             [NonSerialized] Vector2 anchor;
             [NonSerialized] float length;
             [NonSerialized] float limit;
             [NonSerialized] float depth;
             [NonSerialized] float angle;
-            [NonSerialized] float lastLean;
+            [NonSerialized] float spin;
             [NonSerialized] float readyAt;
+
+            [NonSerialized] Vector2 wanted;
+            [NonSerialized] bool steered;
 
             public bool IsRiding { get; private set; }
 
@@ -1190,21 +1256,27 @@ namespace FallingWizard.Player
 
             public float Depth => depth;
 
-            public int SwingDirection => lastLean < 0f ? -1 : 1;
+            public float Lean => angle * Mathf.Rad2Deg;
+
+            // Which way the wizard is actually travelling along the arc, right now. Nothing
+            // remembers the last button pressed: on a rope the swing is the truth.
+            public int SwingDirection => spin < 0f ? -1 : 1;
+
+            public float SwingSpeed => Mathf.Abs(spin) * depth;
 
             public void Attach(Rigidbody2D wielder)
             {
                 body = wielder;
 
                 if (body != null)
-                    restoreType = body.bodyType;
+                    restoreGravity = body.gravityScale;
 
                 IsRiding = false;
                 readyAt = 0f;
             }
 
             public bool Grab(Vector2 anchorPoint, float vineLength, float maxSwingDegrees,
-                Vector2 from)
+                Vector2 from, Vector2 carried)
             {
                 if (body == null || IsRiding || vineLength <= minDepth)
                     return false;
@@ -1220,31 +1292,81 @@ namespace FallingWizard.Player
                     ? 0f
                     : Mathf.Clamp(Mathf.Atan2(reach.x, -reach.y), -limit, limit);
 
-                lastLean = 0f;
+                // Whatever they were already doing carries into the swing, so running at a vine
+                // and catching it launches you rather than stopping you dead.
+                Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                spin = depth <= Epsilon ? 0f : Vector2.Dot(carried, along) / depth;
 
-                restoreType = body.bodyType;
-                body.bodyType = RigidbodyType2D.Kinematic;
+                // The body stays DYNAMIC and is steered by velocity. Going kinematic and
+                // teleporting with MovePosition - which is what the staff does, standing still
+                // against a ledge it already knows about - would swing the wizard straight
+                // through the level, because a kinematic body is not stopped by static geometry.
+                restoreGravity = body.gravityScale;
+                body.gravityScale = 0f;
                 body.linearVelocity = Vector2.zero;
-                body.MovePosition(HangPosition);
 
+                steered = false;
                 IsRiding = true;
                 return true;
             }
 
             public bool Ride(Vector2 lean, float fixedDeltaTime)
             {
-                if (!IsRiding || body == null)
+                if (!IsRiding || body == null || fixedDeltaTime <= Epsilon)
                     return false;
 
-                if (Mathf.Abs(lean.x) > Epsilon)
-                    lastLean = lean.x;
+                // Start from where the wizard ACTUALLY is, not from where the swing left them.
+                // If a wall got in the way the arc has to admit it, or they would keep grinding
+                // along the inside of it while the maths insisted they were somewhere else.
+                // Compared against where the last step ASKED them to be, not against the arc
+                // recomputed from their own position - the rope pulling taut on the first step
+                // of a grab is not the same thing as hitting a wall, and would otherwise throw
+                // away the run they arrived with.
+                if (steered && (body.position - wanted).sqrMagnitude > Blocked * Blocked)
+                    spin = 0f;
 
-                float sweep = depth <= Epsilon ? 0f : swingSpeed / depth;
+                Vector2 real = body.position - anchor;
 
-                angle = Mathf.Clamp(angle + lean.x * sweep * fixedDeltaTime, -limit, limit);
+                if (real.sqrMagnitude > Epsilon)
+                {
+                    depth = Mathf.Clamp(real.magnitude, minDepth, length);
+                    angle = Mathf.Clamp(Mathf.Atan2(real.x, -real.y), -limit, limit);
+                }
+
                 depth = Mathf.Clamp(depth - lean.y * climbSpeed * fixedDeltaTime, minDepth, length);
 
-                body.MovePosition(HangPosition);
+                float rope = Mathf.Max(depth, MinReach);
+                float gravity = Mathf.Abs(Physics2D.gravity.y) * weight;
+
+                // A pendulum, in one line: gravity always pulls the wizard back under the knot,
+                // and the further out they are the harder it pulls. Steering only adds to that,
+                // so letting go of the stick settles them at the bottom on its own rather than
+                // leaving them parked out at an angle.
+                float pull = -(gravity / rope) * Mathf.Sin(angle);
+                float push = lean.x * (swingPush / rope);
+
+                spin += (pull + push) * fixedDeltaTime;
+                spin *= Mathf.Clamp01(1f - damping * fixedDeltaTime);
+
+                angle += spin * fixedDeltaTime;
+
+                if (Mathf.Abs(angle) > limit)
+                {
+                    angle = Mathf.Clamp(angle, -limit, limit);
+
+                    // Only kill the swing if it is still trying to go further out. A swing that
+                    // reaches the limit and is already on its way back should keep its speed,
+                    // or every big swing stalls at the top of the arc.
+                    if (spin * angle > 0f)
+                        spin = 0f;
+                }
+
+                wanted = HangPosition;
+                steered = true;
+
+                Vector2 haul = (wanted - body.position) / fixedDeltaTime;
+
+                body.linearVelocity = Vector2.ClampMagnitude(haul, MaxHaul);
 
                 return !letGoAtTheEnd || depth < length - Epsilon || lean.y >= 0f;
             }
@@ -1252,33 +1374,44 @@ namespace FallingWizard.Player
             public Vector2 Release()
             {
                 if (body != null)
-                    body.bodyType = restoreType;
+                    body.gravityScale = restoreGravity;
 
                 IsRiding = false;
                 readyAt = Time.time + regrabDelay;
 
-                Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * SwingDirection;
+                // Leave along the arc at the speed you were actually going, which is the speed
+                // the swing has been showing the player for the last second or two.
+                Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                float speed = Mathf.Clamp(spin * depth * releaseBoost,
+                    -maxReleaseSpeed, maxReleaseSpeed);
 
-                return along * releaseSpeed + Vector2.up * releaseLift;
+                spin = 0f;
+
+                return along * speed + Vector2.up * releaseLift;
             }
 
             public void Cancel()
             {
                 if (body != null)
-                    body.bodyType = restoreType;
+                    body.gravityScale = restoreGravity;
 
                 IsRiding = false;
+                spin = 0f;
+                steered = false;
                 readyAt = 0f;
             }
 
             public void Validate()
             {
-                swingSpeed = Mathf.Max(0f, swingSpeed);
+                weight = Mathf.Max(0f, weight);
+                swingPush = Mathf.Max(0f, swingPush);
+                damping = Mathf.Clamp(damping, 0f, 8f);
+                maxSwing = Mathf.Clamp(maxSwing, 0f, MaxLean);
                 climbSpeed = Mathf.Max(0f, climbSpeed);
-                maxSwing = Mathf.Clamp(maxSwing, 0f, 89f);
-                minDepth = Mathf.Max(0.1f, minDepth);
-                releaseSpeed = Mathf.Max(0f, releaseSpeed);
+                minDepth = Mathf.Max(MinReach, minDepth);
+                releaseBoost = Mathf.Max(0f, releaseBoost);
                 releaseLift = Mathf.Max(0f, releaseLift);
+                maxReleaseSpeed = Mathf.Max(0f, maxReleaseSpeed);
                 regrabDelay = Mathf.Max(0f, regrabDelay);
             }
 
@@ -1287,9 +1420,9 @@ namespace FallingWizard.Player
                 if (!IsRiding)
                     return;
 
-                Gizmos.color = new Color(0.42f, 0.75f, 0.38f);
+                Gizmos.color = RopeColour;
                 Gizmos.DrawLine(anchor, HangPosition);
-                Gizmos.DrawWireSphere(HangPosition, 0.2f);
+                Gizmos.DrawWireSphere(HangPosition, GripRadius);
             }
 
             Vector2 PositionAt(float lean, float distance) =>

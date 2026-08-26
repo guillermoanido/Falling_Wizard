@@ -5,6 +5,10 @@ namespace FallingWizard.World
 {
     public class Slime : Hazard
     {
+        // Short enough that landing back on the same slime bounces you again, which is the point
+        // of a slime, but long enough that one touch does not fire twice.
+        const float BounceCooldown = 0.25f;
+
         [Header("Bounce")]
         [Tooltip("How high the bounce throws the wizard, in boxes. Worked out from gravity, so " +
                  "3 really is three boxes.")]
@@ -24,7 +28,7 @@ namespace FallingWizard.World
 
         void Reset()
         {
-            rearmDelay = 0.25f;
+            rearmDelay = BounceCooldown;
             damage = 0;
         }
 

@@ -8,6 +8,14 @@ namespace FallingWizard.World
     [RequireComponent(typeof(Collider2D))]
     public class RestSite : PlayerTrigger
     {
+        // Two respawn points closer together than a hundredth of a box are the
+        // same one. These are matched by position because the level is rebuilt
+        // on every death, so an id kept in a static would be pointing at a
+        // destroyed object by the time it mattered.
+        const float SamePlace = 0.01f;
+
+        const float MarkerRadius = 0.25f;
+
         [Header("Rest")]
         [Tooltip("Where the wizard reappears after a fall, relative to this object. Lift it clear " +
                  "of the floor so they do not come back inside it.")]
@@ -45,7 +53,7 @@ namespace FallingWizard.World
         void OnDrawGizmosSelected()
         {
             Gizmos.color = active;
-            Gizmos.DrawWireSphere(RespawnPoint, 0.25f);
+            Gizmos.DrawWireSphere(RespawnPoint, MarkerRadius);
         }
 
         protected override void OnPlayerEntered(PlayerCharacter wizard)
@@ -93,7 +101,7 @@ namespace FallingWizard.World
 
         bool IsLive =>
             Progress.CheckpointIsHere &&
-            (Progress.CheckpointPoint - RespawnPoint).sqrMagnitude < 0.0001f;
+            (Progress.CheckpointPoint - RespawnPoint).sqrMagnitude < SamePlace * SamePlace;
 
         void Tint(bool lit)
         {

@@ -5,6 +5,9 @@ namespace FallingWizard.Player
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Glide", fileName = "Glide")]
     public class GlideAbility : Ability
     {
+        // Airtime only ever counts up from zero, so a value nothing can reach means "not yet".
+        const int NeverSpent = -1;
+
         [Header("Glide")]
         [Tooltip("Fall speed while gliding, as a fraction of normal. 0.25 is a quarter speed.")]
         [Range(0.05f, 1f)] public float fallSpeed = 0.25f;
@@ -22,10 +25,26 @@ namespace FallingWizard.Player
                  "somewhere. 1 leaves air control alone.")]
         [Min(0f)] public float steering = 1f;
 
-        public override bool CanCast(PlayerLogic wizard) =>
-            wizard.State == PlayerState.Normal && !wizard.movement.IsGrounded;
+        [Tooltip("One cast per fall. Touch the ground before it comes back, however long the " +
+                 "cooldown says. Turn this off and the spell can be re-cast in mid-air, which " +
+                 "with 'forgives fall' on means chaining it makes every drop survivable and fall " +
+                 "damage stops existing.")]
+        public bool oncePerFall = true;
 
-        public override bool OnCast(PlayerLogic wizard) => true;
+        public override bool CanCast(PlayerLogic wizard)
+        {
+            if (wizard.State != PlayerState.Normal || wizard.movement.IsGrounded)
+                return false;
+
+            return !oncePerFall ||
+                   wizard.spellbook.StateOf<Fall>(this).spentOn != wizard.movement.Airtime;
+        }
+
+        public override bool OnCast(PlayerLogic wizard)
+        {
+            wizard.spellbook.StateOf<Fall>(this).spentOn = wizard.movement.Airtime;
+            return true;
+        }
 
         public override void ModifyStatsWhileLit(PlayerLogic.Modifiers stats)
         {
@@ -43,6 +62,14 @@ namespace FallingWizard.Player
 
             if (forgivesFall)
                 wizard.BeginFallFrom(wizard.movement.Position.y);
+        }
+
+        public override void OnRunReset(PlayerLogic wizard) =>
+            wizard.spellbook.StateOf<Fall>(this).spentOn = NeverSpent;
+
+        public class Fall
+        {
+            public int spentOn = NeverSpent;
         }
     }
 }

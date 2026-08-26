@@ -9,6 +9,11 @@ namespace FallingWizard.World
     [RequireComponent(typeof(Collider2D))]
     public abstract class Pickup : PlayerTrigger
     {
+        // A pickup with no id of its own is remembered by where it stands, rounded to this many
+        // steps per box. Fine enough that two pickups a quarter box apart stay separate, coarse
+        // enough that nudging one in the editor does not rename it.
+        const float KeySteps = 4f;
+
         [Header("Identity")]
         [Tooltip("Leave empty and this pickup is remembered by where it stands, which survives " +
                  "renaming it and re-parenting it. Moving it makes it a new pickup. Fill it in " +
@@ -89,7 +94,8 @@ namespace FallingWizard.World
             Vector2 point = transform.position;
 
             return $"{Prefix}{scene}:" +
-                   $"{Mathf.RoundToInt(point.x * 4f)},{Mathf.RoundToInt(point.y * 4f)}";
+                   $"{Mathf.RoundToInt(point.x * KeySteps)}," +
+                   $"{Mathf.RoundToInt(point.y * KeySteps)}";
         }
 
         void Dress()

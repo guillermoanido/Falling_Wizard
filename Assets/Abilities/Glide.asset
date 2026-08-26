@@ -29,3 +29,4 @@ MonoBehaviour:
   forgivesFall: 1
   endsOnLanding: 1
   steering: 1
+  oncePerFall: 1
