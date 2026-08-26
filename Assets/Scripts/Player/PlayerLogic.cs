@@ -49,6 +49,7 @@ namespace FallingWizard.Player
             HasPole && pole.IsPlanted && pole.Mode == mode;
         public Modifiers Stats => spellbook.stats;
         public Intent Steering => input;
+        public Transform Rig => movement.Rig;
         public PlayerState State { get; private set; }
         public bool IsOnStaff => State == PlayerState.OnStaff;
         public bool IsPeeking { get; private set; }
@@ -165,7 +166,7 @@ namespace FallingWizard.Player
 
         public void Hurt(int hearts)
         {
-            if (hearts <= 0 || !health.IsAlive)
+            if (hearts <= 0 || !health.IsAlive || Stats.Shielded)
                 return;
 
             health.TakeDamage(hearts);
@@ -312,11 +313,12 @@ namespace FallingWizard.Player
                     break;
 
                 case PlayerState.Ragdoll:
-                    movement.NudgeVelocity(pendingWind * fixedDeltaTime);
+                    movement.NudgeVelocity(pendingWind * Stats.WindMultiplier * fixedDeltaTime);
                     break;
 
                 default:
-                    movement.ApplyWind(pendingWind, pendingRampup, pendingGroundScale, fixedDeltaTime);
+                    movement.ApplyWind(pendingWind * Stats.WindMultiplier, pendingRampup,
+                        pendingGroundScale, fixedDeltaTime);
                     break;
             }
 
@@ -390,7 +392,9 @@ namespace FallingWizard.Player
             public float JumpHeightMultiplier;
             public float FallSpeedMultiplier;
             public float FallDamageMultiplier;
+            public float WindMultiplier;
             public int ExtraJumps;
+            public bool Shielded;
 
             public Modifiers() => Reset();
 
@@ -400,7 +404,9 @@ namespace FallingWizard.Player
                 JumpHeightMultiplier = 1f;
                 FallSpeedMultiplier = 1f;
                 FallDamageMultiplier = 1f;
+                WindMultiplier = 1f;
                 ExtraJumps = 0;
+                Shielded = false;
             }
         }
 
@@ -592,6 +598,7 @@ namespace FallingWizard.Player
 
             public int Facing { get; private set; } = 1;
             public Vector2 Position => body == null ? Vector2.zero : body.position;
+            public Transform Rig => body == null ? null : body.transform;
             public float FeetY => Position.y + groundCheckOffset.y;
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
             public float VerticalSpeed => body == null ? 0f : body.linearVelocityY;

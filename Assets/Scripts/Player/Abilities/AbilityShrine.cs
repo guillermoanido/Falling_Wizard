@@ -30,7 +30,14 @@ namespace FallingWizard.Player
 
         void Awake()
         {
-            if (ability != null && Progress.Owns(ability.Key))
+            if (ability == null)
+            {
+                Debug.LogWarning("This shrine has no spell in it, so walking into it does " +
+                                 "nothing. Give it one or delete it.", this);
+                return;
+            }
+
+            if (Progress.Owns(ability.Key))
                 Destroy(gameObject);
         }
 

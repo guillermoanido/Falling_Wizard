@@ -10,11 +10,13 @@ namespace FallingWizard.UI
 {
     public class SkillScreen : MonoBehaviour
     {
+        // Sized so eight spells still fit a 1080-tall canvas without a scroll view.
+        // Past that the panel starts running off the bottom and this wants a real one.
         const float PanelWidth = 1180f;
-        const float RowHeight = 96f;
-        const float IconSize = 64f;
-        const float ActionWidth = 260f;
-        const float SlotSize = 104f;
+        const float RowHeight = 72f;
+        const float IconSize = 52f;
+        const float ActionWidth = 250f;
+        const float SlotSize = 92f;
 
         AbilityBook book;
         Action dive;
@@ -40,7 +42,7 @@ namespace FallingWizard.UI
         {
             Ui.Shroud(transform);
 
-            body = Ui.Sheet("Panel", transform, Ui.Panel, PanelWidth, 34f, 14f);
+            body = Ui.Sheet("Panel", transform, Ui.Panel, PanelWidth, 24f, 8f);
 
             Redraw();
         }
@@ -57,10 +59,10 @@ namespace FallingWizard.UI
             if (EventSystem.current != null)
                 EventSystem.current.SetSelectedGameObject(null);
 
-            Ui.Label("What you carry down", body, 52f, PanelWidth - 72f, 66f);
+            Ui.Label("What you carry down", body, 44f, PanelWidth - 72f, 52f);
 
-            TextMeshProUGUI purse = Ui.Label($"{Progress.Wisps} wisps", body, 32f,
-                PanelWidth - 72f, 44f);
+            TextMeshProUGUI purse = Ui.Label($"{Progress.Wisps} wisps", body, 28f,
+                PanelWidth - 72f, 36f);
             purse.color = Ui.Wisp;
 
             DrawSlots();
@@ -77,7 +79,7 @@ namespace FallingWizard.UI
                         DrawSpell(spell);
             }
 
-            Ui.CreateButton("Descend", body, 420f, 66f, 30f)
+            Ui.CreateButton("Descend", body, 420f, 58f, 28f)
                 .onClick.AddListener(() =>
                 {
                     Screens.Release();
@@ -88,7 +90,7 @@ namespace FallingWizard.UI
 
         void DrawSlots()
         {
-            RectTransform strip = Ui.Row("Slots", body, PanelWidth - 72f, SlotSize + 34f, 18f,
+            RectTransform strip = Ui.Row("Slots", body, PanelWidth - 72f, SlotSize + 30f, 16f,
                 TextAnchor.MiddleCenter);
 
             for (int i = 0; i < Progress.SlotCount; i++)
@@ -98,7 +100,7 @@ namespace FallingWizard.UI
 
                 RectTransform cell = Ui.Column($"Slot {i + 1}", strip, SlotSize, 4f,
                     TextAnchor.UpperCenter);
-                Ui.SetSize(cell.gameObject, SlotSize, SlotSize + 34f);
+                Ui.SetSize(cell.gameObject, SlotSize, SlotSize + 30f);
 
                 Image plate = Ui.Plate("Plate", cell, held != null ? Ui.CardLit : Ui.Card,
                     SlotSize, SlotSize);
@@ -109,8 +111,8 @@ namespace FallingWizard.UI
                     Ui.Label(Glyph(i), plate.transform, 34f, SlotSize, SlotSize).color = Ui.FadedInk;
 
                 TextMeshProUGUI caption = Ui.Label(
-                    held != null ? $"{Glyph(i)}  {held.displayName}" : Glyph(i), cell, 19f,
-                    SlotSize, 30f);
+                    held != null ? $"{Glyph(i)}  {held.displayName}" : Glyph(i), cell, 17f,
+                    SlotSize, 26f);
 
                 caption.color = locked ? Ui.Warning : held != null ? Ui.Ink : Ui.FadedInk;
             }
@@ -145,7 +147,7 @@ namespace FallingWizard.UI
                 TextAnchor.MiddleLeft);
             Ui.SetSize(words.gameObject, wordsWidth, RowHeight - 20f);
 
-            TextMeshProUGUI name = Ui.Label(spell.displayName, words, 28f, wordsWidth, 34f,
+            TextMeshProUGUI name = Ui.Label(spell.displayName, words, 24f, wordsWidth, 28f,
                 TextAlignmentOptions.Left);
             name.color = owned ? Ui.Ink : Ui.FadedInk;
 
@@ -153,7 +155,7 @@ namespace FallingWizard.UI
                 ? spell.description + "  (always on)"
                 : spell.description;
 
-            Ui.Label(blurb, words, 21f, wordsWidth, 38f, TextAlignmentOptions.TopLeft)
+            Ui.Label(blurb, words, 19f, wordsWidth, 32f, TextAlignmentOptions.TopLeft)
                 .color = Ui.FadedInk;
 
             DrawAction(spell, card.transform, owned, equipped, slot);
@@ -174,7 +176,7 @@ namespace FallingWizard.UI
                     ? $"Learn - {spell.cost}"
                     : $"{spell.cost} wisps";
 
-                Button buy = Ui.CreateButton(text, parent, ActionWidth, 52f, 24f);
+                Button buy = Ui.CreateButton(text, parent, ActionWidth, 46f, 22f);
                 buy.interactable = affordable;
 
                 if (affordable)
@@ -196,7 +198,7 @@ namespace FallingWizard.UI
 
             if (equipped)
             {
-                Button drop = Ui.CreateButton($"{Glyph(slot)} - take out", parent, ActionWidth, 52f, 22f);
+                Button drop = Ui.CreateButton($"{Glyph(slot)} - take out", parent, ActionWidth, 46f, 20f);
                 drop.onClick.AddListener(() =>
                 {
                     Progress.Equip(slot, string.Empty);
@@ -209,7 +211,7 @@ namespace FallingWizard.UI
             int empty = Progress.FirstEmptySlot();
 
             Button carry = Ui.CreateButton(empty >= 0 ? "Bring it" : "No slot free",
-                parent, ActionWidth, 52f, 24f);
+                parent, ActionWidth, 46f, 22f);
 
             carry.interactable = empty >= 0;
 

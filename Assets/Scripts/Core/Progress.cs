@@ -31,6 +31,8 @@ namespace FallingWizard.Core
         static readonly HashSet<string> carrying = new HashSet<string>();
         static readonly HashSet<string> spent = new HashSet<string>();
 
+        public static bool Sandbox { get; private set; }
+
         public static int Wisps { get; private set; }
 
         public static int CarriedWisps { get; private set; }
@@ -134,6 +136,12 @@ namespace FallingWizard.Core
             }
         }
 
+        public static void GiveWisps(int amount)
+        {
+            if (amount > 0)
+                Wisps += amount;
+        }
+
         public static void CarryWisps(int amount)
         {
             if (amount > 0)
@@ -148,6 +156,8 @@ namespace FallingWizard.Core
             BonusHearts += amount;
             Save();
         }
+
+        public static void SetHearts(int amount) => BonusHearts = Mathf.Max(0, amount);
 
         public static void LoseCarried()
         {
@@ -190,8 +200,17 @@ namespace FallingWizard.Core
 
         public static bool HasSave => PlayerPrefs.HasKey(WispsKey);
 
+        public static void BeginSandbox()
+        {
+            Clear();
+            Sandbox = true;
+        }
+
         public static void Save()
         {
+            if (Sandbox)
+                return;
+
             PlayerPrefs.SetInt(WispsKey, Wisps);
             PlayerPrefs.SetString(RanksKey, PackRanks());
             PlayerPrefs.SetString(LoadoutKey, string.Join(Separator.ToString(), equipped));
@@ -270,6 +289,7 @@ namespace FallingWizard.Core
             Wisps = 0;
             CarriedWisps = 0;
             BonusHearts = 0;
+            Sandbox = false;
 
             ClearCheckpoint();
         }

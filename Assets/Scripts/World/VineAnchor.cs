@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FallingWizard.Core;
 using UnityEngine;
 
 namespace FallingWizard.World
@@ -38,7 +39,19 @@ namespace FallingWizard.World
 
         void OnDisable() => Hanging.Remove(this);
 
-        void Awake() => Dress();
+        void Awake()
+        {
+            if (rope == null)
+                rope = GetComponentInChildren<SpriteRenderer>();
+
+            if (rope != null && rope.sprite == null)
+            {
+                rope.sprite = Placeholder.Box;
+                rope.color = new Color(0.34f, 0.55f, 0.29f);
+            }
+
+            Dress();
+        }
 
         void OnValidate() => Dress();
 

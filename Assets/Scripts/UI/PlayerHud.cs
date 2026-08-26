@@ -22,9 +22,14 @@ namespace FallingWizard.UI
         [Tooltip("One spell slot, copied once per button. Restyle this and they all follow.")]
         public HudSlot slotTemplate;
 
-        [Tooltip("Optional. Reads out what is being risked and what is safe. Leave empty for no " +
-                 "counter.")]
+        [Tooltip("Reads out what is being risked and what is safe. Leave it empty and one is " +
+                 "built in the top right corner on its own, so a scene needs no wiring to show " +
+                 "the number that matters most.")]
         public TextMeshProUGUI wispLabel;
+
+        [Tooltip("Do not build that corner label. For a scene that shows the count some other " +
+                 "way, or one that would rather not show it at all.")]
+        public bool hideWispCount = false;
 
         [Header("Hearts")]
         public Color fullHeart = new Color(0.85f, 0.22f, 0.30f);
@@ -68,6 +73,9 @@ namespace FallingWizard.UI
 
             if (slotTemplate != null)
                 slotTemplate.gameObject.SetActive(false);
+
+            if (wispLabel == null && !hideWispCount)
+                wispLabel = BuildWispLabel();
 
             if (heartRow == null || heartTemplate == null || spellBar == null || slotTemplate == null)
                 Debug.LogError("The HUD is missing part of its rig. It wants a heart row with one " +
@@ -118,6 +126,30 @@ namespace FallingWizard.UI
 
             RefreshHearts();
             RefreshSpells();
+        }
+
+        TextMeshProUGUI BuildWispLabel()
+        {
+            var canvas = GetComponentInParent<Canvas>();
+
+            if (canvas == null)
+                return null;
+
+            var go = new GameObject("Wisp Count", typeof(RectTransform));
+            go.transform.SetParent(canvas.transform, false);
+
+            var rect = (RectTransform)go.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
+            rect.anchoredPosition = new Vector2(-24f, -20f);
+            rect.sizeDelta = new Vector2(360f, 40f);
+
+            var label = go.AddComponent<TextMeshProUGUI>();
+            label.fontSize = 26f;
+            label.color = new Color(0.55f, 0.85f, 1f);
+            label.alignment = TMPro.TextAlignmentOptions.Right;
+            label.raycastTarget = false;
+
+            return label;
         }
 
         void RefreshHearts()

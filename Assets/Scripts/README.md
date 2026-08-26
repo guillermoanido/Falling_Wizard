@@ -122,14 +122,38 @@ A spell that needs to remember something between frames — a wall it grew, a ro
 keeps it in `spellbook.StateOf<T>(this)`, never in a field on itself. The asset is shared; a field
 on it would survive a scene load and follow you into the build.
 
-The six that exist: **Staff** (yours from the start, welded to E), **Feather Fall**, **Higher
-Jump** (a `StatAbility`, passive), **Staff Bridge**, **Wall Growth**, **Vine Grasp**.
+The six that exist. The Staff is yours from the start and welded to E; the other five fight over
+three buttons.
+
+| Spell | What it is | Where it lives |
+| --- | --- | --- |
+| **Staff** | Plant it at a ledge and climb down. | `StaffAbility` + `Staff` on the wizard |
+| **Feather Fall** | Drift, and forget how far you have already fallen. | `GlideAbility` |
+| **Wall Growth** | Raise a wall out of the floor ahead of you. | `WallGrowthAbility` + the `Stone Wall` prefab |
+| **Vine Grasp** | Catch a vine and swing. | `VineAbility` + `VineAnchor` in the level |
+| **Bubble** | Float, untouchable, and let the wind take you. | `BubbleAbility` |
+| **Telekinesis** | Lift a loose stone at range, carry it, throw it. | `TelekinesisAbility` + `Liftable` in the level |
+
+Two of them need something to act on, and that is deliberate — a spell that needs level content is
+a spell the level can be designed around. Vine Grasp does nothing without a `Vine`; Telekinesis
+does nothing without a `Boulder`.
 
 Feather Fall is worth reading before writing another movement spell. Slowing a fall does **not**
 make it survivable: fall damage counts boxes fallen, and gliding down a killing drop only kills you
 later. `forgivesFall` is what makes the spell worth a slot — while it is lit it keeps resetting the
 height the fall is measured from, so catching a long drop late saves you and *how* late you dare
 leave it is the whole skill.
+
+**Bubble is the opposite trade, on purpose.** It does not forgive the drop — pop it high up and you
+are still high up. What it buys is that nothing can touch you (`Modifiers.Shielded`) and that wind
+pushes you three and a half times as hard (`Modifiers.WindMultiplier`). A gale you would normally
+brace against becomes the ride. It is the only spell that wants a hazard nearby.
+
+**Telekinesis lights while it holds.** Pressing once takes hold, pressing again lets go — and
+because `TryCast` re-lights a spell whose `OnCast` returned true, the release cannot end the spell
+itself. It drops the stone and lets `OnLit` notice the empty hand and `Extinguish` on the next
+step. Let go with a direction held and the stone is thrown; let go with nothing held and it simply
+falls where it hangs.
 
 ### Adding spell #5
 
@@ -243,8 +267,7 @@ it can ever be squeezed to nothing again.
 
 ## The vine
 
-The worked example of a spell owning the wizard's movement, which is what Bubble and Telekinesis
-will want too.
+The worked example of a spell owning the wizard's movement.
 
 `PlayerState.OnVine` is a fourth state beside `Normal`, `OnStaff` and `Ragdoll` — **appended, not
 inserted**, because the enum serialises as an int in scene YAML. `PlayerLogic.Vine` rides it: it
@@ -259,6 +282,53 @@ about it is momentum-based, because a swing you cannot predict is a swing you ca
 `VineAnchor` is the level content — the knot, a length, a swing limit and a grab range measured to
 the nearest point *on the vine* rather than to the knot. `VineAbility` catches the nearest one in
 range. Jump always lets go.
+
+## Testing a spell without earning it
+
+Drop a `Playtest` component on anything in the scene. It lists every spell in the book with a box
+each — tick the ones you want, press Play, and they are already learned and in a slot. The list
+fills itself in from `Assets/Resources/Spellbook.asset` and keeps itself in step, so a spell added
+later turns up on its own. `wisps` and `bonusHearts` start you with a purse and a longer bar for
+trying the skill screen.
+
+**Nothing it does is written to the save.** `Progress.BeginSandbox()` wipes the in-memory tiers and
+puts `Save()` to sleep for the session, so a playtest cannot spend, unlock or consume anything in
+the real one. It runs at `[DefaultExecutionOrder(-100)]`, ahead of `PlayerCharacter.OnAwake`, which
+is the frame the spellbook reads `Progress` and builds its slots.
+
+Three ticks is the most that can be carried: there are four buttons and the Staff owns one. Tick
+more and it says which ones it could not fit rather than quietly dropping them.
+
+## Prefabs
+
+Everything below is a plain object you drag in — no menu items, no tooling. All the art is Unity's
+built-in Square tinted a flat colour, so each one is visible the moment it lands and is waiting for
+a sprite of yours.
+
+| Prefab | What it does | Layer |
+| --- | --- | --- |
+| `Wisp` | The currency. Banking it spends it for good. | Default |
+| `Heart Upgrade` | +1 max HP, permanently, once ever. | Default |
+| `Rock` | Trips a runner. `minimumSpeed` 4, so a walk is safe. | Hazard |
+| `Slime` | Bounces you three boxes and sends you tumbling. | Hazard |
+| `Wind` | Pushes you sideways. Bubble turns this into a lift. | Hazard |
+| `Vine` | What Vine Grasp catches. | Default |
+| `Boulder` | What Telekinesis lifts. Solid, so it is also a platform. | **Ground** |
+| `Stone Wall` | What Wall Growth raises. Already wired into the spell. | **Ground** |
+| `Level Exit` | The bottom. Starts the level again for now. | Default |
+
+The two on **Ground** are there because the wizard has to be able to stand on them, and the ground
+check only looks at that layer. The three on **Hazard** are triggers you pass straight through —
+`Hazard.passThrough` sets that on Awake, so ticking the box fixes one already placed.
+
+`Stone Wall` is shaped the way the spell needs: the root carries nothing and the `Body` child sits
+half a box up with unit size, so scaling the root grows the wall upward off its own footing instead
+of stretching it around its middle. Any wall art of your own wants the same two-object shape.
+
+`Level Exit` reloads the level and clears the last rest site, so a lap starts from the top rather
+than dropping you back where you sat down. `nextScene` is there for when there is somewhere to go;
+`banksWisps` stays off while this only goes round again, or a lap would pay out forever.
+
 
 ## Checkpoints
 
@@ -320,22 +390,20 @@ A child of the wizard with its own hitbox and sprite. **The hitbox's height is t
 the wizard travels its span and then the length of their own hand-hang past the tip, so a taller
 collider is a longer climb and nothing else has to be told about it.
 
-Two modes:
+**Ladder** is the only mode a spell reaches today. The pole is driven in just past the lip with its
+top flush to the ledge, so the far end is where your feet will end up and you can read the drop off
+it. Slide down, and keep pushing down at the bottom to let go.
 
-- **Ladder** (the `Staff` spell). Driven in just past the lip with its top flush to the ledge, so
-  the far end of the pole is where your feet will end up and you can read the drop off it. Slide
-  down, and keep pushing down at the bottom to let go.
-- **Bridge** (the `Staff Bridge` spell). Laid flat as a plank you walk out onto. The thing you
-  stand on is a **separate solid collider on a child, on the Ground layer** — the staff itself is
-  on the Player layer, which the ground check deliberately ignores, so a collider on the staff
-  would be one you fall straight through.
+`Staff.cs` can still lay the pole flat as a **Bridge** — `StaffMode.Bridge`, `PlantAsBridge`, and a
+separate solid collider on a child on the Ground layer, because the staff itself is on the Player
+layer, which the ground check deliberately ignores. Nothing casts it since the Staff Bridge spell
+was retired. It is left in because it works and is one small class away from coming back.
 
-**One staff, one job.** Both spells are the same shape — press at a ledge to put it out, press
-again to take it back — and both ask `StaffIsFree` / `StaffIsPlantedAs(mode)` rather than the bare
-`Pole.IsPlanted`, which says the pole is busy but not what with. Without the mode check, standing
-on your own bridge puts you at a lip with `IsAtEdge` true, so the Staff spell would happily re-plant
-that same pole as a ladder and pull the floor out from under you. `TryPlantStaff` refuses a pole
-that is already in the ground as well, so the rule holds however a future spell asks.
+The guards it left behind are still earning their keep. `StaffIsFree` and `StaffIsPlantedAs(mode)`
+say what the pole is busy *with*, not merely that it is busy, and `TryPlantStaff` refuses a pole
+already in the ground. Without that, standing on your own bridge puts you at a lip with `IsAtEdge`
+true and the Staff spell would happily re-plant the same pole as a ladder, pulling the floor out
+from under you.
 
 ## Hazards
 

@@ -45,6 +45,8 @@ namespace FallingWizard.Core
 
         public static void LoadFirstLevel() => Load(FirstLevelScene);
 
+        public static void LoadLevel(string sceneName) => Load(sceneName);
+
         public static void ReloadCurrentScene() => Load(SceneManager.GetActiveScene().name);
 
         public static void Quit()

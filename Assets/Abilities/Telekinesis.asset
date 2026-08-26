@@ -9,19 +9,25 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4ac07d64bd9d642c00ecacd59b10d12c, type: 3}
-  m_Name: Staff Bridge
+  m_Script: {fileID: 11500000, guid: 0676c52322d8511b9466accf2b09b7c0, type: 3}
+  m_Name: Telekinesis
   m_EditorClassIdentifier: 
-  id: bridge
-  displayName: Staff Bridge
-  description: Lay the staff flat to extend a ledge.
+  id: hand
+  displayName: Telekinesis
+  description: Take hold of a loose stone at a distance. Press again to drop it, or aim to throw it.
   icon: {fileID: 0}
   cost: 1
   locked: 0
   fixedSlot: -1
   passive: 0
   pressBuffer: 0.12
-  activeDuration: 0
+  activeDuration: 20
   usesPerRun: 0
-  cooldown: 0
+  cooldown: 1
   collectedEffect: {fileID: 0}
+  reach: 6
+  holdDistance: 1.9
+  holdHeight: 0.9
+  pullSpeed: 12
+  throwSpeed: 14
+  aimThreshold: 0.35
