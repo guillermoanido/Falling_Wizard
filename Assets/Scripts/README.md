@@ -311,7 +311,7 @@ a sprite of yours.
 | `Heart Upgrade` | +1 max HP, permanently, once ever. | Default |
 | `Rock` | Trips a runner. `minimumSpeed` 4, so a walk is safe. | Hazard |
 | `Slime` | Bounces you three boxes and sends you tumbling. | Hazard |
-| `Wind` | Pushes you sideways. Bubble turns this into a lift. | Hazard |
+| `Wind` | Pushes you sideways, and shows it. Bubble turns this into a lift. | Hazard |
 | `Vine` | What Vine Grasp catches. | Default |
 | `Boulder` | What Telekinesis lifts. Solid, so it is also a platform. | **Ground** |
 | `Stone Wall` | What Wall Growth raises. Already wired into the spell. | **Ground** |
@@ -423,6 +423,28 @@ grounded. Ticking `passThrough` off is supported, but move it off layer 8 if you
 All three sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach
 a wizard who is on their staff or already tumbling. **Adding hazard #6 is one subclass with one
 `Affect` method.**
+
+### Seeing the wind
+
+A rock and a slime are objects — you can see them coming. Wind is a volume, and a flat tinted
+rectangle tells you nothing about which way it blows or how hard, which makes it the one hazard a
+player can only learn by being caught out. `WindZone2D` draws itself three ways:
+
+- **Streaks.** A drifting scatter of thin bars, turned to face the push and travelling at
+  `streakSpeed` times it. They wrap around the zone, and each one fades in at the edge it enters by
+  and out at the one it leaves by, so nothing blinks into being mid-air. Built at runtime — they
+  live under one container at the scene root rather than parented to the zone, because stretching
+  a wind zone would otherwise stretch every streak with it.
+- **Haze.** The flat rectangle, resized to the collider in `OnValidate`. Stretch the zone and the
+  tint follows; there is no second thing to keep in step.
+- **Arrows.** Scene-view gizmos, drawn *without selecting the zone first* (`alwaysShowArrows`),
+  because the whole point is seeing where your wind is while laying a level out. Arrow length reads
+  the strength against the same scale as everything else: a run is 6 boxes a second, so a gale you
+  cannot walk out of draws longer than the wizard is tall.
+
+`FitHaze` deliberately never creates a sprite, only resizes one — it runs from `OnValidate`, and
+building a texture inside a serialisation callback earns a console full of warnings. `Awake` puts
+the stand-in in place before the first call.
 
 **Hazards push you onward, never back.** Rocks, slimes and tumbles all send you the way you were
 already travelling — `Movement.TravelDirection`, which is the direction you *arrived* in, not the
