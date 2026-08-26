@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   id: wall
   displayName: Wall Growth
-  description: Grow a wall of stone out of the floor ahead of you.
+  description: Grow stone out of a ledge and walk out over the drop.
   icon: {fileID: 0}
   cost: 1
   locked: 0
@@ -28,9 +28,11 @@ MonoBehaviour:
   wallPrefab: {fileID: 1264234565, guid: 08a96630615c538c93ca6eb3a5c011a5, type: 3}
   wallArt: {fileID: 0}
   tint: {r: 0.42, g: 0.62, b: 0.38, a: 1}
-  size: {x: 1, y: 3}
+  size: {x: 3, y: 0.5}
+  bridgesGaps: 1
+  lipClearance: 0.05
   distanceAhead: 1.1
-  growTime: 0.3
   rootDepth: 2
+  growTime: 0.3
   groundLayer: Ground
-  sortingOrder: -1
+  sortingOrder: 1

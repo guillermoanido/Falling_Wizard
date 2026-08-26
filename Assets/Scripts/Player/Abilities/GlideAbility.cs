@@ -40,6 +40,21 @@ namespace FallingWizard.Player
                    wizard.spellbook.StateOf<Fall>(this).spentOn != wizard.movement.Airtime;
         }
 
+        public override string WhyNot(PlayerLogic wizard)
+        {
+            if (wizard.State != PlayerState.Normal)
+                return $"you are {wizard.State}";
+
+            if (wizard.movement.IsGrounded)
+                return "you are stood on the ground, and this only slows a fall";
+
+            if (oncePerFall &&
+                wizard.spellbook.StateOf<Fall>(this).spentOn == wizard.movement.Airtime)
+                return "you have already used it on this fall - touch the ground for another";
+
+            return null;
+        }
+
         public override bool OnCast(PlayerLogic wizard)
         {
             wizard.spellbook.StateOf<Fall>(this).spentOn = wizard.movement.Airtime;

@@ -19,6 +19,25 @@ namespace FallingWizard.Player
             return wizard.CanGrabVine && VineAnchor.Nearest(wizard.movement.Position) != null;
         }
 
+        public override string WhyNot(PlayerLogic wizard)
+        {
+            if (wizard.IsOnVine)
+                return "'press again to let go' is switched off on this spell";
+
+            if (wizard.State != PlayerState.Normal)
+                return $"you are {wizard.State} and cannot reach for anything";
+
+            if (!wizard.CanGrabVine)
+                return "you only just let go of one";
+
+            if (VineAnchor.Nearest(wizard.movement.Position) == null)
+                return VineAnchor.All.Count == 0
+                    ? "there is not a single Vine in this scene"
+                    : "no vine is close enough - look for a knot that has started glowing";
+
+            return null;
+        }
+
         public override bool OnCast(PlayerLogic wizard)
         {
             if (wizard.IsOnVine)

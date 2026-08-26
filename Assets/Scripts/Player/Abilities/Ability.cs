@@ -72,6 +72,11 @@ namespace FallingWizard.Player
 
         public virtual bool CanCast(PlayerLogic wizard) => true;
 
+        // Why the press just now did nothing, in the player's words and without a full stop.
+        // Null says nothing at all. Only ever reaches the console, and only in the editor - it
+        // exists because a spell that silently refuses is a spell you cannot debug.
+        public virtual string WhyNot(PlayerLogic wizard) => null;
+
         public virtual bool OnCast(PlayerLogic wizard) => false;
 
         public virtual void OnLit(PlayerLogic wizard, float fixedDeltaTime) { }

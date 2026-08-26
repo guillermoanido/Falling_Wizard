@@ -39,6 +39,22 @@ namespace FallingWizard.Player
                    Liftable.Nearest(wizard.movement.Position, reach) != null;
         }
 
+        public override string WhyNot(PlayerLogic wizard)
+        {
+            if (wizard.spellbook.StateOf<Hold>(this).stone != null)
+                return null;
+
+            if (wizard.State != PlayerState.Normal)
+                return $"you are {wizard.State} and cannot reach for anything";
+
+            if (Liftable.Nearest(wizard.movement.Position, reach) == null)
+                return Liftable.All.Count == 0
+                    ? "there is not a single Liftable in this scene - drop in a Boulder"
+                    : $"nothing loose within {reach} boxes of you";
+
+            return null;
+        }
+
         public override bool OnCast(PlayerLogic wizard)
         {
             Hold hold = wizard.spellbook.StateOf<Hold>(this);

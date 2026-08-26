@@ -1442,6 +1442,11 @@ namespace FallingWizard.Player
                      "Assets/Resources/Spellbook.asset.")]
             public AbilityBook book;
 
+            [Tooltip("Print a line to the console whenever a press comes to nothing, saying " +
+                     "which spell refused and why. Editor only. Leave it on while building a " +
+                     "level - a spell that silently does nothing is the hardest kind to chase.")]
+            public bool explainRefusals = true;
+
             [NonSerialized] public Modifiers stats = new Modifiers();
             [NonSerialized] Slot[] slots = Array.Empty<Slot>();
             [NonSerialized] PlayerLogic owner;
@@ -1579,18 +1584,66 @@ namespace FallingWizard.Player
             {
                 bool paused = Game.IsPaused;
 
-                foreach (Slot slot in slots)
+                for (int i = 0; i < slots.Length; i++)
                 {
-                    if (paused || slot.Ability == null || slot.Action == null)
+                    Slot slot = slots[i];
+
+                    if (paused || slot.Action == null)
                     {
                         slot.Buffer = 0f;
                         continue;
                     }
 
-                    slot.Buffer = slot.Action.WasPressedThisFrame()
-                        ? slot.Ability.pressBuffer
-                        : slot.Buffer - deltaTime;
+                    bool pressed = slot.Action.WasPressedThisFrame();
+
+                    if (slot.Ability == null)
+                    {
+                        if (pressed)
+                            Explain(i, null, "there is nothing in that slot");
+
+                        slot.Buffer = 0f;
+                        continue;
+                    }
+
+                    if (pressed)
+                    {
+                        slot.Buffer = slot.Ability.pressBuffer;
+                        slot.Fired = false;
+                        continue;
+                    }
+
+                    float had = slot.Buffer;
+                    slot.Buffer -= deltaTime;
+
+                    // The press has run out of patience without ever going off. This is the
+                    // moment worth reporting: earlier than this it was still legitimately
+                    // waiting for a ledge to arrive.
+                    if (had > 0f && slot.Buffer <= 0f && !slot.Fired)
+                        Explain(i, slot.Ability, Refusal(slot));
                 }
+            }
+
+            string Refusal(Slot slot)
+            {
+                if (slot.CooldownLeft > 0f)
+                    return $"it is still cooling down, {slot.CooldownLeft:0.0}s to go";
+
+                if (!slot.HasUsesLeft)
+                    return "it has no casts left until you rest";
+
+                return slot.Ability.WhyNot(owner);
+            }
+
+            void Explain(int slot, Ability spell, string reason)
+            {
+#if UNITY_EDITOR
+                if (!explainRefusals || string.IsNullOrEmpty(reason))
+                    return;
+
+                string named = spell != null ? spell.displayName : $"Slot {slot + 1}";
+
+                Debug.LogWarning($"{named} did not cast: {reason}.");
+#endif
             }
 
             public void TryCast()
@@ -1607,6 +1660,7 @@ namespace FallingWizard.Player
                         continue;
 
                     slot.Buffer = 0f;
+                    slot.Fired = true;
                     slot.LitLeft = slot.Ability.activeDuration;
 
                     if (slot.Ability.usesPerRun > 0)
@@ -1676,6 +1730,7 @@ namespace FallingWizard.Player
                 public Ability Ability;
                 public InputAction Action;
                 public float Buffer;
+                public bool Fired;
                 public float LitLeft;
                 public float CooldownLeft;
                 public int UsesLeft;

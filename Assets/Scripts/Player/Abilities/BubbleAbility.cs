@@ -52,6 +52,9 @@ namespace FallingWizard.Player
         public override bool CanCast(PlayerLogic wizard) =>
             wizard.State == PlayerState.Normal || wizard.State == PlayerState.OnVine;
 
+        public override string WhyNot(PlayerLogic wizard) =>
+            CanCast(wizard) ? null : $"you are {wizard.State}, which no bubble will fit around";
+
         public override bool OnCast(PlayerLogic wizard)
         {
             Skin skin = wizard.spellbook.StateOf<Skin>(this);

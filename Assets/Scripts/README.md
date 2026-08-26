@@ -122,6 +122,26 @@ A spell that needs to remember something between frames — a wall it grew, a ro
 keeps it in `spellbook.StateOf<T>(this)`, never in a field on itself. The asset is shared; a field
 on it would survive a scene load and follow you into the build.
 
+### When a press does nothing
+
+Every gate a spell can fail — wrong state, cooling down, out of casts, nothing in reach — used to
+fail **silently**, which makes a spell that will not fire almost impossible to chase: there is no
+way to tell an empty slot from a missed ledge from a cooldown.
+
+So `Ability.WhyNot(PlayerLogic)` says, in the player's words, why the press just now came to
+nothing, and `Spellbook` prints it the moment a buffered press runs out of patience without ever
+going off. Not earlier than that — until the buffer expires the press is still legitimately waiting
+for a ledge to arrive, which is the whole reason the buffer exists.
+
+It is editor-only, it covers the empty-slot case too (*"there is nothing in that slot"*), and
+`Spellbook.explainRefusals` turns it off. Cooldown and per-run charges are answered generically by
+`Spellbook` itself, so `WhyNot` only has to speak for the spell's own conditions.
+
+**Sorting order is the trap it exists to catch.** Both the vine and the wall shipped at −1 and were
+therefore behind the tilemap: solid, working perfectly, and completely invisible — which reads
+exactly like a spell doing nothing. Anything a spell puts into the world wants an order above the
+map.
+
 The six that exist. The Staff is yours from the start and welded to E; the other five fight over
 three buttons.
 
@@ -129,7 +149,7 @@ three buttons.
 | --- | --- | --- |
 | **Staff** | Plant it at a ledge and climb down. | `StaffAbility` + `Staff` on the wizard |
 | **Feather Fall** | Drift, and forget how far you have already fallen. | `GlideAbility` |
-| **Wall Growth** | Raise a wall out of the floor ahead of you. | `WallGrowthAbility` + the `Stone Wall` prefab |
+| **Wall Growth** | Grow stone out of a ledge and walk out over the drop. | `WallGrowthAbility` + the `Stone Wall` prefab |
 | **Vine Grasp** | Catch a vine and swing. | `VineAbility` + `VineAnchor` in the level |
 | **Bubble** | Float, untouchable, and let the wind take you. | `BubbleAbility` |
 | **Telekinesis** | Lift a loose stone at range, carry it, throw it. | `TelekinesisAbility` + `Liftable` in the level |
@@ -367,8 +387,26 @@ puts `Save()` to sleep for the session, so a playtest cannot spend, unlock or co
 the real one. It runs at `[DefaultExecutionOrder(-100)]`, ahead of `PlayerCharacter.OnAwake`, which
 is the frame the spellbook reads `Progress` and builds its slots.
 
-Three ticks is the most that can be carried: there are four buttons and the Staff owns one. Tick
-more and it says which ones it could not fit rather than quietly dropping them.
+Spells welded to a slot are placed **first**, before any tick is honoured. Otherwise a ticked spell
+lands in the Staff's own slot and the spellbook evicts it a moment later when it puts the Staff
+where it belongs. That leaves three: four buttons, one of them the Staff's. Tick more and it says
+which ones it could not fit rather than quietly dropping them.
+
+### Why the book is a field
+
+`Playtest` keeps a reference to the `AbilityBook` rather than looking one up when it needs it, and
+that is not an optimisation. The list of tick boxes is built from the book, and it has to be built
+somewhere Unity will actually **save** the result.
+
+The first version deferred that work to `EditorApplication.delayCall`, to keep `Resources.Load` out
+of `OnValidate` — where it can be refused mid-deserialisation. But a serialized field written from
+`delayCall` is changed on the live C# object only. Nothing marks the component dirty, so the list
+sitting in the inspector never reached the scene file, and entering Play Mode deserialised an empty
+one straight back over it: no ticks, nothing granted, every slot empty.
+
+With the book in a field, `Sync()` runs directly in `OnValidate`, where Unity re-serialises what it
+changes. The deferred path survives only to fill in a component that predates the field — and it
+calls `EditorUtility.SetDirty` afterwards, which was the piece missing all along.
 
 ## Prefabs
 
@@ -392,9 +430,22 @@ The two on **Ground** are there because the wizard has to be able to stand on th
 check only looks at that layer. The three on **Hazard** are triggers you pass straight through —
 `Hazard.passThrough` sets that on Awake, so ticking the box fixes one already placed.
 
-`Stone Wall` is shaped the way the spell needs: the root carries nothing and the `Body` child sits
-half a box up with unit size, so scaling the root grows the wall upward off its own footing instead
-of stretching it around its middle. Any wall art of your own wants the same two-object shape.
+`Stone Wall` is shaped the way the spell needs: the root carries nothing and the **first child**
+carries the sprite and collider, one box square and centred on itself. The spell moves that child
+to whichever corner it is growing away from and scales the root, so the block grows out of its
+anchor rather than stretching around its middle. Any stone art of your own wants that same
+two-object shape.
+
+**Where it grows is the whole spell.** Stood at a ledge it builds *out from the lip* with its top
+level with the floor, so you walk straight onto it — the same anchor the old staff bridge used,
+`edgeX + facing * clearance`, found by `Movement.TryFindLedgeEdge`. The first version hunted for a
+floor **ahead** of the wizard instead, which fails at exactly the one place you would ever cast it:
+the whole reason to cast is that there is no floor ahead. Nowhere near a ledge, it falls back to
+that floor hunt and grows a wall upward instead.
+
+`size` decides which it reads as. Wide and thin (the default 3 x 0.5) is a plank over a gap;
+narrow and tall is a wall to climb or hide behind. Only the axis it is growing along is animated,
+so the other is right from the first frame and there is something solid underfoot immediately.
 
 `Level Exit` reloads the level and clears the last rest site, so a lap starts from the top rather
 than dropping you back where you sat down. `nextScene` is there for when there is somewhere to go;
