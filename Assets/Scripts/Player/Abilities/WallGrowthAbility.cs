@@ -12,10 +12,10 @@ namespace FallingWizard.Player
         const float MinGrown = 0.01f;
 
         [Header("Wall")]
-        [Tooltip("Spawned as the block. Its FIRST CHILD carries the sprite and the collider, one " +
-                 "box square and centred on itself - the spell moves that child and scales the " +
-                 "root, so the block grows out of its anchor rather than around its middle. " +
-                 "Leave empty and a plain one is built from the sprite below.")]
+        [Tooltip("Spawned as the block. Its FIRST CHILD carries the sprite and the collider, " +
+                 "ONE BOX SQUARE and centred on itself - the spell scales the root, and works out " +
+                 "where to stand the root from that one box. Leave empty and a plain one is " +
+                 "built from the sprite below.")]
         public GameObject wallPrefab;
 
         [Tooltip("Used when there is no prefab. A 32x32 sprite at 32 pixels per unit is one box. " +
@@ -30,17 +30,20 @@ namespace FallingWizard.Player
         public Vector2 size = Vector2.one;
 
         [Header("Where It Grows")]
-        [Tooltip("How many tiles ahead it will look for somewhere to put the block. 1 is the " +
-                 "tile you are about to step into. It takes the first free one it finds.")]
-        [Range(1, 4)] public int reachInTiles = 2;
+        [Tooltip("How many tiles ahead to hunt for the lip of a drop. The block is placed " +
+                 "relative to THAT, not to where you happen to be stood, so it lands in the same " +
+                 "spot whether you walked right up to the edge or stopped a tile short.")]
+        [Range(1, 6)] public int reachInTiles = 3;
 
-        [Tooltip("Tiles above your own feet, and it is usually NEGATIVE. -1 is one below - a " +
-                 "step down into the drop, which is what you want in a game about going down: " +
-                 "walk to a lip, put a stone under it, step off onto your own staircase. 0 is " +
-                 "level with the floor, which bridges a gap instead. Positive is a step up. " +
-                 "Below zero this becomes a LEDGE spell: on flat ground every tile at that " +
-                 "height is already floor, so it refuses and says so.")]
-        [Range(-3, 2)] public int liftInTiles = -1;
+        [Tooltip("Tiles past the lip. 0 is the first empty column - the block hugs the ledge. " +
+                 "1 leaves a one-tile gap you have to jump.")]
+        [Range(0, 3)] public int outFromEdge = 0;
+
+        [Tooltip("Which ROW, counted from the one your body is in. -1 is the floor row, so the " +
+                 "block comes out level with the ground you are stood on and you can walk " +
+                 "straight onto it. -2 is one below that, a step down into the drop. 0 is knee " +
+                 "height, which is almost never what you want.")]
+        [Range(-4, 1)] public int liftInTiles = -1;
 
         [Header("Growing")]
         [Tooltip("Seconds it takes to reach full size. Keep it SHORT: the collider follows " +
@@ -60,6 +63,7 @@ namespace FallingWizard.Player
 
         public override bool CanCast(PlayerLogic wizard) =>
             wizard.State == PlayerState.Normal &&
+            wizard.movement.IsGrounded &&
             wizard.spellbook.StateOf<Growth>(this).wall == null &&
             FindCell(wizard, out _);
 
@@ -68,18 +72,19 @@ namespace FallingWizard.Player
             if (wizard.State != PlayerState.Normal)
                 return $"you are {wizard.State} and need both feet under you";
 
+            // The line above has always promised this. Without the check the spell also grew a
+            // block under a FALLING wizard, one step at a time, which is a flying spell.
+            if (!wizard.movement.IsGrounded)
+                return "you are in the air - this grows out of the ground you are stood on";
+
             if (wizard.spellbook.StateOf<Growth>(this).wall != null)
                 return "your last block is still standing";
 
             if (FindCell(wizard, out _))
                 return null;
 
-            // Below foot level the usual reason is that there is no ledge, not that the place is
-            // crowded - and "every tile is filled" while stood in the open reads as a bug.
-            return liftInTiles < 0
-                ? $"there is solid ground under every tile within {reachInTiles} ahead of you - " +
-                  "this wants a ledge to build under"
-                : $"every tile within {reachInTiles} ahead of you is already filled";
+            return $"no lip within {reachInTiles} tiles ahead of you, or the tile past it is " +
+                   "already filled - this wants an edge to build off";
         }
 
         public override bool OnCast(PlayerLogic wizard)
@@ -89,7 +94,9 @@ namespace FallingWizard.Player
 
             Growth growth = wizard.spellbook.StateOf<Growth>(this);
 
-            growth.wall = Build(TileGrid.CentreOf(cell));
+            growth.wall = Build(new Vector2(
+                TileGrid.CentreOf(cell).x,
+                TileGrid.FloorOf(cell) + size.y * 0.5f));
             growth.body = Body(growth.wall);
             growth.age = 0f;
 
@@ -134,19 +141,24 @@ namespace FallingWizard.Player
         {
             PlayerLogic.Movement walk = wizard.movement;
             Vector2Int stood = TileGrid.StandingCell(walk);
+            int floorRow = stood.y - 1;
 
-            // Walking outward one tile at a time finds the LEDGE on its own: standing back
-            // from a lip, the near tiles at this height are still floor and get skipped, and the
-            // first free one is the far side of the edge. No edge-finding maths, no continuous
-            // edgeX to snap, and it behaves the same whether you are at the lip or a step back.
-            for (int step = 1; step <= reachInTiles; step++)
+            // Find the LIP first - the nearest column ahead whose floor has run out - and place
+            // relative to that. Placing relative to the wizard instead was the bug: standing at
+            // the very edge put the block one tile out, standing a tile back put it two, and
+            // which of those you got depended on exactly where you stopped walking.
+            for (int step = 0; step <= reachInTiles; step++)
             {
-                cell = new Vector2Int(stood.x + walk.Facing * step, stood.y + liftInTiles);
+                int x = stood.x + walk.Facing * step;
+
+                if (TileGrid.IsSolid(new Vector2Int(x, floorRow), walk.groundLayers))
+                    continue;
+
+                cell = new Vector2Int(x + walk.Facing * outFromEdge, stood.y + liftInTiles);
 
                 // No floor test, unlike Telekinesis. Putting a block where there ISN'T one is
                 // the entire spell - a block grown over solid ground would be grown over nothing.
-                if (TileGrid.IsFree(cell, walk.groundLayers))
-                    return true;
+                return TileGrid.IsFree(cell, walk.groundLayers);
             }
 
             cell = default;
@@ -189,9 +201,9 @@ namespace FallingWizard.Player
             if (growth.wall == null)
                 return;
 
-            // Grown about its own middle, so it is centred on its cell for EVERY frame of the
-            // growth rather than only at the end. There is no anchor to keep an axis flush
-            // against any more.
+            // Grown about its own middle. The root is already stood on the floor line by
+            // OnCast, so the finished block rests exactly where the tilemap's own tiles rest -
+            // the few frames of growing under that are three fiftieths of a second.
             growth.wall.transform.localScale = new Vector3(
                 Mathf.Max(MinGrown, size.x * grown),
                 Mathf.Max(MinGrown, size.y * grown), 1f);

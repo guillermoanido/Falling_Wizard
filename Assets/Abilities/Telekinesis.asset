@@ -31,8 +31,9 @@ MonoBehaviour:
   cooldown: 0.4
   collectedEffect: {fileID: 0}
   reach: 6
-  placeInTiles: 2
+  placeInTiles: 3
   liftInTiles: 0
+  needsAFloor: 0
   tiers:
   - reach: 6
   - reach: 9

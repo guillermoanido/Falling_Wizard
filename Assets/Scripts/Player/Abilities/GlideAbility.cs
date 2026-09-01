@@ -11,11 +11,14 @@ namespace FallingWizard.Player
     public class GlideAbility : Ability
     {
         [Header("Descent")]
-        [Tooltip("Fall speed with the canopy out, as a fraction of normal. 0.8 is BARELY, and " +
-                 "that is on purpose. It lowers the terminal speed too, but fall damage counts " +
-                 "BOXES fallen rather than how fast you were going - so however low you set " +
-                 "this, the drop bills you exactly the same.")]
-        [Range(0.4f, 1f)] public float fallSpeed = 0.8f;
+        [Tooltip("Fall speed with the canopy out, as a fraction of normal. Set it as low as " +
+                 "reads well: fall damage counts BOXES fallen rather than how fast you were " +
+                 "going, so however slow this makes the descent, the drop bills you exactly the " +
+                 "same. It cannot turn this into a survival tool. It is also where the REACH " +
+                 "comes from: distance across a fall is airtime times sideways speed, so halving " +
+                 "the descent is what gives the wing its arc. At 0.8 the spell was just a sprint " +
+                 "that happened in the air.")]
+        [Range(0.2f, 1f)] public float fallSpeed = 0.5f;
 
         [Header("Reach")]
         [Tooltip("Top sideways speed in the air, against a run. About 1.9 turns a running jump " +
@@ -23,10 +26,15 @@ namespace FallingWizard.Player
                  "canopy needs air under it.")]
         [Min(1f)] public float airSpeed = 1.9f;
 
-        [Tooltip("How hard the stick bites in the air. This scales the drift-to-a-stop as well " +
-                 "as the push, so letting go of the stick is your brake - which is what flying " +
-                 "one of these actually feels like.")]
+        [Tooltip("How hard the stick bites in the air. Steering only - it does not touch how " +
+                 "fast you coast to a stop.")]
         [Min(0.5f)] public float airControl = 1.6f;
+
+        [Tooltip("How fast you slow down in the air with NO stick held, against normal. Below 1 " +
+                 "you coast, which is the point of a wing: a canopy that braked harder than bare " +
+                 "air would drop you straight down the moment you stopped steering, which is the " +
+                 "opposite of gliding.")]
+        [Range(0.1f, 1f)] public float drag = 0.45f;
 
         [Header("Canopy")]
         [Tooltip("Drawn above the wizard while it is out. Empty draws a flat tinted block.")]
@@ -59,6 +67,7 @@ namespace FallingWizard.Player
 
         public override bool OnCast(PlayerLogic wizard)
         {
+            wizard.spellbook.StateOf<Wing>(this).flown = false;
             Show(wizard, true);
             return true;
         }
@@ -70,13 +79,26 @@ namespace FallingWizard.Player
             stats.FallSpeedMultiplier *= tier.fallSpeed;
             stats.AirSpeedMultiplier *= tier.airSpeed;
             stats.AirControlMultiplier *= tier.airControl;
+            stats.AirDragMultiplier *= drag;
         }
 
         public override void OnLit(PlayerLogic wizard, float fixedDeltaTime)
         {
-            // Airtime as well as IsGrounded. Without it, casting while stood on the floor folds
-            // the canopy on the very next fixed step, which reads as the spell doing nothing.
-            if (foldsOnLanding && wizard.movement.IsGrounded && wizard.movement.Airtime > 0)
+            Wing wing = wizard.spellbook.StateOf<Wing>(this);
+
+            if (!wizard.movement.IsGrounded)
+            {
+                wing.flown = true;
+                return;
+            }
+
+            // Fold on LANDING, which means having been in the air since this cast - not
+            // "Movement.Airtime > 0", which is a lifetime counter that never goes back down.
+            // That guard only ever protected the first cast of a session: after one jump it is
+            // true forever, so throwing the canopy out while stood at a ledge folded it on the
+            // next physics step, put it on cooldown, and left the wizard falling at normal
+            // speed with no sign anything had happened.
+            if (foldsOnLanding && wing.flown)
                 wizard.spellbook.Extinguish(this);
         }
 
@@ -145,14 +167,14 @@ namespace FallingWizard.Player
         [System.Serializable]
         public class Tier
         {
-            [Range(0.4f, 1f)] public float fallSpeed = 0.8f;
+            [Range(0.2f, 1f)] public float fallSpeed = 0.5f;
             [Min(1f)] public float airSpeed = 1.9f;
             [Min(0.5f)] public float airControl = 1.6f;
 
             // OnValidate does not reach into a nested class, so the block clamps itself.
             public void Validate()
             {
-                fallSpeed = Mathf.Clamp(fallSpeed, 0.4f, 1f);
+                fallSpeed = Mathf.Clamp(fallSpeed, 0.2f, 1f);
                 airSpeed = Mathf.Max(1f, airSpeed);
                 airControl = Mathf.Max(0.5f, airControl);
             }
@@ -161,6 +183,9 @@ namespace FallingWizard.Player
         public class Wing
         {
             public SpriteRenderer art;
+
+            // Airborne at some point since this cast, so touching down counts as landing.
+            public bool flown;
         }
     }
 }

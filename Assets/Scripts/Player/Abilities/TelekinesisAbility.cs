@@ -18,12 +18,20 @@ namespace FallingWizard.Player
         [Min(1f)] public float reach = 6f;
 
         [Tooltip("How many tiles ahead it will look for somewhere to set it down. It takes the " +
-                 "first tile that is empty AND has a floor under it, so nothing is ever left " +
-                 "hanging in the air.")]
-        [Range(1, 5)] public int placeInTiles = 2;
+                 "first one that will have it.")]
+        [Range(1, 6)] public int placeInTiles = 3;
 
-        [Tooltip("Tiles above your own feet to place it. 0 is the floor you are stood on.")]
-        [Range(0, 2)] public int liftInTiles = 0;
+        [Tooltip("Which ROW, counted from the one your body is in. 0 is the row you are stood " +
+                 "in, so it goes down on the same floor you are walking on. 1 is head height, " +
+                 "-1 puts it in the floor and is only useful over a drop.")]
+        [Range(-2, 2)] public int liftInTiles = 0;
+
+        [Tooltip("Insist on a floor underneath. ON, it only goes somewhere it can rest, which " +
+                 "means at a drop it walks out to the far side and can look like it refuses to " +
+                 "put things down nearby. OFF, it goes wherever there is room - including out " +
+                 "over a gap, where a slime hangs in mid-air and becomes a platform you aimed. " +
+                 "Off is the more useful spell; on is the tidier one.")]
+        public bool needsAFloor = false;
 
         [Header("Ranks")]
         [Tooltip("One block per rank. Element 0 is what learning it gives you.")]
@@ -51,8 +59,11 @@ namespace FallingWizard.Player
             if (hands.thing != null)
                 return FindShelf(wizard, out _)
                     ? null
-                    : $"nowhere to set it down - it wants an empty tile with a floor under it, " +
-                      $"within {placeInTiles} of you";
+                    : needsAFloor
+                        ? $"nowhere to rest it - it wants an empty tile WITH A FLOOR under it " +
+                          $"within {placeInTiles} of you. Turn off 'needs a floor' to set it " +
+                          "down over a drop"
+                        : $"every tile within {placeInTiles} ahead of you is already filled";
 
             if (Carryable.Nearest(wizard.movement.Position, Of(wizard).reach) == null)
                 return Carryable.All.Count == 0
@@ -71,7 +82,7 @@ namespace FallingWizard.Player
                 if (!FindShelf(wizard, out Vector2Int cell))
                     return false;
 
-                hands.thing.PutDown(TileGrid.CentreOf(cell));
+                hands.thing.PutDownOn(TileGrid.CentreOf(cell).x, TileGrid.FloorOf(cell));
                 hands.thing = null;
                 return true;
             }
@@ -134,10 +145,15 @@ namespace FallingWizard.Player
             {
                 cell = new Vector2Int(stood.x + walk.Facing * step, stood.y + liftInTiles);
 
-                // Empty AND with something under it. Wall Growth wants the opposite test - it
-                // puts a block where there ISN'T one - and that contrast is the whole difference
-                // between the two spells.
-                if (TileGrid.IsShelf(cell, walk.groundLayers))
+                // With needsAFloor off this is just "is there room", which is what makes the
+                // spell feel like placing rather than like asking permission. A hazard set down
+                // over a gap simply hangs there - none of them fall, they are triggers - and a
+                // slime hung over a drop is a trampoline the player put where they wanted it.
+                bool willHaveIt = needsAFloor
+                    ? TileGrid.IsShelf(cell, walk.groundLayers)
+                    : TileGrid.IsFree(cell, walk.groundLayers);
+
+                if (willHaveIt)
                     return true;
             }
 

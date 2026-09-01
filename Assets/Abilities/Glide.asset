@@ -29,18 +29,19 @@ MonoBehaviour:
   usesPerRun: 0
   cooldown: 1
   collectedEffect: {fileID: 0}
-  fallSpeed: 0.8
+  fallSpeed: 0.5
   airSpeed: 1.9
   airControl: 1.6
+  drag: 0.45
   canopyArt: {fileID: 0}
   tint: {r: 0.95, g: 0.78, b: 0.42, a: 0.85}
   canopy: {x: 2.2, y: 0.5, z: 0.9}
   sortingOrder: 1
   foldsOnLanding: 1
   tiers:
-  - fallSpeed: 0.8
+  - fallSpeed: 0.5
     airSpeed: 1.9
     airControl: 1.6
-  - fallSpeed: 0.75
+  - fallSpeed: 0.4
     airSpeed: 2.4
     airControl: 2

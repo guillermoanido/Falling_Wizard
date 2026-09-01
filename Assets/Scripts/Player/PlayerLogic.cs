@@ -56,7 +56,7 @@ namespace FallingWizard.Player
 
         public void Attach(Rigidbody2D body, SpriteRenderer sprite, Collider2D hitbox, Staff.Pole staffPole)
         {
-            movement.Attach(body, sprite);
+            movement.Attach(body, sprite, hitbox);
             ragdoll.Attach(body, sprite != null ? sprite.transform : null);
             vine.Attach(body);
 
@@ -430,6 +430,11 @@ namespace FallingWizard.Player
             public float AirSpeedMultiplier;
             public float AirControlMultiplier;
 
+            // How fast sideways speed bleeds away in the air with nothing held. Separate from
+            // AirControlMultiplier on purpose: a wing should bite HARDER when steered and coast
+            // LONGER when not, and one multiplier over both does the second one backwards.
+            public float AirDragMultiplier;
+
             public int ExtraJumps;
             public bool Shielded;
 
@@ -447,6 +452,7 @@ namespace FallingWizard.Player
                 WindMultiplier = 1f;
                 AirSpeedMultiplier = 1f;
                 AirControlMultiplier = 1f;
+                AirDragMultiplier = 1f;
                 ExtraJumps = 0;
                 Shielded = false;
                 Rooted = false;
@@ -527,6 +533,10 @@ namespace FallingWizard.Player
             static readonly Vector2 MinGroundCheck = new Vector2(0.05f, 0.01f);
 
             const float MinTravelSpeed = 0.1f;
+
+            // Enough to clear the floor underfoot without meaningfully lying about where the
+            // arc begins - well under a tile, so the drawn landing point is still right.
+            const float ArcClearance = 0.15f;
 
             const float GroundlessWarning = 3f;
             const float NearbyGround = 1f;
@@ -625,6 +635,7 @@ namespace FallingWizard.Player
 
             [NonSerialized] Rigidbody2D body;
             [NonSerialized] SpriteRenderer sprite;
+            [NonSerialized] Collider2D hull;
             [NonSerialized] ContactFilter2D groundFilter;
 
             [NonSerialized] float baseGravityScale;
@@ -667,14 +678,34 @@ namespace FallingWizard.Player
             public Vector2 Wind => wind;
             public Transform Rig => body == null ? null : body.transform;
             public float FeetY => Position.y + groundCheckOffset.y;
+
+            // Where the soles actually meet the world, measured off the COLLIDER.
+            //
+            // FeetY is the centre of the ground probe, which hangs deliberately below the feet by
+            // groundCheckSkin - and drifts further the moment the collider is resized without the
+            // probe being refitted, which is exactly what had happened here: the probe sat almost
+            // a tenth of a box under the boots. Grid maths built on it read the FLOOR row as the
+            // row the wizard was standing in, and every spell that puts a tile down was one row
+            // out. Asking the collider cannot drift.
+            public Vector2 Footing => hull != null
+                ? new Vector2(hull.bounds.center.x, hull.bounds.min.y)
+                : new Vector2(Position.x, FeetY + groundCheckSkin);
+
+            // Where BOTH ground probes hang from: under the middle of the footprint, not under
+            // the middle of the transform. A collider carrying an x offset of its own puts those
+            // in different places, and the ledge check would then disagree with the ground check
+            // about which foot is over the drop.
+            Vector2 ProbeOrigin => body.position + groundCheckOffset;
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
             public Vector2 Velocity => body == null ? Vector2.zero : body.linearVelocity;
             public float VerticalSpeed => body == null ? 0f : body.linearVelocityY;
 
-            public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer)
+            public void Attach(Rigidbody2D rigidbody2d, SpriteRenderer spriteRenderer,
+                Collider2D hitbox)
             {
                 body = rigidbody2d;
                 sprite = spriteRenderer;
+                hull = hitbox;
                 baseGravityScale = Mathf.Max(MinGravityScale, body.gravityScale);
                 highestPoint = body.position.y;
 
@@ -779,9 +810,12 @@ namespace FallingWizard.Player
                 float step = Mathf.Max(0.005f, look.Step);
                 float updraught = wind.y;
 
-                // The FEET, not the middle. The arc is a promise about where you land, and a ray
-                // cast from the body's centre stops half a box above the floor.
-                var point = new Vector2(body.position.x, FeetY);
+                // Foot height, LIFTED CLEAR of the floor. The arc is a promise about where the
+                // feet land, so it starts there - but this project has
+                // Physics2D.queriesStartInColliders on, so a ray beginning flush with the ground
+                // the wizard is stood on reports a hit at distance zero and the whole arc
+                // collapses to a single point beside them.
+                var point = new Vector2(body.position.x, FeetY + ArcClearance);
                 Vector2 velocity = launch;
 
                 float travelled = 0f;
@@ -931,14 +965,24 @@ namespace FallingWizard.Player
 
             public void FitGroundCheckTo(Collider2D collider2d)
             {
-                groundCheckOffset = new Vector2(0f, -collider2d.bounds.extents.y - groundCheckSkin);
+                // Measured from the collider's BOTTOM and its own middle, not from half its
+                // height about the transform. A collider carrying an offset - which is what
+                // Unity's fit-to-sprite button writes - puts those in different places, and the
+                // probe ends up floating inside the wizard or trailing below their boots.
+                Bounds box = collider2d.bounds;
+                Vector3 middle = collider2d.transform.position;
+
+                groundCheckOffset = new Vector2(
+                    box.center.x - middle.x,
+                    box.min.y - middle.y - groundCheckSkin);
+
                 groundCheckSize = new Vector2(
-                    collider2d.bounds.size.x * groundCheckWidthFactor, groundCheckThickness);
+                    box.size.x * groundCheckWidthFactor, groundCheckThickness);
             }
 
             public bool TryFindLedgeEdge(out float edgeX)
             {
-                edgeX = body.position.x;
+                edgeX = ProbeOrigin.x;
 
                 if (!IsGrounded || !IsAtEdge)
                     return false;
@@ -964,7 +1008,7 @@ namespace FallingWizard.Player
                         air = middle;
                 }
 
-                edgeX = body.position.x + Facing * air;
+                edgeX = ProbeOrigin.x + Facing * air;
                 return true;
             }
 
@@ -986,7 +1030,7 @@ namespace FallingWizard.Player
                 Gizmos.DrawWireCube(origin + groundCheckOffset, groundCheckSize);
 
                 Gizmos.color = Color.yellow;
-                Vector2 probe = origin + new Vector2(Facing * ledgeCheckAhead, groundCheckOffset.y);
+                Vector2 probe = origin + groundCheckOffset + new Vector2(Facing * ledgeCheckAhead, 0f);
                 Gizmos.DrawLine(probe, probe + Vector2.down * ledgeCheckDepth);
             }
 
@@ -1006,7 +1050,7 @@ namespace FallingWizard.Player
                 groundFilter.layerMask = groundLayers;
 
                 int count = Physics2D.OverlapBox(
-                    body.position + groundCheckOffset, groundCheckSize, 0f, groundFilter, Overlaps);
+                    ProbeOrigin, groundCheckSize, 0f, groundFilter, Overlaps);
 
                 IsGrounded = count > 0;
 
@@ -1106,7 +1150,7 @@ namespace FallingWizard.Player
 
             bool HasGroundAt(float ahead)
             {
-                Vector2 probe = body.position + new Vector2(Facing * ahead, groundCheckOffset.y);
+                Vector2 probe = ProbeOrigin + new Vector2(Facing * ahead, 0f);
                 groundFilter.layerMask = groundLayers;
 
                 return Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, ledgeCheckDepth) > 0;
@@ -1131,9 +1175,12 @@ namespace FallingWizard.Player
 
                 targetSpeed += wind.x;
 
-                float rate = Mathf.Abs(steer) > steerDeadzone ? acceleration : groundFriction;
+                bool steering = Mathf.Abs(steer) > steerDeadzone;
+                float rate = steering ? acceleration : groundFriction;
+
                 if (!IsGrounded)
-                    rate *= airControl * stats.AirControlMultiplier;
+                    rate *= airControl *
+                            (steering ? stats.AirControlMultiplier : stats.AirDragMultiplier);
 
                 body.linearVelocityX =
                     Mathf.MoveTowards(body.linearVelocityX, targetSpeed, rate * fixedDeltaTime);

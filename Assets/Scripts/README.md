@@ -169,23 +169,34 @@ Note what `fallSpeed` does *not* buy. Fall damage counts **boxes fallen**, not h
 0.8 lowers the terminal speed and bills you exactly the same. That is worth letting a player
 discover once. You survive under a canopy by **going somewhere else**, not by falling softer.
 
-`AirSpeedMultiplier` and `AirControlMultiplier` are air-only for a reason: `MoveSpeedMultiplier`
-would make the wizard sprint along the floor with a wing out. They are applied after the move
-multiply and **before** `targetSpeed += wind.x`, so a canopy carries you under your own steam
-without also amplifying a gale. One consequence worth knowing: `AirControlMultiplier` scales the
-drift-to-a-stop as well as the push, so **letting go of the stick is your brake**. Correct for a
-paraglider.
+`AirSpeedMultiplier`, `AirControlMultiplier` and `AirDragMultiplier` are air-only for a reason:
+`MoveSpeedMultiplier` would make the wizard sprint along the floor with a wing out. They are
+applied after the move multiply and **before** `targetSpeed += wind.x`, so a canopy carries you
+under your own steam without also amplifying a gale.
+
+**Steering and coasting are separate multipliers, and they must be.** `Run` picks `acceleration`
+when the stick is held and `groundFriction` when it is not; one multiplier over both means a wing
+that bites harder when steered *also brakes harder when released* — so letting go dropped the
+wizard straight down, which is the exact opposite of gliding. `AirControlMultiplier` scales the
+first, `AirDragMultiplier` the second, and Glide pushes them in opposite directions: 1.6 and 0.45.
+
+**`foldsOnLanding` needs the spell's own memory of having flown, not `Movement.Airtime`.** Airtime
+is a lifetime counter that only ever increments, so `Airtime > 0` guarded exactly one cast — the
+first of a session. After a single jump it was true forever, and throwing the canopy out while
+stood at a ledge folded it on the next physics step, put it on cooldown, and left the wizard
+falling at completely normal speed with nothing to say why. The `Wing.flown` flag is set the first
+step the wizard is off the ground and cleared on every cast.
 
 **Bubble is the opposite trade, on purpose.** It does not forgive the drop — pop it high up and you
 are still high up. What it buys is that nothing can touch you (`Modifiers.Shielded`) and that wind
 pushes you three and a half times as hard (`Modifiers.WindMultiplier`). A gale you would normally
 brace against becomes the ride. It is the only spell that wants a hazard nearby.
 
-**Telekinesis lights while it holds.** Pressing once takes hold, pressing again lets go — and
-because `TryCast` re-lights a spell whose `OnCast` returned true, the release cannot end the spell
-itself. It drops the stone and lets `OnLit` notice the empty hand and `Extinguish` on the next
-step. Let go with a direction held and the stone is thrown; let go with nothing held and it simply
-falls where it hangs.
+**Telekinesis is one button doing two jobs**, chosen by whether your hands are full. Empty, the
+press takes hold of the nearest `Carryable` and stows it; full, the press sets it down in the first
+tile ahead that will have it. There is no lit window and nothing to time — `activeDuration` is 0
+and the only thing standing between the two presses is a short `cooldown`, so the spell cannot
+grab and drop on the same press.
 
 ### Adding spell #5
 
@@ -377,9 +388,81 @@ means putting it down cannot lose anything.
 without it, a slime set down at your feet still has the re-arm timer it had when you picked it up,
 and bounces you on the very next physics step.
 
-Placement asks `TileGrid.IsShelf`: an empty cell *with a floor under it*. Wall Growth asks
-`TileGrid.IsFree` — an empty cell, floor or not. That contrast is the whole difference between the
-two spells, and it is why one helper serves both.
+`needsAFloor` picks which question placement asks. On, it is `TileGrid.IsShelf` — an empty cell
+*with a floor under it*, so nothing is ever left hanging. Off, it is `TileGrid.IsFree` — room is
+room, and a slime hung over a drop is a trampoline the player aimed. Wall Growth always asks
+`IsFree`, because putting a block where there already is one is the whole spell doing nothing.
+
+**Set down on the cell's FLOOR, not its middle.** A slime's hitbox is 0.7 of a box tall and a
+rock's is 0.6, so `PutDown` on `CentreOf` left both floating a sixth of a box off the ground.
+`PutDownOn` measures the thing's own footprint once it is switched back on — `Physics2D.SyncTransforms`
+first, because a transform move does not reach the physics shapes until the next step and stale
+bounds would settle it against wherever it used to be standing.
+
+## The tiles are a pixel bigger than their cells
+
+`mainlev_build.png` is sliced **34×35 px on a 32 px grid**, so every tile is drawn — and collides
+— one pixel proud of its cell on all four sides. You can read it straight off the composite
+collider in `Level 1`: its outline sits on `x.03125`, not on whole numbers.
+
+That is not a rounding error to ignore. **It is the surface everything else has to line up with.**
+A one-box block built to the bare grid tops out 1/32 of a box *below* the floor beside it, and a
+box collider walking back onto the platform does not step up over a lip — it stops dead against
+it. A wizard who walks out onto their own Wall Growth block and then cannot walk back is a spell
+that reads as broken, with the cause nowhere near the spell.
+
+So `TileGrid.FloorOf` answers with `cell.y + TileBleed`, and everything that puts something down
+stands it on *that* line rather than on the grid line:
+
+| | rests on | lines up with a tile |
+| --- | --- | --- |
+| Wall Growth's block | `FloorOf(cell)`, anchored by `size.y * 0.5` | top flush, no step |
+| A carried slime or rock | `FloorOf(cell)` | sits on the ground instead of over it |
+| A carried boulder | `FloorOf(cell)` | flush top **and** bottom |
+
+Re-slice the sheet to 32×32 one day and `TileBleed` becomes 0. Nothing else has to change — which
+is the whole reason it is one named constant and not a sprinkling of `0.03125`.
+
+Do **not** reach for a custom `physicsShape` on the tiles instead. `spriteMeshType` is Tight and
+`physicsShape` is empty, so the slopes and half-tiles get outlines that follow their own art;
+squaring all 212 of them off would wall the level in.
+
+## Which row is the wizard standing in
+
+Both placing spells count rows from `TileGrid.StandingCell`, and **it has to answer with the empty
+cell the body is in, never the solid one holding it up.** One row out is not a near miss — it is
+the spell aiming into the ground:
+
+- Telekinesis asked whether the tile ahead was free, got told about the *floor*, and refused every
+  cast with "every tile within 3 ahead of you is already filled".
+- Wall Growth hunted for the lip of a drop along the row *below* the floor, found solid rock all
+  the way out, and refused with "no lip within 3 tiles ahead of you".
+
+Both read exactly like a spell that does nothing, and neither is.
+
+It used to ask `Movement.FeetY + 0.05f` — the ground **probe**, lifted by what the default
+`groundCheckSkin` happens to be. The probe hangs below the boots on purpose, and it drifts further
+the moment the collider is resized without `FitGroundCheckTo` being run again, which is exactly
+what had happened: the probe sat almost a tenth of a box under the wizard, and `floor()` landed a
+row low. `Movement.Footing` asks the collider itself — `bounds.center.x` and `bounds.min.y` — and
+`StandingCell` lifts that clear of the cell line before flooring it, because the soles rest exactly
+*on* that line and `floor()` on a line is a coin toss decided by float error.
+
+`FitGroundCheckTo` now measures from the collider's bottom and its own middle rather than from half
+its height about the transform, so a collider carrying an offset — which is what Unity's
+fit-to-sprite button writes — no longer bakes that drift in the moment someone hits Reset. The
+PLAYER in `Level 1` has been refitted to its collider: `groundCheckOffset` went from
+`(0, -0.596875)` to `(-0.050636888, -0.5525605)`, and `groundCheckSize.x` from `0.703125` to
+`0.64969389`.
+
+Both probes now hang from one `ProbeOrigin`. The ground check reads it, the ledge check reads it,
+and `TryFindLedgeEdge` reports its lip relative to it — otherwise a collider with an x offset of
+its own leaves the two disagreeing about which foot is over the drop.
+
+**Wall Growth wants `IsGrounded`, not just `PlayerState.Normal`.** `Normal` is every state that is
+not staff, vine or ragdoll, and that includes falling — so the spell would grow a block under a
+wizard in mid-air, one press at a time, all the way down. Its own refusal line had been promising
+"both feet under you" the whole time without anything checking.
 
 ## The vine
 

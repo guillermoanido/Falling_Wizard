@@ -2278,8 +2278,8 @@ MonoBehaviour:
       groundLayers:
         serializedVersion: 2
         m_Bits: 64
-      groundCheckOffset: {x: 0, y: -0.596875}
-      groundCheckSize: {x: 0.703125, y: 0.1}
+      groundCheckOffset: {x: -0.050636888, y: -0.5525605}
+      groundCheckSize: {x: 0.64969389, y: 0.1}
       groundCheckSkin: 0.05
       groundCheckThickness: 0.1
       groundCheckWidthFactor: 0.9
