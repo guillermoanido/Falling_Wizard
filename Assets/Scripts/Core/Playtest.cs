@@ -15,6 +15,12 @@ namespace FallingWizard.Core
                  "exactly as it was.")]
         public bool active = true;
 
+        [Tooltip("Deal the kit again every time the level loads. OFF - the default - deals it " +
+                 "once when you press Play and then leaves it alone, so a loadout you rearranged " +
+                 "at the skill screen survives dying and restarting. That is what this being on " +
+                 "by accident used to break. Turn it on while you are tuning the ticks.")]
+        public bool redealOnEveryLoad = false;
+
         [Tooltip("The catalogue the list below is built from. Filled in when the component is " +
                  "added; it is a field rather than something looked up on the fly so the list " +
                  "can be kept in step from OnValidate, where changes actually get saved.")]
@@ -95,7 +101,20 @@ namespace FallingWizard.Core
                 return;
             }
 
-            Progress.BeginSandbox();
+            // Already dealt this session, so touch nothing: what is in Progress is the
+            // loadout the player last chose, and re-dealing here is exactly what made every
+            // restart forget it. The Staff still lands - Spellbook.Attach grants book.known and
+            // Reload re-seeds any owned locked spell that is not in a slot.
+            if (Progress.SandboxSeeded && !redealOnEveryLoad)
+            {
+                if (announce)
+                    Debug.Log("Playtest already dealt this session - keeping the loadout you " +
+                              "left with. Tick 'Redeal On Every Load' to start from the ticks " +
+                              "each time.", this);
+                return;
+            }
+
+            Progress.BeginSandbox(reseed: true);
             Progress.GiveWisps(wisps);
             Progress.SetHearts(bonusHearts);
 
@@ -129,7 +148,13 @@ namespace FallingWizard.Core
                     continue;
 
                 if (pick.bring || learnEverything)
+                {
                     Progress.Grant(pick.spell.Key);
+
+                    if (pick.rank > 1)
+                        Progress.SetRank(pick.spell.Key,
+                            Mathf.Min(pick.rank, pick.spell.MaxRank));
+                }
 
                 if (!pick.bring || pick.spell.locked)
                     continue;
@@ -188,6 +213,10 @@ namespace FallingWizard.Core
         {
             [Tooltip("Bring this one down with you.")]
             public bool bring;
+
+            [Tooltip("Rank to start it at, for trying an upgrade without buying it. 1 is just " +
+                     "learning it. Clamped to the spell's own top rank.")]
+            [Min(1)] public int rank = 1;
 
             public Ability spell;
         }

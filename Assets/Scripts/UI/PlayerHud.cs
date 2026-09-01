@@ -59,6 +59,11 @@ namespace FallingWizard.UI
         [Tooltip("Wipe drawn over a spell while it is running or cooling down.")]
         public Color chargeTint = new Color(0.25f, 0.65f, 1f, 0.55f);
 
+        [Tooltip("The same wipe, while a spell is being WOUND UP rather than recovering. A " +
+                 "different colour because the two mean opposite things: one is filling up to " +
+                 "something you choose to release, the other is draining back to ready.")]
+        public Color windupTint = new Color(1f, 0.85f, 0.35f, 0.7f);
+
         // The corner counter, in reference-resolution pixels, when no label was wired by hand.
         static readonly Vector2 WispCorner = new Vector2(-24f, -20f);
         static readonly Vector2 WispSize = new Vector2(360f, 40f);
@@ -215,7 +220,7 @@ namespace FallingWizard.UI
             IReadOnlyList<PlayerLogic.Spellbook.Slot> book = bound.Logic.spellbook.Slots;
 
             for (int i = 0; i < slots.Count && i < book.Count; i++)
-                slots[i].Show(book[i], this);
+                slots[i].Show(book[i], this, bound.Logic);
         }
 
         void RefreshButtons()

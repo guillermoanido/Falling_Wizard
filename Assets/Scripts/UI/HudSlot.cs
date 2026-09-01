@@ -29,7 +29,7 @@ namespace FallingWizard.UI
         [NonSerialized] bool shownWanted;
         [NonSerialized] bool everShown;
 
-        public void Show(PlayerLogic.Spellbook.Slot spell, PlayerHud hud)
+        public void Show(PlayerLogic.Spellbook.Slot spell, PlayerHud hud, PlayerLogic wizard)
         {
             bool filled = spell.Ability != null;
 
@@ -42,16 +42,23 @@ namespace FallingWizard.UI
 
             if (icon != null)
             {
-                icon.sprite = filled ? spell.Ability.icon : hud.emptySlotIcon;
+                // The spell decides what it looks like right now, not the slot. Telekinesis
+                // answers with whatever it is carrying, which is the only way to tell a stored
+                // slime from a stored rock without opening a menu.
+                icon.sprite = filled ? spell.Ability.IconFor(wizard) : hud.emptySlotIcon;
 
-                icon.color = !filled ? hud.emptyTint
-                           : spell.IsReady ? hud.readyTint
-                           : hud.notReadyTint;
+                Color state = !filled ? hud.emptyTint
+                            : spell.IsReady ? hud.readyTint
+                            : hud.notReadyTint;
+
+                // MULTIPLIED, not assigned: assigning would throw away the ready/cooling state
+                // and every slot would read as available.
+                icon.color = filled ? state * spell.Ability.IconTintFor(wizard) : state;
             }
 
             if (uses != null)
             {
-                bool counted = filled && spell.Ability.usesPerRun > 0;
+                bool counted = filled && spell.Ability.usesPerLevel > 0;
 
                 uses.enabled = counted;
                 uses.text = counted ? spell.UsesLeft.ToString() : string.Empty;
@@ -60,11 +67,17 @@ namespace FallingWizard.UI
             if (charge == null)
                 return;
 
-            float fill = spell.IsLit ? spell.LitProgress
+            // A spell winding up owns the meter outright - below zero means it has nothing of
+            // its own to show and the slot falls back to its lit window and its cooldown.
+            float own = filled ? spell.Ability.ChargeFor(wizard) : -1f;
+            bool winding = own >= 0f;
+
+            float fill = winding ? own
+                       : spell.IsLit ? spell.LitProgress
                        : spell.CooldownLeft > 0f ? spell.CooldownProgress
                        : 0f;
 
-            charge.color = hud.chargeTint;
+            charge.color = winding ? hud.windupTint : hud.chargeTint;
             charge.enabled = filled && fill > 0f;
             charge.fillAmount = fill;
         }

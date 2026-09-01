@@ -88,7 +88,7 @@ namespace FallingWizard.Player
             if (!health.IsAlive)
                 return;
 
-            spellbook.TryCast();
+            spellbook.TryCast(fixedDeltaTime);
             spellbook.Rebuild();
             ApplyExternalForce(fixedDeltaTime);
 
@@ -194,6 +194,34 @@ namespace FallingWizard.Player
 
         public void BeginFallFrom(float worldY) => movement.BeginFallFrom(worldY);
 
+        public int PredictArc(Vector2 launch, in Movement.ArcSettings look, List<Vector2> into,
+            out Movement.ArcEnd end)
+        {
+            // Only ever while they are stood there winding one up. Tumbling or hanging off the
+            // staff, there is no shot to draw.
+            if (State != PlayerState.Normal || !health.IsAlive)
+            {
+                into.Clear();
+                end = default;
+                return 0;
+            }
+
+            return movement.PredictArc(launch, Stats, look, into, out end);
+        }
+
+        // One shove, aimed. Unlike Shove this clears whatever the wizard was already doing, so
+        // the launch is exactly the one the dotted line was drawing and nothing is added to it.
+        public bool Fling(Vector2 velocity, float controlLockout)
+        {
+            if (State != PlayerState.Normal || !health.IsAlive)
+                return false;
+
+            movement.Stop();
+            movement.BeginFallFrom(movement.Position.y);
+            movement.AddImpulse(velocity, controlLockout);
+            return true;
+        }
+
         public bool TryPlantStaff(StaffMode mode)
         {
             if (State != PlayerState.Normal || !HasPole)
@@ -227,18 +255,18 @@ namespace FallingWizard.Player
         public bool CanGrabVine =>
             health.IsAlive && State == PlayerState.Normal && vine.CanGrab;
 
-        public bool TryGrabVine(Vector2 anchor, float length, float maxSwingDegrees)
+        public bool TryGrabVine(in Vine.Hold spec)
         {
-            if (!CanGrabVine)
-                return false;
-
-            if (!vine.Grab(anchor, length, maxSwingDegrees, movement.Position,
-                    movement.Velocity))
+            if (!CanGrabVine || !vine.Grab(spec, movement.Position, movement.Velocity))
                 return false;
 
             State = PlayerState.OnVine;
             return true;
         }
+
+        // So a spell can say WHY a grab was refused without duplicating the rope's own clamps.
+        public float GrabSnapDistance(in Vine.Hold spec) =>
+            Vector2.Distance(movement.Position, vine.WouldHangAt(spec, movement.Position));
 
         public void LetGoOfVine()
         {
@@ -394,8 +422,17 @@ namespace FallingWizard.Player
             public float FallSpeedMultiplier;
             public float FallDamageMultiplier;
             public float WindMultiplier;
+
+            // Air only. MoveSpeedMultiplier cannot say that, and a canopy that made the wizard
+            // sprint along the floor would be a different spell.
+            public float AirSpeedMultiplier;
+            public float AirControlMultiplier;
+
             public int ExtraJumps;
             public bool Shielded;
+
+            // The stick is aiming something, not steering the wizard.
+            public bool Rooted;
 
             public Modifiers() => Reset();
 
@@ -406,8 +443,11 @@ namespace FallingWizard.Player
                 FallSpeedMultiplier = 1f;
                 FallDamageMultiplier = 1f;
                 WindMultiplier = 1f;
+                AirSpeedMultiplier = 1f;
+                AirControlMultiplier = 1f;
                 ExtraJumps = 0;
                 Shielded = false;
+                Rooted = false;
             }
         }
 
@@ -491,6 +531,14 @@ namespace FallingWizard.Player
 
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(8);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
+
+            // Triggers ON, unlike the ground filter: the arc wants to know it is going to land
+            // on a slime, and every hazard in this game is a trigger you pass through.
+            [NonSerialized] ContactFilter2D arcFilter = new ContactFilter2D
+            {
+                useTriggers = true,
+                useLayerMask = true,
+            };
 
             [Header("Speed")]
             [Tooltip("Top speed at a normal run, in boxes per second. Running off a ledge drops you.")]
@@ -613,6 +661,8 @@ namespace FallingWizard.Player
 
             public int Facing { get; private set; } = 1;
             public Vector2 Position => body == null ? Vector2.zero : body.position;
+            public SpriteRenderer Art => sprite;
+            public Vector2 Wind => wind;
             public Transform Rig => body == null ? null : body.transform;
             public float FeetY => Position.y + groundCheckOffset.y;
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
@@ -689,6 +739,139 @@ namespace FallingWizard.Player
             }
 
             public void SenseGround(float fixedDeltaTime) => UpdateGroundedState(fixedDeltaTime);
+
+            // Adapted from the jump-test branch, and the adaptations matter more than the port.
+            // It integrates the SAME model the real flight uses - fall gravity, the terminal
+            // clamp, the floatiness from Modifiers - so the picture cannot drift from the physics.
+            //
+            // Three things this game needs that a plain ballistic arc gets wrong:
+            //
+            //  * HAZARDS DO NOT STOP YOU. Every hazard here is a trigger you pass straight
+            //    through, so an arc that ended at the first slime would hide where you actually
+            //    land. It flies on and reports that it crossed one.
+            //  * WIND PUSHES YOU MID-FLIGHT. wind.y is added outside Run (FixedTick:719), so it
+            //    reaches a wizard whose steering is locked. wind.x is not - Run early-returns on
+            //    lockout - so only the vertical component belongs in here.
+            //  * THE FLIGHT HAS TO BE LOCKED. Run rewrites linearVelocityX every step, dragging
+            //    it to the stick at airControl x groundFriction. Unlocked, a 12 b/s fling is
+            //    spent inside half a second and the arc is a lie. ArcEnd.Seconds is how long the
+            //    caster must lock control for the drawing to stay true.
+            //
+            // Sampled by TIME, so points bunch around the apex where the wizard is slowest.
+            // Whatever draws it re-spaces by DISTANCE, which is what makes it read as an even
+            // dotted line rather than a comet.
+            public int PredictArc(Vector2 launch, Modifiers stats, in ArcSettings look,
+                List<Vector2> into, out ArcEnd end)
+            {
+                into.Clear();
+                end = default;
+
+                if (body == null)
+                    return 0;
+
+                arcFilter.layerMask = look.Layers;
+
+                float baseGravity = Mathf.Abs(Physics2D.gravity.y) * baseGravityScale;
+                float floatiness = stats != null ? stats.FallSpeedMultiplier : 1f;
+                float terminal = maxFallSpeed * floatiness;
+                float step = Mathf.Max(0.005f, look.Step);
+                float updraught = wind.y;
+
+                // The FEET, not the middle. The arc is a promise about where you land, and a ray
+                // cast from the body's centre stops half a box above the floor.
+                var point = new Vector2(body.position.x, FeetY);
+                Vector2 velocity = launch;
+
+                float travelled = 0f;
+                float flown = 0f;
+
+                bool crossed = false;
+                Collider2D met = null;
+
+                into.Add(point);
+
+                for (int i = 0; i < look.Steps && travelled < look.Distance; i++)
+                {
+                    float gravity = velocity.y < 0f
+                        ? baseGravity * fallGravityMultiplier * floatiness
+                        : baseGravity;
+
+                    velocity.y += (updraught - gravity) * step;
+
+                    if (velocity.y < -terminal)
+                        velocity.y = -terminal;
+
+                    Vector2 next = point + velocity * step;
+                    Vector2 leg = next - point;
+                    float length = leg.magnitude;
+
+                    if (length > Mathf.Epsilon)
+                    {
+                        int found = Physics2D.Raycast(point, leg / length, arcFilter, Rays, length);
+
+                        // Sorted by distance, so the first SOLID one is where the flight really
+                        // ends. Everything before it is scenery you pass through.
+                        for (int hit = 0; hit < found; hit++)
+                        {
+                            Collider2D what = Rays[hit].collider;
+
+                            if ((groundLayers.value & (1 << what.gameObject.layer)) != 0)
+                            {
+                                end = new ArcEnd
+                                {
+                                    Point = Rays[hit].point,
+                                    Stopped = true,
+                                    Hazard = crossed,
+                                    What = crossed ? met : what,
+                                    Seconds = flown + step,
+                                };
+
+                                into.Add(end.Point);
+                                return into.Count;
+                            }
+
+                            if (crossed)
+                                continue;
+
+                            crossed = true;
+                            met = what;
+                        }
+                    }
+
+                    travelled += length;
+                    flown += step;
+                    point = next;
+                    into.Add(point);
+                }
+
+                end = new ArcEnd { Point = point, Hazard = crossed, What = met, Seconds = flown };
+                return into.Count;
+            }
+
+            public struct ArcSettings
+            {
+                public LayerMask Layers;
+                public float Step;
+                public int Steps;
+                public float Distance;
+            }
+
+            // What the arc ran into, if anything.
+            public struct ArcEnd
+            {
+                public Vector2 Point;
+                public bool Stopped;
+
+                // Something that will change where you end up was crossed on the way. The flight
+                // does NOT stop there - hazards in this game are things you pass through - so
+                // this is a warning about the arc, not the end of it.
+                public bool Hazard;
+                public Collider2D What;
+
+                // How long the flight takes. Lock control for at least this long or the drawing
+                // is a lie, because Run drags horizontal speed back to the stick every step.
+                public float Seconds;
+            }
 
             public void BeginFallFrom(float height)
             {
@@ -932,9 +1115,14 @@ namespace FallingWizard.Player
                 if (lockout > 0f)
                     return;
 
-                float steer = command.Steer;
+                float steer = stats.Rooted ? 0f : command.Steer;
                 float topSpeed = command.Walk ? walkSpeed : runSpeed;
                 float targetSpeed = steer * topSpeed * stats.MoveSpeedMultiplier;
+
+                // After the move multiply and BEFORE the wind is added, so a canopy carries the
+                // wizard further under their own steam without also amplifying a gale.
+                if (!IsGrounded)
+                    targetSpeed *= stats.AirSpeedMultiplier;
 
                 if (command.Walk && IsGrounded && IsAtEdge && Mathf.Abs(steer) > steerDeadzone)
                     targetSpeed = 0f;
@@ -943,7 +1131,7 @@ namespace FallingWizard.Player
 
                 float rate = Mathf.Abs(steer) > steerDeadzone ? acceleration : groundFriction;
                 if (!IsGrounded)
-                    rate *= airControl;
+                    rate *= airControl * stats.AirControlMultiplier;
 
                 body.linearVelocityX =
                     Mathf.MoveTowards(body.linearVelocityX, targetSpeed, rate * fixedDeltaTime);
@@ -1194,7 +1382,9 @@ namespace FallingWizard.Player
             [Range(0f, 89f)] public float maxSwing = 70f;
 
             [Header("Climbing")]
-            [Tooltip("Speed climbing up and down the vine, in boxes per second.")]
+            [Tooltip("Fastest the wizard can ever climb, in boxes per second. A spell asks for " +
+                     "its own climb speed when it grabs and the smaller of the two wins, so this " +
+                     "is a ceiling rather than the number in play.")]
             [Min(0f)] public float climbSpeed = 4f;
 
             [Tooltip("Closest you can climb to where the vine is tied, in boxes. Keeps the wizard " +
@@ -1241,6 +1431,7 @@ namespace FallingWizard.Player
             [NonSerialized] float depth;
             [NonSerialized] float angle;
             [NonSerialized] float spin;
+            [NonSerialized] float climb;
             [NonSerialized] float readyAt;
 
             [NonSerialized] Vector2 wanted;
@@ -1251,6 +1442,18 @@ namespace FallingWizard.Player
             public bool CanGrab => body != null && Time.time >= readyAt;
 
             public Vector2 Anchor => anchor;
+
+            // What the SPELL supplies for one grab, as opposed to what the rope itself owns.
+            // These arrive per-grab because they are rankable, and a rank is a save-tier fact
+            // the wizard has no business caching.
+            public struct Hold
+            {
+                public Vector2 Anchor;
+                public float Length;
+                public float MaxSwingDegrees;
+                public float ClimbSpeed;      // 0 means you cannot climb - that is rank 1
+                public float SnapLimit;       // how far this grab may move you, in boxes
+            }
 
             public Vector2 HangPosition => PositionAt(angle, depth);
 
@@ -1275,15 +1478,40 @@ namespace FallingWizard.Player
                 readyAt = 0f;
             }
 
-            public bool Grab(Vector2 anchorPoint, float vineLength, float maxSwingDegrees,
-                Vector2 from, Vector2 carried)
+            // Where a grab from `from` would ACTUALLY put the wizard: the same two clamps Grab
+            // applies, run without touching any state. This is the only honest way to ask how far
+            // a grab would move them, because eligibility is measured against the ROPE while the
+            // place they land is on the ARC - and the gap between those two is the teleport.
+            public Vector2 WouldHangAt(in Hold spec, Vector2 from)
             {
-                if (body == null || IsRiding || vineLength <= minDepth)
+                float cap = Mathf.Min(maxSwing, Mathf.Abs(spec.MaxSwingDegrees)) * Mathf.Deg2Rad;
+                Vector2 reach = from - spec.Anchor;
+
+                float deep = Mathf.Clamp(reach.magnitude, minDepth, spec.Length);
+                float lean = reach.sqrMagnitude < Epsilon
+                    ? 0f
+                    : Mathf.Clamp(Mathf.Atan2(reach.x, -reach.y), -cap, cap);
+
+                return spec.Anchor + new Vector2(Mathf.Sin(lean), -Mathf.Cos(lean)) * deep;
+            }
+
+            public bool Grab(in Hold spec, Vector2 from, Vector2 carried)
+            {
+                if (body == null || IsRiding || spec.Length <= minDepth)
                     return false;
 
-                anchor = anchorPoint;
-                length = vineLength;
-                limit = Mathf.Min(maxSwing, Mathf.Abs(maxSwingDegrees)) * Mathf.Deg2Rad;
+                // Refused BEFORE any state is written, so a grab that would yank the wizard
+                // simply does not happen and the press falls through to WhyNot with a reason.
+                if (Vector2.Distance(from, WouldHangAt(spec, from)) > spec.SnapLimit)
+                    return false;
+
+                anchor = spec.Anchor;
+                length = spec.Length;
+                limit = Mathf.Min(maxSwing, Mathf.Abs(spec.MaxSwingDegrees)) * Mathf.Deg2Rad;
+
+                // The wizard's own climbSpeed stays the ceiling, exactly as maxSwing already is.
+                // Rank 1 passes 0 and the climb term goes identically to zero - no branch.
+                climb = Mathf.Min(climbSpeed, Mathf.Max(0f, spec.ClimbSpeed));
 
                 Vector2 reach = from - anchor;
 
@@ -1333,7 +1561,7 @@ namespace FallingWizard.Player
                     angle = Mathf.Clamp(Mathf.Atan2(real.x, -real.y), -limit, limit);
                 }
 
-                depth = Mathf.Clamp(depth - lean.y * climbSpeed * fixedDeltaTime, minDepth, length);
+                depth = Mathf.Clamp(depth - lean.y * climb * fixedDeltaTime, minDepth, length);
 
                 float rope = Mathf.Max(depth, MinReach);
                 float gravity = Mathf.Abs(Physics2D.gravity.y) * weight;
@@ -1483,11 +1711,26 @@ namespace FallingWizard.Player
                 for (int i = 0; i < SlotCount; i++)
                     slots[i] = new Slot { Action = Controls.Player(SlotActions[i]) };
 
+                Seed(book);
+                Reload();
+            }
+
+            // The starting kit, and the buttons that spells weld themselves to. Static because
+            // the skill screen can be opened from the main menu, where no wizard exists yet to
+            // have done this in Attach.
+            public static void Seed(AbilityBook book)
+            {
+                if (book == null)
+                    return;
+
                 foreach (Ability spell in book.known)
                     if (spell != null)
                         Progress.Grant(spell.Key);
 
-                Reload();
+                foreach (Ability spell in book.spells)
+                    if (spell != null && spell.locked && spell.fixedSlot >= 0 &&
+                        Progress.Owns(spell.Key) && Progress.SlotHolding(spell.Key) < 0)
+                        Progress.Equip(spell.fixedSlot, spell.Key);
             }
 
             public void Reload()
@@ -1495,10 +1738,7 @@ namespace FallingWizard.Player
                 if (slots.Length == 0)
                     return;
 
-                foreach (Ability spell in book.spells)
-                    if (spell != null && spell.locked && spell.fixedSlot >= 0 &&
-                        Progress.Owns(spell.Key) && Progress.SlotHolding(spell.Key) < 0)
-                        Progress.Equip(spell.fixedSlot, spell.Key);
+                Seed(book);
 
                 for (int i = 0; i < SlotCount; i++)
                 {
@@ -1507,6 +1747,11 @@ namespace FallingWizard.Player
 
                     if (next != null && !Progress.Owns(next.Key))
                         next = null;
+
+                    // ABOVE the early-out on purpose. Buying an upgrade does not change WHICH
+                    // spell is in the slot, so a rank written below this line would not land
+                    // until the wizard next died - and nothing anywhere would say why.
+                    slot.Rank = next != null ? Progress.Rank(next.Key) : 0;
 
                     if (slot.Ability == next)
                         continue;
@@ -1521,9 +1766,12 @@ namespace FallingWizard.Player
 
                     slot.Ability = next;
                     slot.Buffer = 0f;
+                    slot.Held = false;
+                    slot.HeldFor = 0f;
+                    slot.ReleasedAfter = -1f;
                     slot.LitLeft = 0f;
                     slot.CooldownLeft = 0f;
-                    slot.UsesLeft = next != null ? next.usesPerRun : 0;
+                    slot.UsesLeft = next != null ? next.usesPerLevel : 0;
 
                     next?.OnEquipped(owner);
                 }
@@ -1545,7 +1793,7 @@ namespace FallingWizard.Player
                 if (leaving != null && leaving.locked)
                     return false;
 
-                Progress.Equip(slot, spell != null ? spell.Key : string.Empty);
+                Progress.Place(slot, spell != null ? spell.Key : string.Empty);
                 Reload();
                 return true;
             }
@@ -1577,6 +1825,15 @@ namespace FallingWizard.Player
 
             public bool Knows(Ability spell) => spell != null && Progress.Owns(spell.Key);
 
+            public Slot SlotOf(Ability spell) =>
+                spell == null ? null : Array.Find(slots, s => s.Ability == spell);
+
+            public int RankOf(Ability spell)
+            {
+                Slot slot = SlotOf(spell);
+                return slot != null ? slot.Rank : 0;
+            }
+
             public bool IsEquipped(Ability spell) =>
                 spell != null && Array.Exists(slots, s => s.Ability == spell);
 
@@ -1605,12 +1862,20 @@ namespace FallingWizard.Player
                         continue;
                     }
 
+                    slot.Held = slot.Action.IsPressed();
+
+                    if (slot.Action.WasReleasedThisFrame() && slot.HeldFor > 0f)
+                        slot.ReleasedAfter = slot.HeldFor;
+
                     if (pressed)
                     {
                         slot.Buffer = slot.Ability.pressBuffer;
                         slot.Fired = false;
                         continue;
                     }
+
+                    if (slot.Ability.chargesOnHold)
+                        continue;           // a charged spell never expires a buffered press
 
                     float had = slot.Buffer;
                     slot.Buffer -= deltaTime;
@@ -1629,7 +1894,7 @@ namespace FallingWizard.Player
                     return $"it is still cooling down, {slot.CooldownLeft:0.0}s to go";
 
                 if (!slot.HasUsesLeft)
-                    return "it has no casts left until you rest";
+                    return "it has no casts left in this level";
 
                 return slot.Ability.WhyNot(owner);
             }
@@ -1646,11 +1911,20 @@ namespace FallingWizard.Player
 #endif
             }
 
-            public void TryCast()
+            public void TryCast(float fixedDeltaTime)
             {
                 foreach (Slot slot in slots)
                 {
-                    if (slot.Ability == null || slot.Buffer <= 0f || !slot.IsReady)
+                    if (slot.Ability == null)
+                        continue;
+
+                    if (slot.Ability.chargesOnHold)
+                    {
+                        Wind(slot, fixedDeltaTime);
+                        continue;
+                    }
+
+                    if (slot.Buffer <= 0f || !slot.IsReady)
                         continue;
 
                     if (!slot.Ability.CanCast(owner))
@@ -1663,12 +1937,58 @@ namespace FallingWizard.Player
                     slot.Fired = true;
                     slot.LitLeft = slot.Ability.activeDuration;
 
-                    if (slot.Ability.usesPerRun > 0)
+                    if (slot.Ability.usesPerLevel > 0)
                         slot.UsesLeft = Mathf.Max(0, slot.UsesLeft - 1);
 
                     if (slot.LitLeft <= 0f)
                         slot.CooldownLeft = slot.Ability.cooldown;
                 }
+            }
+
+            void Wind(Slot slot, float fixedDeltaTime)
+            {
+                if (slot.ReleasedAfter >= 0f)
+                {
+                    // Consumed BEFORE the hook runs, so a spell that re-enters this path from
+                    // inside OnReleased cannot fire the same release twice.
+                    float held = slot.ReleasedAfter;
+
+                    slot.ReleasedAfter = -1f;
+                    slot.HeldFor = 0f;
+
+                    slot.Ability.OnReleased(owner, held);
+                    return;
+                }
+
+                if (!slot.Held || !slot.IsReady)
+                {
+                    slot.HeldFor = 0f;
+                    return;
+                }
+
+                slot.HeldFor += fixedDeltaTime;
+                slot.Ability.OnHeld(owner, slot.HeldFor, fixedDeltaTime);
+            }
+
+            // For a spell that goes off from OnReleased rather than OnCast: start its lit window,
+            // spend a charge and set the cooldown, exactly as a normal cast would.
+            public bool Fire(Ability spell)
+            {
+                Slot slot = SlotOf(spell);
+
+                if (slot == null || !slot.IsReady)
+                    return false;
+
+                slot.Fired = true;
+                slot.LitLeft = spell.activeDuration;
+
+                if (spell.usesPerLevel > 0)
+                    slot.UsesLeft = Mathf.Max(0, slot.UsesLeft - 1);
+
+                if (slot.LitLeft <= 0f)
+                    slot.CooldownLeft = spell.cooldown;
+
+                return true;
             }
 
             public void Rebuild()
@@ -1677,11 +1997,11 @@ namespace FallingWizard.Player
 
                 foreach (Slot slot in slots)
                     if (slot.Ability != null)
-                        slot.Ability.ModifyStats(stats);
+                        slot.Ability.ModifyStats(owner, stats);
 
                 foreach (Slot slot in slots)
                     if (slot.IsLit)
-                        slot.Ability.ModifyStatsWhileLit(stats);
+                        slot.Ability.ModifyStatsWhileLit(owner, stats);
             }
 
             public void TickTimers(float fixedDeltaTime)
@@ -1718,9 +2038,12 @@ namespace FallingWizard.Player
                         slot.Ability.OnEnded(owner);
 
                     slot.Buffer = 0f;
+                    slot.Held = false;
+                    slot.HeldFor = 0f;
+                    slot.ReleasedAfter = -1f;
                     slot.LitLeft = 0f;
                     slot.CooldownLeft = 0f;
-                    slot.UsesLeft = slot.Ability != null ? slot.Ability.usesPerRun : 0;
+                    slot.UsesLeft = slot.Ability != null ? slot.Ability.usesPerLevel : 0;
                     slot.Ability?.OnRunReset(owner);
                 }
             }
@@ -1731,6 +2054,19 @@ namespace FallingWizard.Player
                 public InputAction Action;
                 public float Buffer;
                 public bool Fired;
+
+                // Cached off Progress by Reload rather than read per frame: ModifyStats runs for
+                // every slot every fixed step, and Reload is the only thing that can change it.
+                public int Rank;
+
+                public bool Held;
+                public float HeldFor;
+
+                // Seconds the button was down when it came up, latched in Observe and consumed
+                // by TryCast. Below zero means nothing is pending. Polling
+                // WasReleasedThisFrame from a fixed-step hook would miss the edge on a slow
+                // frame and fire twice on a fast one - Observe runs in Update, TryCast does not.
+                public float ReleasedAfter = -1f;
                 public float LitLeft;
                 public float CooldownLeft;
                 public int UsesLeft;
@@ -1740,7 +2076,7 @@ namespace FallingWizard.Player
                 public bool IsLit => LitLeft > 0f;
 
                 public bool HasUsesLeft =>
-                    Ability == null || Ability.usesPerRun <= 0 || UsesLeft > 0;
+                    Ability == null || Ability.usesPerLevel <= 0 || UsesLeft > 0;
 
                 public bool IsReady => Ability != null && CooldownLeft <= 0f && HasUsesLeft;
 

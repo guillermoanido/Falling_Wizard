@@ -89,7 +89,7 @@ namespace FallingWizard.World
 
         protected override bool Continuous => true;
 
-        public Vector2 Drift => push * streakSpeed;
+        public Vector2 Drift => push * streakSpeed * Haste.WorldScale;
 
         void Reset()
         {
@@ -123,7 +123,9 @@ namespace FallingWizard.World
             if (!Allowed(wizard))
                 return;
 
-            wizard.Logic.Push(push, rampup, groundScale);
+            // Scaled by Haste: a gale you cannot walk into is exactly what the spell is for,
+            // and the streaks below slow with it so the two never disagree.
+            wizard.Logic.Push(push * Haste.WorldScale, rampup, groundScale);
         }
 
         void Update()

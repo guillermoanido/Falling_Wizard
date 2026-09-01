@@ -33,6 +33,12 @@ namespace FallingWizard.Core
 
         public static bool Sandbox { get; private set; }
 
+        // Sandbox is a property of the play SESSION; seeding it is a one-time act. Re-seeding on
+        // every scene load is what made a restart forget the loadout - Clear() empties `equipped`
+        // and `ranks`, and Playtest ran it at execution order -100, a frame ahead of the spellbook
+        // reading them.
+        public static bool SandboxSeeded { get; private set; }
+
         public static int Wisps { get; private set; }
 
         public static int CarriedWisps { get; private set; }
@@ -104,6 +110,29 @@ namespace FallingWizard.Core
             Save();
         }
 
+        // Put `key` on `slot`. Coming off another button the two TRADE PLACES; coming off the
+        // bench, whatever was on that button goes back to the bench. Equip cannot express this -
+        // it clears the key from wherever it was and overwrites the target, so dropping one spell
+        // onto another loses the second one with no sign that it happened.
+        public static void Place(int slot, string key)
+        {
+            if ((uint)slot >= SlotCount)
+                return;
+
+            key ??= string.Empty;
+
+            int from = SlotHolding(key);
+
+            if (key.Length > 0 && from >= 0 && from != slot)
+            {
+                (equipped[from], equipped[slot]) = (equipped[slot], equipped[from]);
+                Save();
+                return;
+            }
+
+            Equip(slot, key);
+        }
+
         public static int FirstEmptySlot()
         {
             for (int i = 0; i < SlotCount; i++)
@@ -111,6 +140,40 @@ namespace FallingWizard.Core
                     return i;
 
             return -1;
+        }
+
+        // Raising a rank, never learning one: rank 1 is what Buy and Grant hand out. Refusing
+        // to learn here means no bug in a screen can hand out rank 2 to a spell nobody bought.
+        // The cap arrives as an argument because Progress does not know what a spell is.
+        public static bool Upgrade(string key, int cost, int cap)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+
+            int rank = Rank(key);
+
+            if (rank < 1 || rank >= Mathf.Max(1, cap) || Wisps < cost)
+                return false;
+
+            Wisps -= cost;
+            ranks[key] = rank + 1;
+            Save();
+            return true;
+        }
+
+        // For Playtest and nothing else. Save() is asleep while sandboxed, so this cannot reach
+        // the real save from where it is called.
+        public static void SetRank(string key, int rank)
+        {
+            if (string.IsNullOrEmpty(key))
+                return;
+
+            if (rank <= 0)
+                ranks.Remove(key);
+            else
+                ranks[key] = rank;
+
+            Save();
         }
 
         public static bool IsGone(string id) =>
@@ -200,10 +263,15 @@ namespace FallingWizard.Core
 
         public static bool HasSave => PlayerPrefs.HasKey(WispsKey);
 
-        public static void BeginSandbox()
+        public static void BeginSandbox(bool reseed = false)
         {
+            if (Sandbox && SandboxSeeded && !reseed)
+                return;
+
+            // Clear() ends by setting Sandbox false, so the order of these two matters.
             Clear();
             Sandbox = true;
+            SandboxSeeded = true;
         }
 
         public static void Save()
@@ -290,6 +358,7 @@ namespace FallingWizard.Core
             CarriedWisps = 0;
             BonusHearts = 0;
             Sandbox = false;
+            SandboxSeeded = false;
 
             ClearCheckpoint();
         }

@@ -10,19 +10,34 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0eea9e5036795658a6d9a51915589e78, type: 3}
-  m_Name: Vine Grasp
+  m_Name: Mage Hand
   m_EditorClassIdentifier: 
   id: vine
-  displayName: Vine Grasp
-  description: Catch a hanging vine and swing from it. Jump to let go.
+  displayName: Mage Hand
+  description: Reach out a spectral hand and swing from it. Jump to let go.
   icon: {fileID: 0}
   cost: 1
   locked: 0
   fixedSlot: -1
   passive: 0
+  upgrades:
+  - cost: 2
+    title: Wider swing
+    description: The hand leans much further either side before it stops.
+  - cost: 3
+    title: Up and down
+    description: Climb the hand as well as swing on it.
   pressBuffer: 0.12
   activeDuration: 0
   usesPerRun: 0
   cooldown: 0
   collectedEffect: {fileID: 0}
+  graspRange: 1
   pressAgainToLetGo: 1
+  tiers:
+  - maxSwing: 30
+    climbSpeed: 0
+  - maxSwing: 65
+    climbSpeed: 0
+  - maxSwing: 65
+    climbSpeed: 4

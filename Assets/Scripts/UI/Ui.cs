@@ -37,6 +37,44 @@ namespace FallingWizard.UI
 
         static readonly Vector2 Centre = new Vector2(0.5f, 0.5f);
 
+        public static readonly Color PipEmpty = new Color(1f, 1f, 1f, 0.16f);
+
+        // Unity's defaultColorBlock steps normal (1,1,1) to selected (0.961,...) - a four per
+        // cent change nobody can see, and on a gamepad the selection IS the cursor.
+        public static ColorBlock Tints
+        {
+            get
+            {
+                ColorBlock block = ColorBlock.defaultColorBlock;
+                block.normalColor = new Color(1f, 1f, 1f, 1f);
+                block.highlightedColor = new Color(0.84f, 0.90f, 1f, 1f);
+                block.selectedColor = new Color(0.72f, 0.84f, 1f, 1f);
+                block.pressedColor = new Color(0.60f, 0.72f, 0.95f, 1f);
+                block.disabledColor = new Color(1f, 1f, 1f, 0.35f);
+                block.fadeDuration = 0.08f;
+                return block;
+            }
+        }
+
+        // For a plate already tinted Ui.Card: multiplier 2 with a normal of 0.5 lands it back on
+        // exactly Ui.Card when idle and near Ui.CardLit when selected, which is the colour this
+        // project already uses everywhere for "this is the one".
+        public static ColorBlock CardTints
+        {
+            get
+            {
+                ColorBlock block = ColorBlock.defaultColorBlock;
+                block.colorMultiplier = 2f;
+                block.normalColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                block.highlightedColor = new Color(0.62f, 0.62f, 0.7f, 0.5f);
+                block.selectedColor = new Color(0.78f, 0.78f, 0.92f, 0.52f);
+                block.pressedColor = new Color(0.9f, 0.9f, 1f, 0.55f);
+                block.disabledColor = new Color(0.4f, 0.4f, 0.45f, 0.4f);
+                block.fadeDuration = 0.08f;
+                return block;
+            }
+        }
+
 
         public static Canvas CreateCanvas(string name, int sortingOrder)
         {
@@ -145,7 +183,8 @@ namespace FallingWizard.UI
             return (RectTransform)go.transform;
         }
 
-        public static Image Plate(string name, Transform parent, Color colour, float width, float height)
+        public static Image Plate(string name, Transform parent, Color colour, float width,
+            float height, bool clickable = true)
         {
             var go = new GameObject(name, typeof(Image));
             Attach(go, parent);
@@ -153,7 +192,44 @@ namespace FallingWizard.UI
 
             Image art = go.GetComponent<Image>();
             art.color = colour;
+            art.raycastTarget = clickable;
             return art;
+        }
+
+        // Turn a plate into something you can click or navigate to. Its children are already
+        // raycast-deaf (Icon and Label both switch theirs off), so the plate is what the pointer
+        // hits and there is nothing to fight over.
+        public static Button Pressable(Image plate)
+        {
+            var button = plate.gameObject.AddComponent<Button>();
+            button.targetGraphic = plate;
+            button.transition = Selectable.Transition.ColorTint;
+            button.colors = CardTints;
+            return button;
+        }
+
+        // Deselect first: SetSelectedGameObject early-outs when the object is already selected,
+        // so re-selecting the same row after a rebuild would never fire OnSelect and the
+        // highlight would be lost.
+        public static void Focus(GameObject what)
+        {
+            if (EventSystem.current == null || what == null)
+                return;
+
+            EventSystem.current.SetSelectedGameObject(null);
+            EventSystem.current.SetSelectedGameObject(what);
+        }
+
+        public static RectTransform Pips(Transform parent, int filled, int total, float size,
+            Color lit)
+        {
+            RectTransform strip = Row("Pips", parent, (size + 4f) * Mathf.Max(1, total), size, 4f);
+
+            for (int i = 0; i < total; i++)
+                Plate($"Pip {i + 1}", strip, i < filled ? lit : PipEmpty, size, size,
+                    clickable: false);
+
+            return strip;
         }
 
         public static Image Icon(Transform parent, Sprite sprite, float size, Color tint)
@@ -204,7 +280,10 @@ namespace FallingWizard.UI
             label.alignment = TextAlignmentOptions.Center;
             label.textWrappingMode = TextWrappingModes.NoWrap;
 
-            return go.GetComponent<Button>();
+            var button = go.GetComponent<Button>();
+            button.colors = Tints;
+
+            return button;
         }
 
         public static void Retext(Button button, string text)

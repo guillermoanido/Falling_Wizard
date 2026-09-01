@@ -12,11 +12,13 @@ namespace FallingWizard.Core
 
         const string PausePath = "UI/Pause";
         const string SkipPath = "UI/Skip";
+        const string CancelPath = "UI/Cancel";
 
         static readonly HashSet<InputAction> Watched = new HashSet<InputAction>();
 
         static InputAction pause;
         static InputAction skip;
+        static InputAction cancel;
 
         public static string Scheme { get; private set; } = KeyboardScheme;
 
@@ -25,6 +27,8 @@ namespace FallingWizard.Core
         public static bool PausePressed => pause != null && pause.WasPressedThisFrame();
 
         public static bool SkipPressed => skip != null && skip.WasPressedThisFrame();
+
+        public static bool CancelPressed => cancel != null && cancel.WasPressedThisFrame();
 
         public static InputAction Player(string action) => Find($"Player/{action}");
 
@@ -65,6 +69,7 @@ namespace FallingWizard.Core
 
             pause = Find(PausePath);
             skip = Find(SkipPath);
+            cancel = Find(CancelPath);
 
             InputSystem.onActionChange -= OnActionChange;
             InputSystem.onActionChange += OnActionChange;

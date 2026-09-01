@@ -142,35 +142,35 @@ therefore behind the tilemap: solid, working perfectly, and completely invisible
 exactly like a spell doing nothing. Anything a spell puts into the world wants an order above the
 map.
 
-The six that exist. The Staff is yours from the start and welded to E; the other five fight over
-three buttons.
+The Staff is yours from the start and welded to E; everything else fights over three buttons.
 
-| Spell | What it is | Where it lives |
+| Spell | What it is | Rank 2 / 3 |
 | --- | --- | --- |
-| **Staff** | Plant it at a ledge and climb down. | `StaffAbility` + `Staff` on the wizard |
-| **Feather Fall** | Drift, and forget how far you have already fallen. | `GlideAbility` |
-| **Wall Growth** | Grow stone out of a ledge and walk out over the drop. | `WallGrowthAbility` + the `Stone Wall` prefab |
-| **Vine Grasp** | Catch a vine and swing. | `VineAbility` + `VineAnchor` in the level |
-| **Bubble** | Float, untouchable, and let the wind take you. | `BubbleAbility` |
-| **Telekinesis** | Lift a loose stone at range, carry it, throw it. | `TelekinesisAbility` + `Liftable` in the level |
+| **Staff** | Plant it at a ledge and climb down. | longer staff |
+| **Mage Hand** | A spectral hand you swing from. | wider swing / climb it |
+| **Wall Growth** | One tile of stone, put down on the grid beside you. | further reach |
+| **Glide** | A canopy. It barely slows the drop - it carries you. | wider wing |
+| **Telekinesis** | Take a hazard with you and set it down where you want it. | *(to come)* |
+| **Haste** | *(to come)* | |
+| **Fling** | *(to come)* | |
 
-Two of them need something to act on, and that is deliberate — a spell that needs level content is
-a spell the level can be designed around. Vine Grasp does nothing without a `Vine`; Telekinesis
-does nothing without a `Boulder`.
+**Glide does not forgive fall damage, and that is the design.** Feather Fall — the spell that
+used to live in this slot — did, and that forgiveness was the only reason it was worth a button.
+Glide earns its slot a different way: it roughly **doubles how far a running jump carries you**,
+turning a 2.3-box leap into nearly 4. Giving one spell both would make it two spells over three
+contested buttons.
 
-Feather Fall is worth reading before writing another movement spell. Slowing a fall does **not**
-make it survivable: fall damage counts boxes fallen, and gliding down a killing drop only kills you
-later. `forgivesFall` is what makes the spell worth a slot — while it is lit it keeps resetting the
-height the fall is measured from, so catching a long drop late saves you and *how* late you dare
-leave it is the whole skill.
+Note what `fallSpeed` does *not* buy. Fall damage counts **boxes fallen**, not how fast
+(`UpdateGroundedState` bills `highestPoint - position.y`), so dropping the canopy's fall speed to
+0.8 lowers the terminal speed and bills you exactly the same. That is worth letting a player
+discover once. You survive under a canopy by **going somewhere else**, not by falling softer.
 
-That same forgiveness is what makes it **one cast per fall** (`oncePerFall`). A cooldown alone does
-not hold it: with a one second float and half a second to wait, you can re-cast in mid-air and each
-cast wipes the drop again, so chaining it makes every fall survivable and fall damage stops
-existing. The rule is enforced against `Movement.Airtime`, a counter that ticks up every time the
-wizard leaves the ground. The spell remembers the number it last fired on and refuses to fire on
-that number twice — which needs no per-frame hook, and cannot drift out of step the way a flag
-cleared somewhere else would. Touch the ground and the number moves on.
+`AirSpeedMultiplier` and `AirControlMultiplier` are air-only for a reason: `MoveSpeedMultiplier`
+would make the wizard sprint along the floor with a wing out. They are applied after the move
+multiply and **before** `targetSpeed += wind.x`, so a canopy carries you under your own steam
+without also amplifying a gale. One consequence worth knowing: `AirControlMultiplier` scales the
+drift-to-a-stop as well as the push, so **letting go of the stick is your brake**. Correct for a
+paraglider.
 
 **Bubble is the opposite trade, on purpose.** It does not forgive the drop — pop it high up and you
 are still high up. What it buys is that nothing can touch you (`Modifiers.Shielded`) and that wind
@@ -196,6 +196,29 @@ charges, buying, equipping and persistence all come for free.
 
 A spell that wants to drive the wizard itself takes over a `PlayerState` — see the vine below,
 which is the worked example.
+
+### Ranks
+
+A spell's rank lives in `Progress.ranks` — `Dictionary<string,int>`, permanent tier, on disk, and
+it round-tripped values above 1 from the day it was written, so there was no save-format work to
+do. Rank 1 is "learned"; `Buy` and `Grant` hand that out and `Progress.Upgrade` deliberately
+**refuses to learn**, so no bug in a screen can hand rank 2 to a spell nobody bought.
+
+The split matters: **`Ability.upgrades[]` is the shop** — a cost, a title and a sentence per rank,
+read by the skill screen without it knowing what a `MageHandAbility` is. **The numbers a rank
+actually changes live on the spell's own script**, as a `Tier[]` grouped by rank rather than by
+stat, because "what does rank 2 give me" is the question a designer asks. There is no separate
+`maxRank` field: `MaxRank => upgrades.Length + 1`, because two numbers that can disagree is a bug
+waiting to be authored.
+
+A spell reads its rank off the **slot**, not out of `Progress` — `ModifyStats` runs for every slot
+every fixed step. `Reload` caches it, and it writes `slot.Rank` **above** its own early-out: below
+that line, buying an upgrade would not take effect until the wizard next died, and nothing anywhere
+would say why.
+
+A spell overrides `protected override void Validate()` and **never writes its own `OnValidate`** —
+Unity delivers `OnValidate` to the most-derived type only, so declaring one would hide the base's
+and silently kill every clamp on the chain.
 
 ### Order and unlocking
 
@@ -373,6 +396,34 @@ than as a component being helpful.
 The one exception is a size that *is* the mechanic: the vine's length, which is the rope unrolling,
 and the wall's height, which is it growing. Even then only that one axis is driven — the vine keeps
 whatever width it was authored at.
+
+## Getting to the loadout, and making it stick
+
+Three separate faults made "I cannot swap abilities" true, and all three had to go.
+
+**The screen could not target a slot.** Every equip path went through `Progress.FirstEmptySlot()`,
+and the rail along the top was `Ui.Plate` images with no `Button` on them — a read-out, not a
+control. Swapping Q and R was not expressible. The verb now is **pick a spell, then press the
+button you want it on** (or click the rail cell). Those four actions already exist and are already
+enabled, and the glyph on the rail is the same one the HUD prints under that slot in play — so the
+binding teaches the binding.
+
+**`Progress.Equip` was a move-into, not a swap.** It cleared the key from wherever it was and
+overwrote the target, so dropping one spell onto another lost the second one silently.
+`Progress.Place` trades them instead. `Equip` keeps its meaning for the paths that want it.
+
+**`Playtest` re-dealt the loadout on every scene load.** `BeginSandbox()` → `Clear()` blanks
+`ranks`, `equipped`, and the checkpoint, and it ran at execution order −100 — a frame ahead of the
+spellbook reading them. Sandbox is now a property of the play **session** and seeding it is a
+one-time act: `Progress.SandboxSeeded` gates it, `redealOnEveryLoad` forces it back for when you
+are tuning the ticks. `SceneManager.LoadScene` does not re-run
+`RuntimeInitializeOnLoadMethod`, so `Progress`'s statics would have survived the reload on their
+own — Playtest was the entire failure. It also fixes a checkpoint quietly dying on every load.
+
+**And you could barely reach the screen.** It opened only from a `RestSite` or the death screen,
+both of which end the run first. Two doors now: **Play** opens it from the main menu, and while
+`Progress.Sandbox` is on, **Escape** opens it mid-level. The second installs only in a sandbox, so
+it cannot exist in a real playthrough and "decide before you go down" is untouched.
 
 ## Testing a spell without earning it
 

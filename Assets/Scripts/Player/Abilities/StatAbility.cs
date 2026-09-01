@@ -22,7 +22,7 @@ namespace FallingWizard.Player
         [Tooltip("Mid-air jumps granted on top of the one off the ground.")]
         [Min(0)] public int extraJumps = 0;
 
-        public override void ModifyStats(PlayerLogic.Modifiers stats)
+        public override void ModifyStats(PlayerLogic wizard, PlayerLogic.Modifiers stats)
         {
             stats.MoveSpeedMultiplier *= moveSpeed;
             stats.JumpHeightMultiplier *= jumpHeight;
