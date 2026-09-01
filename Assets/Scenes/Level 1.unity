@@ -334,6 +334,7 @@ MonoBehaviour:
   readyTint: {r: 1, g: 1, b: 1, a: 1}
   notReadyTint: {r: 1, g: 1, b: 1, a: 0.45}
   chargeTint: {r: 0.25, g: 0.65, b: 1, a: 0.55}
+  windupTint: {r: 1, g: 0.85, b: 0.35, a: 0.7}
 --- !u!114 &91895405
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2279,7 +2280,7 @@ MonoBehaviour:
         serializedVersion: 2
         m_Bits: 64
       groundCheckOffset: {x: -0.050636888, y: -0.5525605}
-      groundCheckSize: {x: 0.64969389, y: 0.1}
+      groundCheckSize: {x: 0.6496939, y: 0.1}
       groundCheckSkin: 0.05
       groundCheckThickness: 0.1
       groundCheckWidthFactor: 0.9
@@ -2425,21 +2426,31 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FallingWizard.Core.Playtest
   active: 1
+  redealOnEveryLoad: 0
   book: {fileID: 11400000, guid: d2cd0fae6f1cf360ca5cc7b0a0829e70, type: 2}
   spells:
   - bring: 1
+    rank: 1
     spell: {fileID: 11400000, guid: 3fa4bf53ce77fd8bdf03a2a3f735d855, type: 2}
   - bring: 1
+    rank: 1
     spell: {fileID: 11400000, guid: 6c76da3e40c8727b822c3db2879e5a62, type: 2}
   - bring: 1
+    rank: 1
     spell: {fileID: 11400000, guid: 91e262c7a2bf5cfca8b9a3060747858e, type: 2}
   - bring: 1
+    rank: 1
     spell: {fileID: 11400000, guid: 31b9fdde0c515f66baed76d98608061c, type: 2}
   - bring: 0
-    spell: {fileID: 11400000, guid: 88d6bb0a88fe54beb88048df6a697064, type: 2}
-  - bring: 0
+    rank: 1
     spell: {fileID: 11400000, guid: ef99c0cac6605f2ab53cdd8d46785355, type: 2}
-  wisps: 5
+  - bring: 0
+    rank: 1
+    spell: {fileID: 11400000, guid: 49edd6dd4d9d520ebbf4be764a31e68f, type: 2}
+  - bring: 0
+    rank: 1
+    spell: {fileID: 11400000, guid: e4e5565406265014b68ad7ddf0c1093c, type: 2}
+  wisps: 20
   bonusHearts: 0
   learnEverything: 0
   announce: 1
