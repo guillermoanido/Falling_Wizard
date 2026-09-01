@@ -388,10 +388,20 @@ means putting it down cannot lose anything.
 without it, a slime set down at your feet still has the re-arm timer it had when you picked it up,
 and bounces you on the very next physics step.
 
-`needsAFloor` picks which question placement asks. On, it is `TileGrid.IsShelf` — an empty cell
-*with a floor under it*, so nothing is ever left hanging. Off, it is `TileGrid.IsFree` — room is
-room, and a slime hung over a drop is a trampoline the player aimed. Wall Growth always asks
-`IsFree`, because putting a block where there already is one is the whole spell doing nothing.
+**Placement settles; it does not test one row.** `TileGrid.RestingCell` takes a column and the
+height the wizard aimed at, carries the thing up over anything in the way (`StepOver`, two boxes),
+then walks it down onto the first floor beneath (`LookDown`, six). What comes back is where the
+thing would come to rest — *on top of the tiles, as low as the column allows*.
+
+Asking instead whether one fixed row was empty is what made the spell feel broken. Aimed at the
+row the wizard's feet were in, that row is solid floor everywhere except at a ledge — so the spell
+refused on flat ground, worked only at edges, and when it did work it dropped the rock into the
+thin air past the lip. Settling has no such failure: the answer is right whether the row it
+started from was or not.
+
+`needsAFloor` only decides what happens to a column with **no** ground within `LookDown`. On, it
+is refused. Off, the thing hangs at the height it was aimed at — which over a drop is a slime the
+player placed exactly where they wanted it.
 
 **Set down on the cell's FLOOR, not its middle.** A slime's hitbox is 0.7 of a box tall and a
 rock's is 0.6, so `PutDown` on `CentreOf` left both floating a sixth of a box off the ground.
@@ -399,29 +409,50 @@ rock's is 0.6, so `PutDown` on `CentreOf` left both floating a sixth of a box of
 first, because a transform move does not reach the physics shapes until the next step and stale
 bounds would settle it against wherever it used to be standing.
 
-## The tiles are a pixel bigger than their cells
+## The grid line is not the floor
 
 `mainlev_build.png` is sliced **34×35 px on a 32 px grid**, so every tile is drawn — and collides
-— one pixel proud of its cell on all four sides. You can read it straight off the composite
-collider in `Level 1`: its outline sits on `x.03125`, not on whole numbers.
+— about a pixel proud of its cell. Read it straight off the composite collider in `Level 1`: the
+outline sits on `x.03125`, not on whole numbers.
 
 That is not a rounding error to ignore. **It is the surface everything else has to line up with.**
-A one-box block built to the bare grid tops out 1/32 of a box *below* the floor beside it, and a
-box collider walking back onto the platform does not step up over a lip — it stops dead against
-it. A wizard who walks out onto their own Wall Growth block and then cannot walk back is a spell
-that reads as broken, with the cause nowhere near the spell.
+A one-box block built to the bare grid tops out a pixel *below* the floor beside it, and a box
+collider walking back onto the platform does not step up over a lip — it stops dead against it. A
+wizard who walks out onto their own Wall Growth block and then cannot walk back is a spell that
+reads as broken, with the cause nowhere near the spell.
 
-So `TileGrid.FloorOf` answers with `cell.y + TileBleed`, and everything that puts something down
-stands it on *that* line rather than on the grid line:
+The amount is a property of the **art**, not of the maths, and it is not even the same on both
+axes. So nothing carries a constant for it — the two spells each ask the world:
 
-| | rests on | lines up with a tile |
+| | takes its height from | why that is exact |
 | --- | --- | --- |
-| Wall Growth's block | `FloorOf(cell)`, anchored by `size.y * 0.5` | top flush, no step |
-| A carried slime or rock | `FloorOf(cell)` | sits on the ground instead of over it |
-| A carried boulder | `FloorOf(cell)` | flush top **and** bottom |
+| A carried slime, rock or boulder | `TileGrid.SurfaceUnder` — a cast straight down inside the cell, and `Footing.y` if it falls through | it is the tile's own top, whatever the slice did |
+| Wall Growth's block | `Movement.Footing.y`, the wizard's soles | they are STOOD on the platform being extended, so their soles *are* its surface |
 
-Re-slice the sheet to 32×32 one day and `TileBleed` becomes 0. Nothing else has to change — which
-is the whole reason it is one named constant and not a sprinkling of `0.03125`.
+Re-slice the sheet to 32×32 one day and both keep working, having never been told what the old
+number was.
+
+**The cast carries `LookDown`, not one box.** Stopping at a single box meant a cell chosen even one
+row high found nothing beneath it, fell back to its own grid line, and left the rock hanging there
+— a grid line being the one number in this whole file that is never the floor. Reaching further
+cannot pick the wrong surface: a downward cast reports the FIRST thing it meets.
+
+**A footprint is measured in `Stow`, while the object is still switched on.** `Collider2D.bounds`
+on a GameObject reactivated the same step answers with the shape the physics world still holds —
+which is wherever the thing was standing when it was picked up. Setting something down against
+that is how a rock ends up in mid-air, and no amount of `Physics2D.SyncTransforms` fixes it,
+because the shape is not stale, it is *absent*.
+
+**A block flush with the platform is the worst case, not the best.** Two box colliders whose top
+faces are exactly level still meet at a vertical face, and gravity sinks the wizard about a fifth
+of a pixel into the floor between solver steps — enough that the face catches them and the block
+has to be jumped onto. The tilemap never shows this because the composite merges its tiles and
+there are no internal faces at all.
+
+So `Stone Wall`'s collider is **0.9 square with a `0.05` edge radius**: one box on the outside,
+same flush top, but with rounded corners, so a wizard a fraction low rides up over the seam
+instead of walking into it. Keep both numbers if you resize it — `size + 2 × edgeRadius` is what
+has to come to one box.
 
 Do **not** reach for a custom `physicsShape` on the tiles instead. `spriteMeshType` is Tight and
 `physicsShape` is empty, so the slopes and half-tiles get outlines that follow their own art;
@@ -429,7 +460,10 @@ squaring all 212 of them off would wall the level in.
 
 ## Which row is the wizard standing in
 
-Both placing spells count rows from `TileGrid.StandingCell`, and **it has to answer with the empty
+Neither spell counts rows off `TileGrid.StandingCell` any more — Wall Growth finds its floor with
+`FloorRowUnder` and Telekinesis settles with `RestingCell`, both of which survive the answer being
+a row out. It still has to be right, because it is where they start looking, and **it has to
+answer with the empty
 cell the body is in, never the solid one holding it up.** One row out is not a near miss — it is
 the spell aiming into the ground:
 

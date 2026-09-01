@@ -26,11 +26,10 @@ namespace FallingWizard.Player
                  "-1 puts it in the floor and is only useful over a drop.")]
         [Range(-2, 2)] public int liftInTiles = 0;
 
-        [Tooltip("Insist on a floor underneath. ON, it only goes somewhere it can rest, which " +
-                 "means at a drop it walks out to the far side and can look like it refuses to " +
-                 "put things down nearby. OFF, it goes wherever there is room - including out " +
-                 "over a gap, where a slime hangs in mid-air and becomes a platform you aimed. " +
-                 "Off is the more useful spell; on is the tidier one.")]
+        [Tooltip("Insist on a floor underneath. ON, it refuses any column with no ground in " +
+                 "reach. OFF, such a column still takes the thing, hung at your own height - " +
+                 "over a drop that is a slime you put exactly where you wanted it. Either way " +
+                 "a column that DOES have ground puts it down on that ground, as low as it goes.")]
         public bool needsAFloor = false;
 
         [Header("Ranks")]
@@ -60,10 +59,10 @@ namespace FallingWizard.Player
                 return FindShelf(wizard, out _)
                     ? null
                     : needsAFloor
-                        ? $"nowhere to rest it - it wants an empty tile WITH A FLOOR under it " +
-                          $"within {placeInTiles} of you. Turn off 'needs a floor' to set it " +
-                          "down over a drop"
-                        : $"every tile within {placeInTiles} ahead of you is already filled";
+                        ? $"nothing within {placeInTiles} tiles ahead of you has a floor to " +
+                          "rest it on. Turn off needs-a-floor to set it down over a drop"
+                        : $"every column within {placeInTiles} ahead of you is walled in higher " +
+                          "than this can lift";
 
             if (Carryable.Nearest(wizard.movement.Position, Of(wizard).reach) == null)
                 return Carryable.All.Count == 0
@@ -82,7 +81,13 @@ namespace FallingWizard.Player
                 if (!FindShelf(wizard, out Vector2Int cell))
                     return false;
 
-                hands.thing.PutDownOn(TileGrid.CentreOf(cell).x, TileGrid.FloorOf(cell));
+                // On the ground it finds, and failing that at the wizard's own foot height -
+                // never on a grid line. A cell line is a guess about where the floor is; the
+                // soles are where the floor demonstrably IS.
+                hands.thing.PutDownOn(TileGrid.CentreOf(cell).x,
+                    TileGrid.SurfaceUnder(cell, wizard.movement.groundLayers, out float top)
+                        ? top
+                        : wizard.movement.Footing.y);
                 hands.thing = null;
                 return true;
             }
@@ -141,19 +146,14 @@ namespace FallingWizard.Player
             PlayerLogic.Movement walk = wizard.movement;
             Vector2Int stood = TileGrid.StandingCell(walk);
 
+            // Aimed at the wizard's own height, then let each column settle it: over a step
+            // that is in the way, and down onto the tiles. Testing one fixed row instead meant
+            // the spell only ever found room where that row happened to be empty - which on
+            // flat ground is nowhere, and at a ledge is the thin air past it.
             for (int step = 1; step <= placeInTiles; step++)
             {
-                cell = new Vector2Int(stood.x + walk.Facing * step, stood.y + liftInTiles);
-
-                // With needsAFloor off this is just "is there room", which is what makes the
-                // spell feel like placing rather than like asking permission. A hazard set down
-                // over a gap simply hangs there - none of them fall, they are triggers - and a
-                // slime hung over a drop is a trampoline the player put where they wanted it.
-                bool willHaveIt = needsAFloor
-                    ? TileGrid.IsShelf(cell, walk.groundLayers)
-                    : TileGrid.IsFree(cell, walk.groundLayers);
-
-                if (willHaveIt)
+                if (TileGrid.RestingCell(stood.x + walk.Facing * step, stood.y + liftInTiles,
+                        walk.groundLayers, needsAFloor, out cell))
                     return true;
             }
 

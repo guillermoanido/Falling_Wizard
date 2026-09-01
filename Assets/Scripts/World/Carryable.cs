@@ -36,6 +36,12 @@ namespace FallingWizard.World
         [NonSerialized] Vector2 home;
         [NonSerialized] bool knowsHome;
 
+        // How far the hitbox's underside sits below the pivot, measured while the object is
+        // still switched ON. A collider on a GameObject that was reactivated this step has no
+        // shape in the physics world yet, so its bounds are whatever they were before it was
+        // stowed - and setting something down against those puts it wherever it used to be.
+        [NonSerialized] float underside;
+
         public static IReadOnlyList<Carryable> All => Loose;
 
         public bool IsStowed => !gameObject.activeSelf;
@@ -70,6 +76,11 @@ namespace FallingWizard.World
                 knowsHome = true;
             }
 
+            var footprint = GetComponent<Collider2D>();
+
+            if (footprint != null)
+                underside = transform.position.y - footprint.bounds.min.y;
+
             gameObject.SetActive(false);
         }
 
@@ -91,29 +102,15 @@ namespace FallingWizard.World
         }
 
         // Set down STANDING ON a line rather than floating on a point. A slime's hitbox is 0.7
-        // of a box tall and a rock's is 0.6: dropped on the middle of a cell they hang a sixth of
-        // a box off the floor, which reads as the spell having fumbled rather than having placed.
-        // Measured after it is switched back on, because a disabled collider has no bounds to
-        // ask.
-        public void PutDownOn(float middleX, float floorY)
-        {
-            PutDown(new Vector2(middleX, floorY + 0.5f));
-
-            var footprint = GetComponent<Collider2D>();
-
-            if (footprint == null)
-                return;
-
-            // A transform move does not reach the physics shapes until the next step unless it
-            // is asked to, and bounds read off a stale shape would settle the object against
-            // wherever it used to be standing.
-            Physics2D.SyncTransforms();
-
-            float sunk = footprint.bounds.min.y - floorY;
-
-            if (Mathf.Abs(sunk) > 0.001f)
-                transform.position -= new Vector3(0f, sunk, 0f);
-        }
+        // of a box tall and a rock's is 0.6, so dropping either on the middle of a cell leaves it
+        // hanging a fifth of a box off the ground.
+        //
+        // The footprint was measured back in Stow, on purpose. Doing it here meant reading
+        // bounds off a collider switched back on the same step, before the physics world had
+        // built its shape - and that answers with wherever the thing was standing when it was
+        // picked up, which is exactly how a rock ends up in mid-air.
+        public void PutDownOn(float middleX, float floorY) =>
+            PutDown(new Vector2(middleX, floorY + underside));
 
         // Where it was standing when the level started, for putting a carried thing back if the
         // spell is dropped rather than spent.
