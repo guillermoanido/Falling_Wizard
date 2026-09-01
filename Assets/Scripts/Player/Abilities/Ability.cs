@@ -133,6 +133,11 @@ namespace FallingWizard.Player
                 ? null
                 : tiers[Mathf.Clamp(rank - 1, 0, tiers.Length - 1)];
 
+        protected static float TierFor(float[] tiers, int rank) =>
+            tiers == null || tiers.Length == 0
+                ? 1f
+                : tiers[Mathf.Clamp(rank - 1, 0, tiers.Length - 1)];
+
         protected void CheckTiers(int count)
         {
             if (count > 0 && count < MaxRank)

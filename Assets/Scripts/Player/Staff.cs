@@ -162,6 +162,8 @@ namespace FallingWizard.Player
             [NonSerialized] float depth;
             [NonSerialized] float dropTimer;
             [NonSerialized] int facing = 1;
+            [NonSerialized] Vector3 authoredScale = Vector3.one;
+            [NonSerialized] float lengthScale = 1f;
 
             // Planted flat, the pole turns a quarter turn - which way depends on which side
             // of the wizard it is being laid out on.
@@ -205,6 +207,7 @@ namespace FallingWizard.Player
                 restPosition = pole.localPosition;
                 carriedParent = pole.parent;
                 sideOffset = Mathf.Abs(restPosition.x);
+                authoredScale = pole.localScale;
             }
 
             public void BindWielder(Rigidbody2D body, Collider2D bodyHitbox)
@@ -223,6 +226,23 @@ namespace FallingWizard.Player
 
                 facing = wielderFacing < 0 ? -1 : 1;
                 ShoulderPole();
+            }
+
+            // The reach is measured off the hitbox times the pole's own scale, so lengthening
+            // the staff is one transform write and nothing else has to be told - MeasureReach,
+            // the hang, the bridge span and the drawn pole all follow on their own.
+            public float LengthScale => lengthScale;
+
+            public void SetLengthScale(float scale)
+            {
+                scale = Mathf.Max(0.1f, scale);
+
+                if (pole == null || Mathf.Approximately(scale, lengthScale))
+                    return;
+
+                lengthScale = scale;
+                pole.localScale = new Vector3(authoredScale.x, authoredScale.y * scale,
+                    authoredScale.z);
             }
 
             public float MeasureReach()

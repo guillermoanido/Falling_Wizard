@@ -242,6 +242,8 @@ namespace FallingWizard.Player
             return true;
         }
 
+        public void SetStaffLength(float scale) => pole?.SetLengthScale(scale);
+
         public void RecoverStaff()
         {
             pole?.Release();

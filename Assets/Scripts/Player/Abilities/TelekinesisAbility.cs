@@ -3,126 +3,162 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
+    // Take a hazard with you and put it down where you want it. The slot shows what you are
+    // carrying, so a stowed slime and a stowed rock are told apart without a menu.
+    //
+    // This is the one spell that edits the level rather than the wizard. A slime moved to the
+    // bottom of a drop is a trampoline you placed; a rock moved out of a corridor is a corridor
+    // you can run down. Everything else here changes how you move - this changes what you are
+    // moving through.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Telekinesis", fileName = "Telekinesis")]
     public class TelekinesisAbility : Ability
     {
         [Header("Reach")]
-        [Tooltip("How far the wizard can take hold of something, in boxes. A mage is one box, so " +
-                 "6 is about a screen's worth of stone.")]
+        [Tooltip("How far the wizard can take hold of something, in boxes. A mage is one box.")]
         [Min(1f)] public float reach = 6f;
 
-        [Header("Carrying")]
-        [Tooltip("How far in front of the wizard the stone rides, in boxes.")]
-        [Min(0f)] public float holdDistance = 1.9f;
+        [Tooltip("How many tiles ahead it will look for somewhere to set it down. It takes the " +
+                 "first tile that is empty AND has a floor under it, so nothing is ever left " +
+                 "hanging in the air.")]
+        [Range(1, 5)] public int placeInTiles = 2;
 
-        [Tooltip("How far above their feet it rides, in boxes.")]
-        public float holdHeight = 0.9f;
+        [Tooltip("Tiles above your own feet to place it. 0 is the floor you are stood on.")]
+        [Range(0, 2)] public int liftInTiles = 0;
 
-        [Tooltip("How fast it is dragged to where it should be, in boxes per second. Low is " +
-                 "heavy and lags behind you; high snaps it to your side.")]
-        [Min(0.5f)] public float pullSpeed = 12f;
-
-        [Header("Letting Go")]
-        [Tooltip("Speed it is thrown at when you let go while holding a direction, in boxes per " +
-                 "second. Let go with no direction and it simply drops where it hangs.")]
-        [Min(0f)] public float throwSpeed = 14f;
-
-        [Tooltip("Stick tilt needed to count as aiming a throw rather than dropping it.")]
-        [Range(0.05f, 1f)] public float aimThreshold = 0.35f;
+        [Header("Ranks")]
+        [Tooltip("One block per rank. Element 0 is what learning it gives you.")]
+        public Tier[] tiers = { new Tier() };
 
         public override bool CanCast(PlayerLogic wizard)
         {
-            if (wizard.spellbook.StateOf<Hold>(this).stone != null)
-                return true;
+            if (wizard.State != PlayerState.Normal)
+                return false;
 
-            return wizard.State == PlayerState.Normal &&
-                   Liftable.Nearest(wizard.movement.Position, reach) != null;
+            Hands hands = wizard.spellbook.StateOf<Hands>(this);
+
+            return hands.thing != null
+                ? FindShelf(wizard, out _)
+                : Carryable.Nearest(wizard.movement.Position, Of(wizard).reach) != null;
         }
 
         public override string WhyNot(PlayerLogic wizard)
         {
-            if (wizard.spellbook.StateOf<Hold>(this).stone != null)
-                return null;
-
             if (wizard.State != PlayerState.Normal)
                 return $"you are {wizard.State} and cannot reach for anything";
 
-            if (Liftable.Nearest(wizard.movement.Position, reach) == null)
-                return Liftable.All.Count == 0
-                    ? "there is not a single Liftable in this scene - drop in a Boulder"
-                    : $"nothing loose within {reach} boxes of you";
+            Hands hands = wizard.spellbook.StateOf<Hands>(this);
+
+            if (hands.thing != null)
+                return FindShelf(wizard, out _)
+                    ? null
+                    : $"nowhere to set it down - it wants an empty tile with a floor under it, " +
+                      $"within {placeInTiles} of you";
+
+            if (Carryable.Nearest(wizard.movement.Position, Of(wizard).reach) == null)
+                return Carryable.All.Count == 0
+                    ? "there is nothing carryable in this scene - put a Carryable on a slime"
+                    : $"nothing within {Of(wizard).reach} boxes of you to take";
 
             return null;
         }
 
         public override bool OnCast(PlayerLogic wizard)
         {
-            Hold hold = wizard.spellbook.StateOf<Hold>(this);
+            Hands hands = wizard.spellbook.StateOf<Hands>(this);
 
-            if (hold.stone != null)
+            if (hands.thing != null)
             {
-                LetGo(wizard, hold);
+                if (!FindShelf(wizard, out Vector2Int cell))
+                    return false;
+
+                hands.thing.PutDown(TileGrid.CentreOf(cell));
+                hands.thing = null;
                 return true;
             }
 
-            Liftable stone = Liftable.Nearest(wizard.movement.Position, reach);
+            Carryable found = Carryable.Nearest(wizard.movement.Position, Of(wizard).reach);
 
-            if (stone == null)
+            if (found == null)
                 return false;
 
-            stone.Grab();
-            hold.stone = stone;
+            found.Stow();
+            hands.thing = found;
             return true;
         }
 
-        public override void OnLit(PlayerLogic wizard, float fixedDeltaTime)
+        // What is in the slot IS what is in your hands. With nothing stowed it falls back to the
+        // spell's own icon.
+        public override Sprite IconFor(PlayerLogic wizard)
         {
-            Hold hold = wizard.spellbook.StateOf<Hold>(this);
+            Carryable held = wizard.spellbook.StateOf<Hands>(this).thing;
 
-            if (hold.stone == null)
-            {
-                wizard.spellbook.Extinguish(this);
-                return;
-            }
-
-            hold.stone.CarryTo(HoldPoint(wizard), pullSpeed, fixedDeltaTime);
+            return held != null && held.Icon != null ? held.Icon : icon;
         }
 
-        public override void OnEnded(PlayerLogic wizard) =>
-            LetGo(wizard, wizard.spellbook.StateOf<Hold>(this));
+        public override Color IconTintFor(PlayerLogic wizard)
+        {
+            Carryable held = wizard.spellbook.StateOf<Hands>(this).thing;
 
+            return held != null ? held.tint : Color.white;
+        }
+
+        // Dying reloads the level, which puts everything back where it was authored - so a
+        // carried thing is never destroyed, only forgotten. Dropping the SPELL is different:
+        // that has to put the thing back, or it is gone with nothing to show where.
         public override void OnRunReset(PlayerLogic wizard) =>
-            LetGo(wizard, wizard.spellbook.StateOf<Hold>(this));
+            wizard.spellbook.StateOf<Hands>(this).thing = null;
 
-        public override void OnUnequipped(PlayerLogic wizard) =>
-            LetGo(wizard, wizard.spellbook.StateOf<Hold>(this));
+        public override void OnUnequipped(PlayerLogic wizard)
+        {
+            Hands hands = wizard.spellbook.StateOf<Hands>(this);
 
-        Vector2 HoldPoint(PlayerLogic wizard)
+            hands.thing?.GoHome();
+            hands.thing = null;
+        }
+
+        protected override void Validate()
+        {
+            if (tiers != null)
+                foreach (Tier tier in tiers)
+                    tier?.Validate();
+
+            CheckTiers(tiers != null ? tiers.Length : 0);
+        }
+
+        bool FindShelf(PlayerLogic wizard, out Vector2Int cell)
         {
             PlayerLogic.Movement walk = wizard.movement;
+            Vector2Int stood = TileGrid.StandingCell(walk);
 
-            return new Vector2(walk.Position.x + walk.Facing * holdDistance,
-                               walk.FeetY + holdHeight);
+            for (int step = 1; step <= placeInTiles; step++)
+            {
+                cell = new Vector2Int(stood.x + walk.Facing * step, stood.y + liftInTiles);
+
+                // Empty AND with something under it. Wall Growth wants the opposite test - it
+                // puts a block where there ISN'T one - and that contrast is the whole difference
+                // between the two spells.
+                if (TileGrid.IsShelf(cell, walk.groundLayers))
+                    return true;
+            }
+
+            cell = default;
+            return false;
         }
 
-        void LetGo(PlayerLogic wizard, Hold hold)
+        Tier Of(PlayerLogic wizard) =>
+            TierFor(tiers, wizard.spellbook.RankOf(this)) ?? new Tier();
+
+        [System.Serializable]
+        public class Tier
         {
-            if (hold.stone == null)
-                return;
+            [Min(1f)] public float reach = 6f;
 
-            Vector2 aim = wizard.Steering.Move;
-
-            Vector2 launch = aim.sqrMagnitude >= aimThreshold * aimThreshold
-                ? aim.normalized * throwSpeed
-                : Vector2.zero;
-
-            hold.stone.Release(launch);
-            hold.stone = null;
+            public void Validate() => reach = Mathf.Max(1f, reach);
         }
 
-        public class Hold
+        public class Hands
         {
-            public Liftable stone;
+            public Carryable thing;
         }
     }
 }

@@ -150,9 +150,13 @@ The Staff is yours from the start and welded to E; everything else fights over t
 | **Mage Hand** | A spectral hand you swing from. | wider swing / climb it |
 | **Wall Growth** | One tile of stone, put down on the grid beside you. | further reach |
 | **Glide** | A canopy. It barely slows the drop - it carries you. | wider wing |
-| **Telekinesis** | Take a hazard with you and set it down where you want it. | *(to come)* |
-| **Haste** | *(to come)* | |
-| **Fling** | *(to come)* | |
+| **Telekinesis** | Take a hazard with you and set it down where you want it. | longer reach |
+| **Haste** | You quicken; the world wades. Once per level. | deeper haste |
+| **Fling** | Hold to wind up and aim, let go to fly. | harder throw |
+
+Two of them want level content and already have it: Mage Hand needs a `Vine`, Telekinesis needs a
+`Carryable` — which the `Slime` and `Rock` prefabs now carry, so every slime and rock already in a
+level can be picked up and put down somewhere better.
 
 **Glide does not forgive fall damage, and that is the design.** Feather Fall — the spell that
 used to live in this slot — did, and that forgiveness was the only reason it was worth a button.
@@ -315,6 +319,67 @@ children need and shrinks every one of them toward its minimum. The result is a 
 and cannot use: the text still draws, but each button is 0 pixels tall and has no area to click.
 `SetSize` now writes `minWidth`/`minHeight` as well as the preferred pair, so nothing built through
 it can ever be squeezed to nothing again.
+
+## Haste, and why it is not `Time.timeScale`
+
+Haste is a **flag**, `Core.Haste`, that anything which moves under its own steam multiplies itself
+by. Scaling time would have been fewer lines and wrong three ways: pausing already owns
+`timeScale`; physics runs on a fixed step, so slowing it changes how the wizard's own collisions
+resolve; and there would be no way to exempt anything.
+
+As a flag, **the wizard is untouched by construction, and so is their ragdoll** — only things that
+*ask* are slowed, and the ragdoll never asks. Wind is the first thing that asks
+(`WindZone2D.OnPlayerInside` scales `push`, and its streaks scale with it so the two never
+disagree). Anything that moves later reads `Haste.WorldScale` the same way.
+
+`usesPerLevel` is the limit, and it means what it says: charges refill on the scene load that
+rebuilds the spellbook, which is what a level transition is. Dying refills it too, since that also
+reloads — self-punishing enough not to be worth policing.
+
+## Fling, and the promise the dotted line makes
+
+The arc and the launch are **the same `Vector2`**, computed once per fixed step and handed to both
+the prediction and the shove. The moment those become two code paths the line stops being a
+promise and becomes a suggestion.
+
+`Movement.PredictArc` is ported from the abandoned jump-test branch, but three adaptations matter
+more than the port, and each was wrong before:
+
+- **Hazards do not stop you.** Every hazard here is a trigger you pass straight through, so an arc
+  that ended at the first slime would hide where you actually land. It flies on and reports that it
+  crossed one, and the line turns red without getting shorter.
+- **Wind pushes you mid-flight.** `wind.y` is added outside `Run`, so it reaches a wizard whose
+  steering is locked; `wind.x` is not, because `Run` early-returns on lockout. Only the vertical
+  component belongs in the simulation.
+- **The flight has to be locked, and for exactly the right length.** `Run` rewrites
+  `linearVelocityX` every step, dragging it back toward the stick at `airControl × groundFriction`.
+  Unlocked, a 14 b/s fling is spent inside half a second and the drawing is a lie. `ArcEnd.Seconds`
+  is the arc reporting its own duration, and that is what the spell locks for.
+
+**`Rooted` is set from `ModifyStats`, never from `OnHeld`.** `TryCast` runs before `Rebuild`, and
+`Rebuild` opens with `stats.Reset()` — anything written during the hold is wiped on the next line,
+and the wizard walks away while winding up with nothing in the console to say why.
+
+**The release is latched in `Observe` and consumed before the hook runs.** `Observe` is an Update
+and `TryCast` is a FixedUpdate: polling `WasReleasedThisFrame` from a fixed-step hook misses the
+edge on a slow frame and fires twice on a fast one.
+
+A charged spell wants **`pressBuffer: 0`**. Anything else and `WhyNot` complains to the console
+every tenth of a second you spend winding up.
+
+## Carrying a hazard
+
+`Carryable` stows an object by **deactivating** it, not by destroying and re-spawning it. That
+keeps every field the level author set, keeps its icon available to the HUD while it is stowed, and
+means putting it down cannot lose anything.
+
+`Hazard.Disarm` exists because **`Awake` does not run again when an object is switched back on** —
+without it, a slime set down at your feet still has the re-arm timer it had when you picked it up,
+and bounces you on the very next physics step.
+
+Placement asks `TileGrid.IsShelf`: an empty cell *with a floor under it*. Wall Growth asks
+`TileGrid.IsFree` — an empty cell, floor or not. That contrast is the whole difference between the
+two spells, and it is why one helper serves both.
 
 ## The vine
 

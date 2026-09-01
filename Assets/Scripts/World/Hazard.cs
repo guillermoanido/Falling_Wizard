@@ -35,6 +35,12 @@ namespace FallingWizard.World
 
         [NonSerialized] float readyAt;
 
+        // Hold off for a moment. Awake does NOT run again when an object is switched back on,
+        // so a hazard that has been carried and set down still has whatever re-arm timer it had
+        // when it was picked up - which for a slime dropped at your feet means bouncing you on
+        // the very next physics step.
+        public void Disarm(float seconds) => readyAt = Time.time + Mathf.Max(0f, seconds);
+
         protected abstract void Affect(PlayerLogic wizard);
 
         protected virtual void Awake()
