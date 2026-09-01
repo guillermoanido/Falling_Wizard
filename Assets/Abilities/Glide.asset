@@ -20,15 +20,16 @@ MonoBehaviour:
   locked: 0
   fixedSlot: -1
   passive: 0
+  pressBuffer: 0.12
+  chargesOnHold: 0
+  activeDuration: 4
+  cooldown: 1
+  usesPerLevel: 0
+  collectedEffect: {fileID: 0}
   upgrades:
   - cost: 2
     title: Wider wing
     description: Carries you half again as far across a fall.
-  pressBuffer: 0.12
-  activeDuration: 4
-  usesPerRun: 0
-  cooldown: 1
-  collectedEffect: {fileID: 0}
   fallSpeed: 0.5
   airSpeed: 1.9
   airControl: 1.6

@@ -16,19 +16,20 @@ MonoBehaviour:
   displayName: Haste
   description: Quicken yourself. Everything else in the level wades. Once per level.
   icon: {fileID: 0}
-  cost: 2
+  cost: 4
   locked: 0
   fixedSlot: -1
   passive: 0
+  pressBuffer: 0.12
+  chargesOnHold: 0
+  activeDuration: 4
+  cooldown: 0
+  usesPerLevel: 1
+  collectedEffect: {fileID: 0}
   upgrades:
   - cost: 3
     title: Deeper haste
     description: You move faster still, and the world slows further.
-  pressBuffer: 0.12
-  activeDuration: 4
-  usesPerLevel: 1
-  cooldown: 0
-  collectedEffect: {fileID: 0}
   moveSpeed: 1.5
   control: 1.6
   worldScale: 0.35

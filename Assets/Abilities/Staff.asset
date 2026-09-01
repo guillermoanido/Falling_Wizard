@@ -18,18 +18,18 @@ MonoBehaviour:
   icon: {fileID: 0}
   cost: 0
   locked: 1
-  fixedSlot: 1
+  fixedSlot: 0
   passive: 0
+  pressBuffer: 0.12
+  chargesOnHold: 0
+  activeDuration: 0
+  cooldown: 0
+  usesPerLevel: 0
+  collectedEffect: {fileID: 0}
   upgrades:
-  - cost: 2
+  - cost: 1
     title: Longer staff
     description: Half again as long, so it reaches drops that used to be too deep.
-  chargesOnHold: 0
-  pressBuffer: 0.12
-  activeDuration: 0
-  usesPerLevel: 0
-  cooldown: 0
-  collectedEffect: {fileID: 0}
-  lengthByRank: 
+  lengthByRank:
   - 1
   - 1.5

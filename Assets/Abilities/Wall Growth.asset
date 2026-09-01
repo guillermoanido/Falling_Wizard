@@ -14,28 +14,30 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   id: wall
   displayName: Wall Growth
-  description: Grow a block of stone under the lip of a drop, and step down onto it.
+  description: Grow a block of stone under the lip of a drop, and step down onto
+    it.
   icon: {fileID: 0}
-  cost: 1
+  cost: 2
   locked: 0
   fixedSlot: -1
   passive: 0
+  pressBuffer: 0.12
+  chargesOnHold: 0
+  activeDuration: 8
+  cooldown: 3
+  usesPerLevel: 0
+  collectedEffect: {fileID: 0}
   upgrades:
   - cost: 2
     title: Longer reach
     description: Places a block a tile further out, and it stands for longer.
-  pressBuffer: 0.12
-  activeDuration: 8
-  usesPerRun: 0
-  cooldown: 3
-  collectedEffect: {fileID: 0}
   wallPrefab: {fileID: 1264234565, guid: 08a96630615c538c93ca6eb3a5c011a5, type: 3}
   wallArt: {fileID: 0}
-  tint: {r: 0.42, g: 0.62, b: 0.38, a: 1}
+  tint: {r: 1, g: 1, b: 1, a: 1}
   size: {x: 1, y: 1}
   reachInTiles: 3
   outFromEdge: 0
   liftInTiles: -1
-  growTime: 0.05
+  growTime: 0.5
   groundLayer: Ground
   sortingOrder: 1

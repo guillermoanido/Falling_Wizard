@@ -16,20 +16,20 @@ MonoBehaviour:
   displayName: Telekinesis
   description: Take a hazard with you, and set it down where you want it.
   icon: {fileID: 0}
-  cost: 2
+  cost: 4
   locked: 0
   fixedSlot: -1
   passive: 0
+  pressBuffer: 0.12
+  chargesOnHold: 0
+  activeDuration: 0
+  cooldown: 0.4
+  usesPerLevel: 0
+  collectedEffect: {fileID: 0}
   upgrades:
   - cost: 2
     title: Longer reach
     description: Takes hold of things half again as far away.
-  chargesOnHold: 0
-  pressBuffer: 0.12
-  activeDuration: 0
-  usesPerLevel: 0
-  cooldown: 0.4
-  collectedEffect: {fileID: 0}
   reach: 6
   placeInTiles: 3
   liftInTiles: 0
