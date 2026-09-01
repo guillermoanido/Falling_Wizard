@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   id: wall
   displayName: Wall Growth
-  description: Grow a block of stone out of the air beside you.
+  description: Grow a block of stone under the lip of a drop, and step down onto it.
   icon: {fileID: 0}
   cost: 1
   locked: 0
@@ -34,7 +34,7 @@ MonoBehaviour:
   tint: {r: 0.42, g: 0.62, b: 0.38, a: 1}
   size: {x: 1, y: 1}
   reachInTiles: 2
-  liftInTiles: 0
+  liftInTiles: -1
   growTime: 0.05
   groundLayer: Ground
   sortingOrder: 1

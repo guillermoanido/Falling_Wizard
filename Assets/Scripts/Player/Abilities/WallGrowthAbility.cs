@@ -34,9 +34,13 @@ namespace FallingWizard.Player
                  "tile you are about to step into. It takes the first free one it finds.")]
         [Range(1, 4)] public int reachInTiles = 2;
 
-        [Tooltip("Tiles above your own feet. 0 is level with the floor you are stood on, which " +
-                 "is the one that gets you over a gap; 1 is head height, which is a step up.")]
-        [Range(0, 2)] public int liftInTiles = 0;
+        [Tooltip("Tiles above your own feet, and it is usually NEGATIVE. -1 is one below - a " +
+                 "step down into the drop, which is what you want in a game about going down: " +
+                 "walk to a lip, put a stone under it, step off onto your own staircase. 0 is " +
+                 "level with the floor, which bridges a gap instead. Positive is a step up. " +
+                 "Below zero this becomes a LEDGE spell: on flat ground every tile at that " +
+                 "height is already floor, so it refuses and says so.")]
+        [Range(-3, 2)] public int liftInTiles = -1;
 
         [Header("Growing")]
         [Tooltip("Seconds it takes to reach full size. Keep it SHORT: the collider follows " +
@@ -70,7 +74,12 @@ namespace FallingWizard.Player
             if (FindCell(wizard, out _))
                 return null;
 
-            return $"every tile within {reachInTiles} of you is already filled";
+            // Below foot level the usual reason is that there is no ledge, not that the place is
+            // crowded - and "every tile is filled" while stood in the open reads as a bug.
+            return liftInTiles < 0
+                ? $"there is solid ground under every tile within {reachInTiles} ahead of you - " +
+                  "this wants a ledge to build under"
+                : $"every tile within {reachInTiles} ahead of you is already filled";
         }
 
         public override bool OnCast(PlayerLogic wizard)
@@ -126,6 +135,10 @@ namespace FallingWizard.Player
             PlayerLogic.Movement walk = wizard.movement;
             Vector2Int stood = TileGrid.StandingCell(walk);
 
+            // Walking outward one tile at a time finds the LEDGE on its own: standing back
+            // from a lip, the near tiles at this height are still floor and get skipped, and the
+            // first free one is the far side of the edge. No edge-finding maths, no continuous
+            // edgeX to snap, and it behaves the same whether you are at the lip or a step back.
             for (int step = 1; step <= reachInTiles; step++)
             {
                 cell = new Vector2Int(stood.x + walk.Facing * step, stood.y + liftInTiles);
