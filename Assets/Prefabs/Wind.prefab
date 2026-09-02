@@ -106,7 +106,7 @@ MonoBehaviour:
   fitHazeToZone: 1
   showStreaks: 1
   streaks: 16
-  streakArt: {fileID: 0}
+  streakArt: {fileID: -8630923909508717717, guid: f407c2e93d8217542be1a5463b745be4, type: 3}
   streakTint: {r: 0.85, g: 0.95, b: 1, a: 0.55}
   streakSize: {x: 0.9, y: 0.05}
   streakSpeed: 1.4
