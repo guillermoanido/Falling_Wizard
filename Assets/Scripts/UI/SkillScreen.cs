@@ -140,7 +140,8 @@ namespace FallingWizard.UI
             // order between two arbitrary MonoBehaviours is undefined - without the guard the
             // screen closes on the very press that opened it.
             if (Time.frameCount != openedOn &&
-                (Core.Controls.PausePressed || Core.Controls.CancelPressed))
+                (Core.Controls.PausePressed || Core.Controls.CancelPressed ||
+                 Core.Controls.LoadoutPressed))
             {
                 Leave();
                 return;
@@ -467,10 +468,11 @@ namespace FallingWizard.UI
 
         // The two real doors into this screen both cost the run and both dive to level one, and
         // a level with no rest site leaves dying as the only way in. This is the playtest door.
-        // It installs ONLY while the sandbox is on, so it cannot exist in a real playthrough and
-        // the "decide before you go down" rule is untouched.
+        // For now it installs ALWAYS - see Install - so the loadout can be opened mid-fall while
+        // the game is being built. That does suspend the "decide before you go down" rule, so it
+        // wants putting back behind the sandbox before anyone plays this for real.
         //
-        // It listens on UI/Loadout - F2 - and NOT on Pause. Sharing Pause with the pause menu
+        // It listens on UI/Loadout - Tab - and NOT on Pause. Sharing Pause with the pause menu
         // was a race nobody could win: Controls.PausePressed is WasPressedThisFrame, which stays
         // true for the whole frame, so MenuScreen.Update and this both acted on the one press.
         // Screens.Claim happens inside Raise, far too late to stop a pause menu that already
@@ -492,9 +494,11 @@ namespace FallingWizard.UI
             [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
             static void Install()
             {
-                // Playtest.Awake runs at -100 and AfterSceneLoad runs after every Awake, so the
-                // sandbox flag is already settled by the time this asks.
-                if (live != null || !Progress.Sandbox)
+                // TEMPORARY: this used to install only while the playtest sandbox was on, so it
+                // could not exist in a real playthrough and the "decide before you go down" rule
+                // was untouched. The sandbox is off now, so the gate would mean no door at all.
+                // Put `|| !Progress.Sandbox` back on the line below to restore that rule.
+                if (live != null)
                     return;
 
                 var go = new GameObject("Loadout Door", typeof(Door));

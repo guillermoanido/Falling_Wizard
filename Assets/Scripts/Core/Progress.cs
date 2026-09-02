@@ -225,6 +225,15 @@ namespace FallingWizard.Core
         public static void LoseCarried()
         {
             CarriedWisps = 0;
+
+            // Put them back where they were found, which is what the death screen promises and
+            // what `carrying` is FOR: these are the pickups that only stay taken once banked.
+            // Dropping them out of `carrying` alone left them in `found`, and Pickup.Awake
+            // destroys anything in `found` the moment the level reloads - so every wisp already
+            // collected simply was not there any more, invisible and uncollectable, for the rest
+            // of the run. A pickup that stays taken FOR GOOD is in `spent` as well and is
+            // untouched by this.
+            found.ExceptWith(carrying);
             carrying.Clear();
         }
 
