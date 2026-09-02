@@ -112,6 +112,12 @@ namespace FallingWizard.Player
 
         public virtual void OnReleased(PlayerLogic wizard, float heldSeconds) { }
 
+        // The wind-up was LOST rather than let go: the button came up behind the pause menu,
+        // where nothing is watching for the release. A charged spell has to undo whatever the
+        // hold switched on - Fling roots the wizard on the spot while it aims - or it sits wound
+        // up for the rest of the level with no button left that can end it.
+        public virtual void OnChargeLost(PlayerLogic wizard) { }
+
         public virtual bool CanCast(PlayerLogic wizard) => true;
 
         // Why the press just now did nothing, in the player's words and without a full stop.

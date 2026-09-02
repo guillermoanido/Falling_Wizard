@@ -534,6 +534,15 @@ namespace FallingWizard.Player
 
             const float MinTravelSpeed = 0.1f;
 
+            // How far up inside the wizard the slope rays begin. queriesStartInColliders is on
+            // in this project, so a ray that starts already touching the floor answers "flat"
+            // whatever the floor is really doing.
+            const float SlopeProbeLift = 0.25f;
+
+            // The hair of daylight a step leaves between the soles and the lip they have just
+            // been put on top of, so the move ends beside the geometry rather than inside it.
+            const float StepClearance = 0.02f;
+
             // Enough to clear the floor underfoot without meaningfully lying about where the
             // arc begins - well under a tile, so the drawn landing point is still right.
             const float ArcClearance = 0.15f;
@@ -616,11 +625,43 @@ namespace FallingWizard.Player
             [Tooltip("How far ahead of the feet to look for missing ground.")]
             [Min(0f)] public float ledgeCheckAhead = 0.5f;
 
-            [Tooltip("A gap deeper than this counts as a ledge worth stopping at.")]
-            [Min(0f)] public float ledgeCheckDepth = 0.75f;
+            [Tooltip("A gap deeper than this counts as a ledge worth stopping at. Keep it above " +
+                     "one box: the probe already hangs a skin's width below the soles, so at " +
+                     "0.75 the top of every step of a staircase read as a cliff and a WALKING " +
+                     "wizard refused to go down one.")]
+            [Min(0f)] public float ledgeCheckDepth = 1.2f;
 
             [Tooltip("How finely to close in on the exact lip when planting the staff.")]
             [Range(4, 16)] public int edgeSearchSteps = 8;
+
+            [Header("Slopes")]
+            [Tooltip("Steepest ramp that counts as a floor to walk up rather than a wall to " +
+                     "stop at, in degrees. The level's ramp tiles are 45, so anything comfortably " +
+                     "above that takes them and still refuses a vertical face.")]
+            [Range(0f, 80f)] public float maxSlopeAngle = 55f;
+
+            [Tooltip("Tilt below this is treated as flat, so a floor that is a hair off level " +
+                     "does not switch the wizard into ramp handling every other step.")]
+            [Range(0f, 20f)] public float flatSlopeAngle = 3f;
+
+            [Tooltip("How far below the soles to look for the tilt of what they are stood on. " +
+                     "Needs to clear the probe's own skin without reaching the floor below.")]
+            [Min(0.05f)] public float slopeProbeDepth = 0.5f;
+
+            [Header("Steps")]
+            [Tooltip("Tallest lip the wizard walks up without jumping, in boxes. This is for " +
+                     "the seams and pixel-high teeth between tiles, NOT for real steps - keep it " +
+                     "well under 1 or every one-tile wall in the game becomes a staircase and " +
+                     "jumping stops mattering. 0 turns it off.")]
+            [Min(0f)] public float stepHeight = 0.35f;
+
+            [Tooltip("How far PAST THE TOES to look for that lip, in boxes, and how far forward " +
+                     "the step carries them. Roughly one physics step of running - keep it small. " +
+                     "Reaching far ahead on a ramp finds a lip as tall as the reach itself, and " +
+                     "the landing check then fails because the ramp goes on climbing through " +
+                     "where the wizard would have stood: they stop dead at the bottom of every " +
+                     "slope.")]
+            [Min(0.02f)] public float stepReach = 0.1f;
 
             [Header("Contact")]
             [Tooltip("Friction between the wizard and the world. 0 is right for a platformer: " +
@@ -653,6 +694,13 @@ namespace FallingWizard.Player
 
             [NonSerialized] Vector2 wind;
             [NonSerialized] float lockout;
+
+            // Which way the floor underfoot is tilted, and whether the last step drove the
+            // wizard along that tilt. The second one is only ever read to take the climb back
+            // off again the moment the ramp runs out - see Run.
+            [NonSerialized] Vector2 groundNormal = Vector2.up;
+            [NonSerialized] float groundAngle;
+            [NonSerialized] bool climbedLastStep;
 
             public bool IsGrounded { get; private set; }
 
@@ -746,6 +794,12 @@ namespace FallingWizard.Player
                 UpdateFacing(command.Steer);
                 UpdateGroundedState(fixedDeltaTime);
                 Run(command, stats, fixedDeltaTime);
+
+                // AFTER Run, so the sideways speed it just chose is what carries the wizard
+                // forward off the lip on the next physics step, and BEFORE TryJump, so a jump
+                // buffered on the same step launches from the height they have just gained.
+                TryStepUp(command, stats);
+
                 TryJump(stats);
                 ApplyShortHop(command.JumpHeld);
 
@@ -769,6 +823,7 @@ namespace FallingWizard.Player
             {
                 body.linearVelocity = Vector2.zero;
                 wind = Vector2.zero;
+                climbedLastStep = false;
             }
 
             public void SenseGround(float fixedDeltaTime) => UpdateGroundedState(fixedDeltaTime);
@@ -935,6 +990,11 @@ namespace FallingWizard.Player
 
                 body.linearVelocity += velocity;
                 rising = false;
+
+                // So the ramp's own tidy-up does not read this shove as leftover climb and take
+                // it straight back off again.
+                climbedLastStep = false;
+
                 lockout = Mathf.Max(lockout, controlLockout);
             }
 
@@ -954,6 +1014,7 @@ namespace FallingWizard.Player
                     body.linearVelocityX += sideways;
 
                 rising = false;
+                climbedLastStep = false;
 
                 if (!resetsFall)
                     return;
@@ -1017,11 +1078,26 @@ namespace FallingWizard.Player
                 runSpeed = Mathf.Max(0f, runSpeed);
                 walkSpeed = Mathf.Clamp(walkSpeed, 0f, runSpeed);
                 groundCheckSize = Vector2.Max(groundCheckSize, MinGroundCheck);
+                flatSlopeAngle = Mathf.Min(flatSlopeAngle, maxSlopeAngle);
 
                 int playerLayer = LayerMask.NameToLayer("Player");
                 if (playerLayer >= 0 && (groundLayers.value & (1 << playerLayer)) != 0)
                     Debug.LogWarning("Movement.groundLayers includes the Player layer, so the " +
                                      "wizard will try to stand on their own collider.");
+
+                // One box is the height of a tile, so a step assist that reaches one has quietly
+                // turned every wall in the game into something you walk up.
+                if (stepHeight >= 1f)
+                    Debug.LogWarning("Movement.stepHeight is a whole box or more, so the wizard " +
+                                     "walks up any one-tile wall without jumping. It is meant " +
+                                     "for tile seams and the teeth along a ramp, not for steps.");
+
+                // The lip has to be reachable from where the soles are, or nothing is ever
+                // climbed and the setting looks broken rather than switched off.
+                if (stepHeight > 0f && ledgeCheckDepth <= 1f)
+                    Debug.LogWarning("Movement.ledgeCheckDepth is one box or less, so the top of " +
+                                     "every step down reads as a cliff and a walking wizard " +
+                                     "refuses to take it. Keep it above 1.");
             }
 
             public void DrawGizmos(Vector2 origin)
@@ -1032,6 +1108,16 @@ namespace FallingWizard.Player
                 Gizmos.color = Color.yellow;
                 Vector2 probe = origin + groundCheckOffset + new Vector2(Facing * ledgeCheckAhead, 0f);
                 Gizmos.DrawLine(probe, probe + Vector2.down * ledgeCheckDepth);
+
+                // The tallest lip that gets walked up rather than stopped at, drawn where the
+                // step actually looks for it.
+                if (stepHeight <= 0f)
+                    return;
+
+                Gizmos.color = Color.green;
+                float soles = origin.y + groundCheckOffset.y + groundCheckSkin;
+                var ahead = new Vector2(origin.x + groundCheckOffset.x + Facing * stepReach, soles);
+                Gizmos.DrawLine(ahead, ahead + Vector2.up * stepHeight);
             }
 
             void UpdateFacing(float steer)
@@ -1053,6 +1139,8 @@ namespace FallingWizard.Player
                     ProbeOrigin, groundCheckSize, 0f, groundFilter, Overlaps);
 
                 IsGrounded = count > 0;
+
+                SenseSlope();
 
                 WatchForMissingGround(fixedDeltaTime);
 
@@ -1156,6 +1244,141 @@ namespace FallingWizard.Player
                 return Physics2D.Raycast(probe, Vector2.down, groundFilter, Rays, ledgeCheckDepth) > 0;
             }
 
+            // Which way the floor underfoot is tilted. Three rays rather than one, across the
+            // width of the footprint, because a single ray under the middle reads the FLAT tile
+            // for the whole first half of stepping onto a ramp - and the steepest walkable
+            // answer wins, so the ramp is picked up the moment a toe is over it.
+            //
+            // Each ray starts a little way UP inside the wizard. Physics2D.queriesStartInColliders
+            // is on in this project, so a ray beginning level with the soles and already touching
+            // the floor comes back at distance zero with a normal of straight up, which reads as
+            // flat no matter what is really down there.
+            void SenseSlope()
+            {
+                groundNormal = Vector2.up;
+                groundAngle = 0f;
+
+                if (!IsGrounded || body == null)
+                    return;
+
+                groundFilter.layerMask = groundLayers;
+
+                float lift = Mathf.Max(SlopeProbeLift, groundCheckSize.y);
+                float half = groundCheckSize.x * 0.5f;
+
+                for (int i = -1; i <= 1; i++)
+                {
+                    var from = new Vector2(ProbeOrigin.x + i * half, ProbeOrigin.y + lift);
+
+                    if (Physics2D.Raycast(from, Vector2.down, groundFilter, Rays,
+                            lift + slopeProbeDepth) <= 0)
+                        continue;
+
+                    Vector2 normal = Rays[0].normal;
+                    float angle = Vector2.Angle(normal, Vector2.up);
+
+                    if (angle > groundAngle && angle <= maxSlopeAngle)
+                    {
+                        groundAngle = angle;
+                        groundNormal = normal;
+                    }
+                }
+            }
+
+            // True while the wizard is stood on something tilted enough to be worth steering
+            // along rather than across.
+            bool OnRamp => IsGrounded && groundAngle > flatSlopeAngle && groundAngle <= maxSlopeAngle;
+
+            // Walking up a low lip, because a BoxCollider2D cannot do it on its own.
+            //
+            // The wizard is a box with square corners, frozen rotation and - deliberately - no
+            // friction, so a lip is a flat vertical face meeting a flat vertical face. The
+            // solver's only answer to that is to delete the sideways speed, and Run puts it
+            // straight back on the next step. That is what "stuck on the scenery" feels like:
+            // the stick is forward, the wizard is not moving, and nothing is actually broken.
+            //
+            // Kept far below a whole box on purpose. This is for tile seams and the pixel-high
+            // teeth along a ramp's edge, NOT for real steps - a wizard who climbs a box without
+            // jumping is a wizard for whom jumping has stopped mattering.
+            void TryStepUp(Command command, Modifiers stats)
+            {
+                if (stepHeight <= 0f || body == null || hull == null)
+                    return;
+
+                if (lockout > 0f || stats.Rooted)
+                    return;
+
+                // The same window a jump is allowed in, so a step taken just after walking off a
+                // lip is no more generous than the jump they could have had instead. Anyone
+                // genuinely on their way up - a jump, a slime, a fling - is left alone.
+                if (coyoteTimer <= 0f || body.linearVelocityY > 0f)
+                    return;
+
+                // The STICK, not the speed. Pressed against a lip, Run only ever lands one
+                // step's worth of acceleration before the solver takes it away again, so a test
+                // on how fast the wizard is really travelling would be false at exactly the
+                // moment it matters.
+                float steer = command.Steer;
+
+                if (Mathf.Abs(steer) <= steerDeadzone)
+                    return;
+
+                int direction = steer < 0f ? -1 : 1;
+
+                if (!TryFindLip(direction, out float lipTop))
+                    return;
+
+                Bounds box = hull.bounds;
+                float rise = lipTop - box.min.y;
+
+                // Under the skin there is nothing to climb and the contact rides over it on its
+                // own; over stepHeight it is a wall, and walls are what the jump is for.
+                if (rise <= groundCheckSkin || rise > stepHeight)
+                    return;
+
+                Vector2 offset = body.position - (Vector2)box.center;
+                var landing = new Vector2(
+                    box.center.x + direction * stepReach,
+                    box.min.y + rise + StepClearance + box.extents.y);
+
+                // The whole wizard has to fit where they are going. This is the headroom check
+                // and the "is that lip actually the top of a wall" check in one query, and it is
+                // also what makes the move below safe: the destination is proved empty before
+                // the body is ever put there, so it cannot be shoved back out.
+                groundFilter.layerMask = groundLayers;
+
+                if (Physics2D.OverlapBox(landing, box.size, 0f, groundFilter, Overlaps) > 0)
+                    return;
+
+                // Written straight to Rigidbody2D.position rather than added as upward speed.
+                // An impulse IS a jump - it leaves the ground, counts as airtime, fights the
+                // short hop, and goes as high as the number of steps the player stayed pressed
+                // against the lip. This is a move of a known, already-checked distance.
+                body.position = landing + offset;
+            }
+
+            // The top of whatever is directly in front of the soles, found by casting DOWN from
+            // step height onto it. Casting forward instead would answer with the face rather
+            // than the surface, and the height of a lip is the only thing worth knowing here.
+            bool TryFindLip(int direction, out float top)
+            {
+                top = 0f;
+
+                Bounds box = hull.bounds;
+                groundFilter.layerMask = groundLayers;
+
+                var from = new Vector2(
+                    box.center.x + direction * (box.extents.x + stepReach),
+                    box.min.y + stepHeight + StepClearance);
+
+                if (Physics2D.Raycast(from, Vector2.down, groundFilter, Rays,
+                        stepHeight + StepClearance + groundCheckSkin) <= 0)
+                    return false;
+
+                top = Rays[0].point.y;
+                return true;
+            }
+
             void Run(Command command, Modifiers stats, float fixedDeltaTime)
             {
                 if (lockout > 0f)
@@ -1182,8 +1405,72 @@ namespace FallingWizard.Player
                     rate *= airControl *
                             (steering ? stats.AirControlMultiplier : stats.AirDragMultiplier);
 
+                if (TryRunAlongRamp(targetSpeed, topSpeed * stats.MoveSpeedMultiplier,
+                        rate * fixedDeltaTime))
+                    return;
+
                 body.linearVelocityX =
                     Mathf.MoveTowards(body.linearVelocityX, targetSpeed, rate * fixedDeltaTime);
+            }
+
+            // Steering ALONG a ramp instead of across it.
+            //
+            // Driving purely sideways into a 45-degree face cannot work here and the numbers say
+            // why: acceleration is 20 boxes a second squared, of which only cos(45) - about 14 -
+            // pushes up the face, while gravity pulls 9.81 x gravityScale x sin(45) - about 21 -
+            // straight back down it, and there is no friction to make up the difference. The
+            // wizard loses that argument every time and slides, which is what "he glides down
+            // instead of going up" is. Worse, Run rewrites the sideways speed absolutely every
+            // step, so the up-the-slope velocity the contact solver correctly hands back is
+            // thrown away before it can ever add up.
+            //
+            // So on a ramp the wizard is steered along the surface, both components at once, and
+            // gravity is simply not part of the sum.
+            bool TryRunAlongRamp(float targetSpeed, float topSpeed, float change)
+            {
+                bool wasClimbing = climbedLastStep;
+                climbedLastStep = false;
+
+                if (!OnRamp)
+                {
+                    // The ramp has just run out. Whatever upward speed carried the wizard up it
+                    // is a hop nobody asked for now the ground is level again, so it is taken
+                    // back - but only if walking could plausibly have produced it. A jump or a
+                    // slime is faster than any ramp can push and is left alone.
+                    if (wasClimbing && IsGrounded && !rising &&
+                        body.linearVelocityY > 0f && body.linearVelocityY <= topSpeed)
+                        body.linearVelocityY = 0f;
+
+                    return false;
+                }
+
+                // Already going up faster than walking ever could, so something else - a jump, a
+                // bounce, a fling - owns the wizard this step and the ramp keeps out of it.
+                if (rising || body.linearVelocityY > topSpeed)
+                    return false;
+
+                // Tangent to the surface, always pointing the way x grows, so a positive target
+                // speed means "that way along the floor" exactly as it does on the flat.
+                var along = new Vector2(groundNormal.y, -groundNormal.x);
+
+                if (along.x < 0f)
+                    along = -along;
+
+                // How fast they are already going along the face - CLAMPED to what walking could
+                // have produced. Dropping onto a ramp otherwise arrives with the whole fall
+                // pointing down the slope, and a 16 b/s landing would fire the wizard away
+                // downhill faster than they can ever run back up.
+                float carried = Mathf.Clamp(
+                    Vector2.Dot(body.linearVelocity, along), -topSpeed, topSpeed);
+
+                float speed = Mathf.MoveTowards(carried, targetSpeed, change);
+
+                // Both components written together, and gravity left out of the sum entirely.
+                // That is the whole trick: with nothing pulling them down the face, letting go
+                // of the stick leaves the wizard stood on the ramp instead of sliding off it.
+                body.linearVelocity = along * speed;
+                climbedLastStep = speed * along.y > 0f;
+                return true;
             }
 
             void TryJump(Modifiers stats)
@@ -1220,7 +1507,11 @@ namespace FallingWizard.Player
             void ApplyFallGravity(Modifiers stats)
             {
                 float floatiness = stats.FallSpeedMultiplier;
-                bool falling = body.linearVelocityY < 0f;
+
+                // Not while stood on something. A wizard easing down a ramp has a negative
+                // vertical speed without falling at all, and putting the fall multiplier under
+                // them there turns every ramp into a slide they cannot walk back up.
+                bool falling = !IsGrounded && body.linearVelocityY < 0f;
 
                 body.gravityScale = falling
                     ? baseGravityScale * fallGravityMultiplier * floatiness
@@ -1897,6 +2188,20 @@ namespace FallingWizard.Player
                     if (paused || slot.Action == null)
                     {
                         slot.Buffer = 0f;
+
+                        // A wind-up cannot survive a pause. This loop is the only place a
+                        // release is ever seen and it does not run while paused, so a button let
+                        // go behind a menu is an edge nobody catches - and Fling roots the
+                        // wizard while it aims, so the charge staying live meant a wizard who
+                        // could never walk again for the rest of the level.
+                        if (slot.HeldFor > 0f && slot.Ability != null)
+                        {
+                            slot.Ability.OnChargeLost(owner);
+                            slot.Held = false;
+                            slot.HeldFor = 0f;
+                            slot.ReleasedAfter = -1f;
+                        }
+
                         continue;
                     }
 

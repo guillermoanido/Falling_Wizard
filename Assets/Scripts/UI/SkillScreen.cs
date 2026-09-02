@@ -469,11 +469,25 @@ namespace FallingWizard.UI
         // a level with no rest site leaves dying as the only way in. This is the playtest door.
         // It installs ONLY while the sandbox is on, so it cannot exist in a real playthrough and
         // the "decide before you go down" rule is untouched.
+        //
+        // It listens on UI/Loadout - F2 - and NOT on Pause. Sharing Pause with the pause menu
+        // was a race nobody could win: Controls.PausePressed is WasPressedThisFrame, which stays
+        // true for the whole frame, so MenuScreen.Update and this both acted on the one press.
+        // Screens.Claim happens inside Raise, far too late to stop a pause menu that already
+        // ran, so Escape opened the pause menu AND buried it under this screen's shroud at
+        // sorting order 220. From the player's seat, Escape opened the skill menu.
         class Door : MonoBehaviour
         {
             static Door live;
 
             SkillScreen open;
+
+            // Whether the world was ALREADY paused when this door opened. Raise pauses
+            // unconditionally and Leave never unpauses, so without remembering this the door
+            // either left the game frozen after closing, or - if it had been opened over a
+            // pause menu - would start the world running again underneath a menu still sitting
+            // there eating clicks.
+            bool wasPaused;
 
             [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
             static void Install()
@@ -490,10 +504,19 @@ namespace FallingWizard.UI
 
             void Update()
             {
-                if (open != null || Screens.ModalOpen || !Core.Controls.PausePressed)
+                if (open != null || Screens.ModalOpen || !Core.Controls.LoadoutPressed)
                     return;
 
-                open = Raise(null, "Back to the fall", () => open = null);
+                wasPaused = Game.IsPaused;
+                open = Raise(null, "Back to the fall", Close);
+            }
+
+            void Close()
+            {
+                open = null;
+
+                if (!wasPaused)
+                    Game.SetPaused(false);
             }
         }
     }

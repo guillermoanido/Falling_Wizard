@@ -741,6 +741,15 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
+                },
+                {
+                    "name": "Loadout",
+                    "type": "Button",
+                    "id": "a1f0c4d2-6e31-4b77-9a10-2c5e7d840003",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -1236,6 +1245,17 @@
                     "processors": "",
                     "groups": "Gamepad",
                     "action": "Skip",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "b1f0c4d2-6e31-4b77-9a10-2c5e7d840301",
+                    "path": "<Keyboard>/f2",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "Loadout",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

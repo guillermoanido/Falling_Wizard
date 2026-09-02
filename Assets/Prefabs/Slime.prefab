@@ -98,7 +98,7 @@ MonoBehaviour:
   rearmDelay: 0.25
   damage: 0
   affectsOnStaff: 0
-  affectsRagdolled: 0
+  affectsRagdolled: 1
   bounceHeight: 3
   shove: 2
   ragdolls: 1

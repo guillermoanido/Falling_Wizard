@@ -113,6 +113,8 @@ namespace FallingWizard.Player
             Draw(wizard, charge);
         }
 
+        public override void OnChargeLost(PlayerLogic wizard) => Drop(wizard);
+
         public override void OnReleased(PlayerLogic wizard, float heldSeconds)
         {
             Charge charge = wizard.spellbook.StateOf<Charge>(this);
