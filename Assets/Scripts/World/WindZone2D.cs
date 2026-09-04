@@ -25,8 +25,13 @@ namespace FallingWizard.World
         static readonly Color ArrowColour = new Color(0.55f, 0.85f, 1f, 0.9f);
 
         [Header("Wind")]
-        [Tooltip("Push in boxes per second. (-6,0) is a hard leftward gale, (0,4) an updraught. " +
-                 "Compare against a run of 6 to judge how hard it fights the player.")]
+        [Tooltip("Which way this blows, and how hard. THE TWO NUMBERS ARE NOT THE SAME UNIT. " +
+                 "Sideways, x is a target SPEED in boxes per second that you can lean against " +
+                 "and partly win - (-6,0) is a hard leftward gale next to a run of 4. Upward, " +
+                 "y is an ACCELERATION in boxes per second squared fighting gravity, which " +
+                 "falling is about 50 of, so anything under 25 only makes the drop slower and " +
+                 "nothing under 50 will ever lift you. To throw the wizard upward, use a Wind " +
+                 "Trap and put the number in its Kick, which is a real speed.")]
         public Vector2 push = new Vector2(-4f, 0f);
 
         [Tooltip("How quickly the wind takes hold once you step in, in boxes per second squared.")]
@@ -89,16 +94,22 @@ namespace FallingWizard.World
 
         protected override bool Continuous => true;
 
-        public Vector2 Drift => push * streakSpeed * Haste.WorldScale;
+        // How much of this zone is actually blowing, 0 to 1. A plain wind zone is always wide
+        // open; a shuttered one overrides this and everything downstream follows on its own -
+        // the push, the drift, the streak alpha - so a trap's art physically cannot tell the
+        // player a different story from its physics.
+        protected virtual float Openness => 1f;
 
-        void Reset()
+        public Vector2 Drift => push * streakSpeed * Haste.WorldScale * Openness;
+
+        protected virtual void Reset()
         {
             rearmDelay = 0f;
             damage = 0;
             affectsRagdolled = true;
         }
 
-        void OnValidate() => FitHaze();
+        protected virtual void OnValidate() => FitHaze();
 
         protected override void Awake()
         {
@@ -128,14 +139,19 @@ namespace FallingWizard.World
             wizard.Logic.Push(push * Haste.WorldScale, rampup, groundScale);
         }
 
-        void Update()
+        protected virtual void Update()
         {
             if (blown.Length == 0 || area == null)
                 return;
 
             Vector2 drift = Drift;
 
-            if (drift.sqrMagnitude < Epsilon)
+            // Measured on the PUSH, not on the drift. A shuttered zone that has closed has a
+            // drift of zero, and bailing here left its streaks frozen in mid-air at whatever
+            // alpha they were last handed - lit, motionless, and pointing at a vent that is not
+            // running. Wrap does nothing with a zero step and Fade still fades, so falling
+            // through to the loop is both correct and cheap.
+            if (push.sqrMagnitude < Epsilon)
                 return;
 
             Bounds zone = area.bounds;
@@ -175,7 +191,7 @@ namespace FallingWizard.World
             float along = span <= Epsilon ? 0.5f : Mathf.Clamp01((here - low) / span);
 
             Color tint = streakTint;
-            tint.a *= Mathf.Sin(along * Mathf.PI);
+            tint.a *= Mathf.Sin(along * Mathf.PI) * Openness;
             return tint;
         }
 
@@ -256,13 +272,13 @@ namespace FallingWizard.World
             }
         }
 
-        void OnDestroy()
+        protected virtual void OnDestroy()
         {
             if (gust != null)
                 Destroy(gust.gameObject);
         }
 
-        void OnDrawGizmos()
+        protected virtual void OnDrawGizmos()
         {
             if (alwaysShowArrows)
                 DrawArrows(UnselectedGizmo);

@@ -21,11 +21,21 @@ namespace FallingWizard.World
                  "of the floor so they do not come back inside it.")]
         public Vector2 respawnOffset = new Vector2(0f, 0.5f);
 
-        [Tooltip("What the screen is headed with.")]
+        [Tooltip("What the screen is headed with. This is the English. It is only used when the " +
+                 "key below is empty, or when no translation has that key yet.")]
         public string title = "A place to rest";
 
-        [Tooltip("The line under the heading. Say where this leads.")]
+        [Tooltip("Which translated line the heading uses. Leave the standard key here for an " +
+                 "ordinary rest site. CLEAR IT for a one-off rest site with words written for " +
+                 "this spot, and the English typed above is shown exactly as typed, in every " +
+                 "language - which is what you want for something nobody is going to translate.")]
+        public string titleKey = Loc.Keys.RestTitle;
+
+        [Tooltip("The line under the heading. Say where this leads. The English, as above.")]
         public string blurb = "Further down, or back the way you came.";
+
+        [Tooltip("Which translated line the blurb uses. Clear it to use the English above verbatim.")]
+        public string blurbKey = Loc.Keys.RestBlurb;
 
         [Tooltip("Optional prefab spawned the first time this is reached.")]
         public GameObject reachedEffect;
@@ -78,20 +88,20 @@ namespace FallingWizard.World
         {
             PlayerLogic.Health health = wizard.Logic.health;
 
-            ChoiceScreen screen = ChoiceScreen.Open(title, blurb);
+            ChoiceScreen screen = ChoiceScreen.Open(Loc.Text(titleKey, title),
+                                                    Loc.Text(blurbKey, blurb));
 
-            screen.Status($"Carrying {Progress.CarriedWisps} wisps    " +
-                          $"{Progress.Wisps} already banked    " +
-                          $"{health.Current}/{health.Max} hearts");
+            screen.Status(Loc.Format(Loc.Keys.RestStatus, Progress.CarriedWisps, Progress.Wisps,
+                                     health.Current, health.Max));
 
-            screen.Choice("Rest, then press on", () =>
+            screen.Choice(Loc.Get(Loc.Keys.RestPressOn), () =>
             {
                 wizard.Logic.RestoreHealth();
                 wizard.Logic.spellbook.ResetForRun();
                 screen.Close();
             });
 
-            screen.Choice($"Turn back and bank {Progress.CarriedWisps} wisps", () =>
+            screen.Choice(Loc.Format(Loc.Keys.RestTurnBack, Progress.CarriedWisps), () =>
                 screen.CloseThen(() =>
                 {
                     Progress.EndRun();

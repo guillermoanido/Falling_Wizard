@@ -1,0 +1,155 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d4a09f61c2b74e58ab17e3d052906c8f, type: 3}
+  m_Name: Spanish
+  m_EditorClassIdentifier: 
+  lines:
+  - key: menu.title
+    text: 'Falling Wizard'
+  - key: menu.play
+    text: 'Jugar'
+  - key: menu.settings
+    text: 'Opciones'
+  - key: menu.exit
+    text: 'Salir'
+  - key: pause.title
+    text: 'En pausa'
+  - key: pause.resume
+    text: 'Continuar'
+  - key: pause.mainMenu
+    text: 'Menú principal'
+  - key: pause.quit
+    text: 'Salir'
+  - key: settings.title
+    text: 'Opciones'
+  - key: settings.resolution
+    text: 'Resolución'
+  - key: settings.fullscreen
+    text: 'Pantalla completa'
+  - key: settings.volume
+    text: 'Volumen'
+  - key: settings.language
+    text: 'Idioma'
+  - key: settings.back
+    text: 'Volver'
+  - key: skill.title
+    text: 'Lo que te llevas abajo'
+  - key: skill.purse
+    text: '{0} fuegos fatuos'
+  - key: skill.price
+    text: '{0} fuegos fatuos'
+  - key: skill.noBook
+    text: 'No hay grimorio en Assets/Resources/Spellbook.asset.'
+  - key: skill.dive
+    text: 'Bajar'
+  - key: skill.back
+    text: 'De vuelta a la caída'
+  - key: skill.hint.pick
+    text: 'Elige un hechizo y presiona el botón donde lo quieres.'
+  - key: skill.hint.move
+    text: '{0}: presiona {1} para moverlo.'
+  - key: skill.hint.locked
+    text: 'Aún no aprendes {0}.'
+  - key: skill.on
+    text: 'En {0}.'
+  - key: skill.bench
+    text: 'En la banca.'
+  - key: skill.next
+    text: '{0}  Sigue: {1} - {2}'
+  - key: skill.learn
+    text: 'Aprender - {0}'
+  - key: skill.mastered
+    text: 'Dominado'
+  - key: skill.learned
+    text: 'Aprendido'
+  - key: death.title
+    text: 'Te caíste'
+  - key: death.blurb
+    text: 'Los fuegos fatuos que llevabas se apagaron contigo, y volvieron a donde los encontraste.'
+  - key: death.status
+    text: 'Aún tienes {0} fuegos fatuos a salvo'
+  - key: death.continue
+    text: 'Seguir desde el último descanso'
+  - key: death.giveUp
+    text: 'Abandonar la bajada y volver'
+  - key: rest.title
+    text: 'Un lugar para descansar'
+  - key: rest.blurb
+    text: 'Más abajo, o de vuelta por donde viniste.'
+  - key: rest.status
+    text: '{0} en mano    {1} a salvo    {2}/{3} corazones'
+  - key: rest.pressOn
+    text: 'Descansar y seguir bajando'
+  - key: rest.turnBack
+    text: 'Volver y guardar {0} fuegos fatuos'
+  - key: hud.wisps
+    text: '{0} en mano    {1} a salvo'
+  - key: ability.fling.name
+    text: 'Impulso'
+  - key: ability.fling.desc
+    text: 'Mantén para apuntar, suelta para volar. La línea te dice adónde.'
+  - key: ability.fling.upgrade.0.title
+    text: 'Tiro más fuerte'
+  - key: ability.fling.upgrade.0.desc
+    text: 'Carga más rápido y te lanza más lejos.'
+  - key: ability.glide.name
+    text: 'Planeo'
+  - key: ability.glide.desc
+    text: 'Despliega un dosel. Casi no frena la caída: te lleva.'
+  - key: ability.glide.upgrade.0.title
+    text: 'Ala más ancha'
+  - key: ability.glide.upgrade.0.desc
+    text: 'Te lleva la mitad más lejos en cada caída.'
+  - key: ability.haste.name
+    text: 'Prisa'
+  - key: ability.haste.desc
+    text: 'Acelérate. El nivel entero se arrastra. Una vez por nivel.'
+  - key: ability.haste.upgrade.0.title
+    text: 'Prisa más honda'
+  - key: ability.haste.upgrade.0.desc
+    text: 'Te mueves aún más rápido y el mundo se frena más.'
+  - key: ability.vine.name
+    text: 'Mano de mago'
+  - key: ability.vine.desc
+    text: 'Saca una mano espectral y colúmpiate. Salta para soltarte.'
+  - key: ability.vine.upgrade.0.title
+    text: 'Vaivén amplio'
+  - key: ability.vine.upgrade.0.desc
+    text: 'La mano se inclina mucho más a cada lado.'
+  - key: ability.vine.upgrade.1.title
+    text: 'Subir y bajar'
+  - key: ability.vine.upgrade.1.desc
+    text: 'Además de columpiarte, puedes trepar por la mano.'
+  - key: ability.staff.name
+    text: 'Bastón'
+  - key: ability.staff.desc
+    text: 'Clava el bastón sobre un borde y baja por él.'
+  - key: ability.staff.upgrade.0.title
+    text: 'Bastón largo'
+  - key: ability.staff.upgrade.0.desc
+    text: 'La mitad más largo, llega a caídas más hondas.'
+  - key: ability.hand.name
+    text: 'Telequinesis'
+  - key: ability.hand.desc
+    text: 'Llévate un peligro contigo y déjalo donde tú quieras.'
+  - key: ability.hand.upgrade.0.title
+    text: 'Mayor alcance'
+  - key: ability.hand.upgrade.0.desc
+    text: 'Agarra cosas la mitad más lejos.'
+  - key: ability.wall.name
+    text: 'Muro'
+  - key: ability.wall.desc
+    text: 'Haz crecer piedra bajo el borde de una caída y bájate a ella.'
+  - key: ability.wall.upgrade.0.title
+    text: 'Mayor alcance'
+  - key: ability.wall.upgrade.0.desc
+    text: 'Pone el bloque una casilla más afuera, y dura más.'

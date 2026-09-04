@@ -705,13 +705,30 @@ the old save it is also **read back** — `Progress.Load()` runs on `BeforeScene
 every checkpoint and nothing ever called `Load()`, so banked anything would have quietly evaporated
 on the next launch. `Progress.ForgetAll()` (and `Game.EraseProgress`) wipes it.
 
+**Where it is written.** The permanent tier is pretty-printed JSON in `<project>/Saves/progress.json`
+— beside `Assets`, so it is in the working copy where you can open it, read it and diff it. It used
+to be PlayerPrefs, which on Windows is a handful of registry values nobody can track, and which hid a
+stale save so well that turning the playtest sandbox off made a long-forgotten Glide reappear.
+`Assets/Scripts/Core/SaveFile.cs` does the reading and writing: it writes to a scratch file and swaps
+it in, so a crash mid-write cannot truncate the save; it sorts the ranks and the spent list so a diff
+means something; and it answers **three** ways, not two — `Missing`, `Loaded` and `Unreadable`. That
+third one is the whole point. A save that exists but will not open must never read back as "nothing
+saved", or the next purchase writes a blank over it. A build keeps the same promise beside the
+executable, dropping to the OS save folder only when that is read-only.
+
 ## Tripping
 
 A trip **launches you onward** — your speed, plus `launchForward`, never below `minimumLaunch`, and
 `launchUp` of lift so you actually leave the floor. Landing back down, the skid bleeds at
 `slideFriction` boxes per second squared. All of it on `PlayerLogic ▸ Ragdoll`, and all of it the
-same every time: a rock, a slime and a bad staircase throw you identically, because none of them
-supply their own knock — they just call `Trip()`.
+same every time: a wet floor sign, a slime and a bad staircase throw you identically, because none of
+them supply their own knock — they just call `Trip()`.
+
+The one exception is the **rake**, which calls `Trip(int)` to throw you *back the way you came*. That
+overload also drops the momentum you arrived with, because `Begin` adds `launchForward` to your
+current speed: keep it, and a wizard running in at 4 boxes a second and "thrown backwards" comes out
+still going forwards. Do not add a second hazard that reverses you — one is a punchline, two is a
+movement system that takes things back.
 
 **The sprite tumbles; the collider does not.** A rotating box levers itself up on its corners — its
 half-diagonal is longer than its half-height, 0.64 against 0.52 here, so the solver must lift it

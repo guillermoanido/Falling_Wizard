@@ -1,4 +1,5 @@
 using System;
+using FallingWizard.Core;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -86,6 +87,42 @@ namespace FallingWizard.Player
             upgrades != null && rank >= 1 && rank <= upgrades.Length ? upgrades[rank - 1] : null;
 
         public string Key => string.IsNullOrEmpty(id) ? name : id;
+
+        // Where this spell's words are filed in a translation. Built from Key - the id the save
+        // file already uses - and NOT from displayName, so renaming what the player sees can
+        // never orphan the Spanish.
+        //
+        // Watch out when writing a translation: 'Mage Hand' has the id 'vine' and 'Telekinesis'
+        // has the id 'hand'. They read like each other's, they are not swapped, and they cannot
+        // be changed without every existing save forgetting both spells.
+        public string LocKey => Loc.AbilityPrefix + Key;
+
+        // The English typed into this asset is the fallback, so a spell added tomorrow reads
+        // correctly in every language until somebody gets round to translating it.
+        public string Name => Loc.Text(LocKey + ".name", displayName);
+
+        public string Description => Loc.Text(LocKey + ".desc", description);
+
+        // Keyed by the ELEMENT NUMBER in the inspector, which is what a designer looking at the
+        // upgrades list is counting: element 0 is the step from rank 1 to rank 2, and that is
+        // exactly the upgrades[rank - 1] that NextUpgrade hands back.
+        public string UpgradeTitle(int rank)
+        {
+            Upgrade step = NextUpgrade(rank);
+
+            return step == null
+                ? string.Empty
+                : Loc.Text($"{LocKey}.upgrade.{rank - 1}.title", step.title);
+        }
+
+        public string UpgradeDescription(int rank)
+        {
+            Upgrade step = NextUpgrade(rank);
+
+            return step == null
+                ? string.Empty
+                : Loc.Text($"{LocKey}.upgrade.{rank - 1}.desc", step.description);
+        }
 
         public virtual void OnEquipped(PlayerLogic wizard) { }
 

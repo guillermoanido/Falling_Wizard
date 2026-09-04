@@ -16,8 +16,14 @@ namespace FallingWizard.World
                  "they are falling.")]
         public bool passThrough = true;
 
-        [Tooltip("Only fires above this speed, in boxes per second. Running is 6 and walking is " +
-                 "2, so 4 means a run sets it off and a walk does not. 0 always fires.")]
+        [Tooltip("Only fires above this speed, in boxes per second. Check the wizard in the " +
+                 "scene before picking a number - the class defaults are a run of 6 and a walk " +
+                 "of 2, but the Level 1 wizard overrides them to 4 and 2, so 3 is what sets a " +
+                 "run off there and never a walk. Never set this TO the run speed: the wizard " +
+                 "is hardly ever at exactly top speed once a ramp or a slow spell has touched " +
+                 "them, so the hazard would fire or not on the fourth decimal place. This " +
+                 "measures SIDEWAYS speed only, so a wizard dropping straight down onto it " +
+                 "never counts. 0 always fires.")]
         [Min(0f)] public float minimumSpeed = 0f;
 
         [Tooltip("Seconds before it can catch the wizard again.")]

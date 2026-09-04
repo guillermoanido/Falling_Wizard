@@ -81,7 +81,10 @@ namespace FallingWizard.UI
         AbilityBook book;
         Action dive;
         Action closed;
-        string diveText = "Descend";
+
+        // The KEY of the button at the bottom, not the words. Redraw resolves it every time it
+        // runs, which is what lets the button change language under an open screen.
+        string diveKey = Loc.Keys.SkillDive;
 
         RectTransform body;
         InputAction[] slotKeys;
@@ -91,10 +94,11 @@ namespace FallingWizard.UI
 
         [NonSerialized] int openedOn;
 
-        public static SkillScreen Open(Action onDive, string label = "Descend") =>
-            Raise(onDive, label, null);
+        // labelKey is a translation key, not words. Null asks for the usual one.
+        public static SkillScreen Open(Action onDive, string labelKey = null) =>
+            Raise(onDive, labelKey, null);
 
-        static SkillScreen Raise(Action onDive, string label, Action onClose)
+        static SkillScreen Raise(Action onDive, string labelKey, Action onClose)
         {
             Game.SetPaused(true);
             Screens.Claim();
@@ -103,7 +107,7 @@ namespace FallingWizard.UI
             var screen = canvas.gameObject.AddComponent<SkillScreen>();
 
             screen.dive = onDive;
-            screen.diveText = label;
+            screen.diveKey = string.IsNullOrEmpty(labelKey) ? Loc.Keys.SkillDive : labelKey;
             screen.closed = onClose;
             screen.openedOn = Time.frameCount;
             screen.book = Resources.Load<AbilityBook>(AbilityBook.ResourcePath);
@@ -128,11 +132,16 @@ namespace FallingWizard.UI
                 PlayerLogic.Spellbook.Seed(book);
 
             Core.Controls.SchemeChanged += Redraw;
+            Loc.Changed += Redraw;
 
             Redraw();
         }
 
-        void OnDestroy() => Core.Controls.SchemeChanged -= Redraw;
+        void OnDestroy()
+        {
+            Core.Controls.SchemeChanged -= Redraw;
+            Loc.Changed -= Redraw;
+        }
 
         void Update()
         {
@@ -184,10 +193,10 @@ namespace FallingWizard.UI
                 Destroy(old);
             }
 
-            Ui.Label("What you carry down", body, TitleSize, Inner, TitleHeight);
+            Ui.Label(Loc.Get(Loc.Keys.SkillTitle), body, TitleSize, Inner, TitleHeight);
 
-            TextMeshProUGUI purse = Ui.Label($"{Progress.Wisps} wisps", body, PurseSize,
-                Inner, PurseHeight);
+            TextMeshProUGUI purse = Ui.Label(Loc.Format(Loc.Keys.SkillPurse, Progress.Wisps),
+                body, PurseSize, Inner, PurseHeight);
             purse.color = Ui.Wisp;
 
             DrawSlots();
@@ -197,7 +206,7 @@ namespace FallingWizard.UI
 
             if (book == null)
             {
-                Ui.Label("No spellbook found at Assets/Resources/Spellbook.asset.", body,
+                Ui.Label(Loc.Get(Loc.Keys.SkillNoBook), body,
                     NoticeSize, Inner, NoticeHeight).color = Ui.Warning;
             }
             else
@@ -214,7 +223,7 @@ namespace FallingWizard.UI
                 }
             }
 
-            Ui.CreateButton(diveText, body, DiveWidth, DiveHeight, DiveFontSize)
+            Ui.CreateButton(Loc.Get(diveKey), body, DiveWidth, DiveHeight, DiveFontSize)
                 .onClick.AddListener(Leave);
 
             // Without this a gamepad is stuck: Navigate has nowhere to move from, and the old
@@ -227,10 +236,10 @@ namespace FallingWizard.UI
             Ability picked = book != null ? book.Find(focusKey) : null;
 
             string words = picked == null
-                ? "Pick a spell, then press the button you want it on."
+                ? Loc.Get(Loc.Keys.SkillHintPick)
                 : Progress.Owns(picked.Key)
-                    ? $"{picked.displayName}: press {Buttons()} to move it."
-                    : $"{picked.displayName} is not learned yet.";
+                    ? Loc.Format(Loc.Keys.SkillHintMove, picked.Name, Buttons())
+                    : Loc.Format(Loc.Keys.SkillHintLocked, picked.Name);
 
             Ui.Label(words, body, HintSize, Inner, HintHeight).color = Ui.FadedInk;
         }
@@ -279,7 +288,7 @@ namespace FallingWizard.UI
                         .color = Ui.FadedInk;
 
                 TextMeshProUGUI caption = Ui.Label(
-                    held != null ? $"{Glyph(i)}  {held.displayName}" : Glyph(i), cell,
+                    held != null ? $"{Glyph(i)}  {held.Name}" : Glyph(i), cell,
                     CaptionSize, SlotSize, CaptionHeight);
 
                 caption.color = locked ? Ui.Warning : held != null ? Ui.Ink : Ui.FadedInk;
@@ -323,7 +332,7 @@ namespace FallingWizard.UI
 
             RectTransform heading = Ui.Row("Heading", words, wordsWidth, NameHeight, 10f);
 
-            TextMeshProUGUI name = Ui.Label(spell.displayName, heading, NameSize,
+            TextMeshProUGUI name = Ui.Label(spell.Name, heading, NameSize,
                 wordsWidth - (spell.HasUpgrades ? 90f : 0f), NameHeight,
                 TextAlignmentOptions.Left);
             name.color = owned ? Ui.Ink : Ui.FadedInk;
@@ -342,14 +351,18 @@ namespace FallingWizard.UI
         string Blurb(Ability spell, bool owned, int rank, int slot)
         {
             if (!owned)
-                return spell.description;
+                return spell.Description;
 
             Ability.Upgrade next = spell.NextUpgrade(rank);
-            string where = slot >= 0 ? $"On {Glyph(slot)}." : "On the bench.";
+
+            string where = slot >= 0
+                ? Loc.Format(Loc.Keys.SkillOn, Glyph(slot))
+                : Loc.Get(Loc.Keys.SkillBench);
 
             return next != null
-                ? $"{where}  Next: {next.title} - {next.description}"
-                : $"{where}  {spell.description}";
+                ? Loc.Format(Loc.Keys.SkillNext, where, spell.UpgradeTitle(rank),
+                             spell.UpgradeDescription(rank))
+                : $"{where}  {spell.Description}";
         }
 
         void DrawAction(Ability spell, Transform parent, bool owned, int rank)
@@ -359,7 +372,8 @@ namespace FallingWizard.UI
                 bool affordable = Progress.CanAfford(spell.cost);
 
                 Button buy = Ui.CreateButton(
-                    affordable ? $"Learn - {spell.cost}" : $"{spell.cost} wisps",
+                    affordable ? Loc.Format(Loc.Keys.SkillLearn, spell.cost)
+                               : Loc.Format(Loc.Keys.SkillPrice, spell.cost),
                     parent, ActionWidth, ActionHeight, ActionFontSize);
 
                 buy.interactable = affordable;
@@ -386,15 +400,16 @@ namespace FallingWizard.UI
 
             if (step == null)
             {
-                Ui.Label(spell.HasUpgrades ? "Mastered" : "Learned", parent, ActionFontSize,
-                    ActionWidth, ActionHeight).color = Ui.FadedInk;
+                Ui.Label(Loc.Get(spell.HasUpgrades ? Loc.Keys.SkillMastered : Loc.Keys.SkillLearned),
+                    parent, ActionFontSize, ActionWidth, ActionHeight).color = Ui.FadedInk;
                 return;
             }
 
             bool canPay = Progress.CanAfford(step.cost);
 
             Button raise = Ui.CreateButton(
-                canPay ? $"{step.title} - {step.cost}" : $"{step.cost} wisps",
+                canPay ? $"{spell.UpgradeTitle(rank)} - {step.cost}"
+                       : Loc.Format(Loc.Keys.SkillPrice, step.cost),
                 parent, ActionWidth, ActionHeight, ActionFontSize);
 
             raise.interactable = canPay;
@@ -512,7 +527,7 @@ namespace FallingWizard.UI
                     return;
 
                 wasPaused = Game.IsPaused;
-                open = Raise(null, "Back to the fall", Close);
+                open = Raise(null, Loc.Keys.SkillBack, Close);
             }
 
             void Close()

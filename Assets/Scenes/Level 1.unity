@@ -281,7 +281,7 @@ MonoBehaviour:
   hideWispCount: 0
   fullHeart: {r: 0.85, g: 0.22, b: 0.3, a: 1}
   emptyHeart: {r: 0.2, g: 0.16, b: 0.22, a: 1}
-  wispFormat: '{0} carried    {1} banked'
+  wispFormat: 
   showEmptySlots: 1
   showButtons: 1
   emptySlotIcon: {fileID: 0}
@@ -650,7 +650,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1930921961, guid: 52f22d97da7f59b4b97abc90a157d534, type: 3}
       propertyPath: m_Name
-      value: Rock
+      value: Wet Floor Sign
       objectReference: {fileID: 0}
     - target: {fileID: 1930921963, guid: 52f22d97da7f59b4b97abc90a157d534, type: 3}
       propertyPath: m_LocalPosition.x
@@ -973,7 +973,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1930921961, guid: 52f22d97da7f59b4b97abc90a157d534, type: 3}
       propertyPath: m_Name
-      value: Rock (1)
+      value: Wet Floor Sign (1)
       objectReference: {fileID: 0}
     - target: {fileID: 1930921963, guid: 52f22d97da7f59b4b97abc90a157d534, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1099,7 +1099,7 @@ SpriteRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 1
+  m_SortingOrder: 5
   m_MaskInteraction: 0
   m_Sprite: {fileID: 21300000, guid: 5ec344b5edcbf094a9cc94e6c0bf8a74, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -1540,13 +1540,13 @@ SpriteRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 2
+  m_SortingOrder: 6
   m_MaskInteraction: 0
   m_Sprite: {fileID: 21300000, guid: 969a4dfa8400b6f40aff927adb76a5f8, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
-  m_DrawMode: 0
+  m_DrawMode: 1
   m_Size: {x: 2, y: 2}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
@@ -1561,7 +1561,7 @@ Transform:
   m_GameObject: {fileID: 560071436}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.03, y: 0, z: 0}
+  m_LocalPosition: {x: -0.03, y: -0.5, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -2353,6 +2353,7 @@ MonoBehaviour:
       groundFriction: 40
       airControl: 0.7
       steerDeadzone: 0.01
+      canJump: 1
       jumpHeight: 1.5
       coyoteTime: 0.12
       jumpBuffer: 0.12
@@ -2373,8 +2374,8 @@ MonoBehaviour:
       maxSlopeAngle: 55
       flatSlopeAngle: 3
       slopeProbeDepth: 0.5
-      stepHeight: 0.35
-      stepReach: 0.35
+      stepHeight: 0.25
+      stepReach: 0.1
       surfaceFriction: 0
       windDecay: 24
     ragdoll:
@@ -66374,7 +66375,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1930921961, guid: 52f22d97da7f59b4b97abc90a157d534, type: 3}
       propertyPath: m_Name
-      value: Rock
+      value: Wet Floor Sign
       objectReference: {fileID: 0}
     - target: {fileID: 1930921963, guid: 52f22d97da7f59b4b97abc90a157d534, type: 3}
       propertyPath: m_LocalPosition.x
@@ -66679,6 +66680,7 @@ MonoBehaviour:
     dropHoldTime: 0.2
     lipClearance: 0.15
     gripHeight: 0.25
+    anchorToFeet: 1
     groundLayers:
       serializedVersion: 2
       m_Bits: 64
@@ -66691,7 +66693,7 @@ Transform:
   m_GameObject: {fileID: 1730592902}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.488, y: -1.001, z: 0}
+  m_LocalPosition: {x: 0.488, y: -0.5025605, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -66733,7 +66735,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: -0.014194608, y: 1.0173278}
+  m_Offset: {x: -0.014194608, y: 0.4873429}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -66796,7 +66798,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: -0.014194608, y: 1.0016274}
+  m_Offset: {x: -0.014194608, y: 0.50304315}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}

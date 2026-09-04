@@ -98,3 +98,11 @@ InitTestScene*.unity*
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 /ATC_Unity
+
+# Saved progress, written by Assets/Scripts/Core/SaveFile.cs into <project>/Saves.
+# Saves/progress.json is deliberately NOT listed here: being able to open it, read it and
+# diff it is the whole point of moving off PlayerPrefs. What is ignored below is the part
+# that is either per-machine or working scratch, and never wants committing.
+/[Ss]aves/settings.json
+/[Ss]aves/*.corrupt
+/[Ss]aves/write.probe

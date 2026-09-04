@@ -38,6 +38,11 @@ namespace FallingWizard.Player
         [NonSerialized] float pendingRampup;
         [NonSerialized] float pendingGroundScale = 1f;
 
+        // Sits at 1 - ordinary ground - unless something outside pushed a lower number in during
+        // the last physics step. ApplyExternalForce hands it to Movement and puts it straight
+        // back, so a floor stops being slippery by simply not calling any more.
+        [NonSerialized] float pendingGrip = 1f;
+
         public event Action Died;
 
         public Staff.Pole Pole => pole;
@@ -132,12 +137,30 @@ namespace FallingWizard.Player
             vine.DrawGizmos();
         }
 
-        public bool Trip()
+        public bool Trip() => Trip(movement.TravelDirection);
+
+        // The same trip, aimed. A hazard that wants to put the wizard down somewhere other than
+        // straight ahead - a rake whose handle comes up in their face - passes the direction it
+        // wants rather than reaching into the ragdoll itself, so the State and IsAlive guards
+        // stay in exactly one place and cannot be forgotten by the next hazard somebody writes.
+        public bool Trip(int direction)
         {
             if (State != PlayerState.Normal || !health.IsAlive)
                 return false;
 
-            ragdoll.Begin(movement.TravelDirection);
+            // 0 is not a direction. Ragdoll.Begin multiplies BOTH the spin and the minimum
+            // launch by this, so a caller that worked its direction out from something which can
+            // come back zero would get a wizard lying on the floor, spinning at nothing, going
+            // nowhere - and nothing on screen to say why.
+            int way = direction < 0 ? -1 : 1;
+
+            // Carry the speed they arrived with into the tumble only when the tumble goes the
+            // way they were already going. Thrown BACK, that carry is a subtraction: Begin adds
+            // launchForward to whatever they had, so a wizard running in at 4 boxes a second and
+            // thrown "backwards" comes out still going forwards, spinning the wrong way, which
+            // reads as a broken hazard rather than a rake.
+            ragdoll.Begin(way, way == movement.TravelDirection);
+
             State = PlayerState.Ragdoll;
             return true;
         }
@@ -157,6 +180,23 @@ namespace FallingWizard.Player
             pendingRampup = Mathf.Max(pendingRampup, rampup);
             pendingGroundScale = groundScale;
         }
+
+        // Ground that does not hold you - water, wet flagstones, ice. 1 is a normal floor and 0
+        // is glass. It scales both halves of Movement.Run's rate at once: how hard the wizard can
+        // push off, and how hard they can dig in to stop.
+        //
+        // Pushed in from outside exactly the way Push does with wind, and for exactly the same
+        // reason. Spellbook.Rebuild calls stats.Reset() every fixed step and re-applies the
+        // equipped abilities on top, so a hazard that wrote a multiplier into Modifiers would
+        // have it thrown away before Run ever looked at it. This is per-step state instead: the
+        // patch calls every step the wizard is stood in it, ApplyExternalForce spends it and
+        // clears it, and stepping off the ice needs no exit event and no decay timer.
+        //
+        // The LOWEST grip wins rather than the sum, so a wizard straddling a puddle and a sheet
+        // of ice is on ice. Adding them the way wind adds would make two overlapping patches
+        // more slippery than either one, which is the sort of thing a designer only finds out by
+        // dragging a prefab a tile too far.
+        public void Slicken(float grip) => pendingGrip = Mathf.Min(pendingGrip, Mathf.Clamp01(grip));
 
         public void Shove(Vector2 velocity, float controlLockout)
         {
@@ -337,6 +377,21 @@ namespace FallingWizard.Player
 
         void ApplyExternalForce(float fixedDeltaTime)
         {
+            // Before the switch and OUTSIDE it, so the grip is refreshed in EVERY state,
+            // including the two the switch does nothing for. A hazard cannot reach the wizard on
+            // their staff, so nothing calls Slicken up there and this puts the grip back to 1 -
+            // which is the point. Set it inside the default case instead and Movement would keep
+            // whatever the last patch wrote, so a wizard who climbed off an ice sheet and rode
+            // their staff across the room would come down onto ordinary stone that was still
+            // slippery.
+            //
+            // Simulate reaches this before the state switch, which is before UpdateNormal,
+            // FixedTick and Run. Unity runs every FixedUpdate, THEN the physics step, THEN the
+            // trigger callbacks - so the grip a patch pushed in during the previous physics step
+            // is on Movement before this step's Run reads it. One fixed step of lag, the same lag
+            // wind already has.
+            movement.SetGrip(pendingGrip);
+
             switch (State)
             {
                 case PlayerState.OnStaff:
@@ -356,6 +411,11 @@ namespace FallingWizard.Player
             pendingWind = Vector2.zero;
             pendingRampup = 0f;
             pendingGroundScale = 1f;
+
+            // Cleared HERE and nowhere else - after the consume, in the same call. Clearing it at
+            // the top of Simulate, or from Update, wipes the value between the trigger callback
+            // that set it and the Run that wants it, and ice then does nothing at all.
+            pendingGrip = 1f;
         }
 
         void CheckLanding()
@@ -581,10 +641,22 @@ namespace FallingWizard.Player
             [Range(0f, 0.5f)] public float steerDeadzone = 0.01f;
 
             [Header("Jumping")]
+            [Tooltip("Whether the wizard can jump at all. Switch it OFF and the staff becomes the " +
+                     "only way up: a lip shorter than the step assist below is walked over, and " +
+                     "anything taller has to be climbed. Nothing else that throws the wizard into " +
+                     "the air is affected - a slime, a fling and a bounce all go through Launch " +
+                     "instead - and the Jump button keeps its other job of letting go of a vine, " +
+                     "which is the only way off one. A spell handing out extra jumps cannot bring " +
+                     "it back either.")]
+            public bool canJump = true;
+
             [Tooltip("Height of a full jump, in boxes. The launch speed is worked out from gravity.")]
             [Min(0f)] public float jumpHeight = 2f;
 
-            [Tooltip("Grace period after walking off a ledge where a jump still counts.")]
+            [Tooltip("Grace period after walking off a ledge where a jump still counts. It is " +
+                     "ALSO the window the step assist below works in, so it still earns its keep " +
+                     "with jumping switched off - zero it as a dead jump number and the wizard " +
+                     "stops walking over tile seams as well.")]
             [Min(0f)] public float coyoteTime = 0.12f;
 
             [Tooltip("A jump pressed this many seconds before landing still fires on touchdown.")]
@@ -649,11 +721,15 @@ namespace FallingWizard.Player
             [Min(0.05f)] public float slopeProbeDepth = 0.5f;
 
             [Header("Steps")]
-            [Tooltip("Tallest lip the wizard walks up without jumping, in boxes. This is for " +
-                     "the seams and pixel-high teeth between tiles, NOT for real steps - keep it " +
-                     "well under 1 or every one-tile wall in the game becomes a staircase and " +
-                     "jumping stops mattering. 0 turns it off.")]
-            [Min(0f)] public float stepHeight = 0.35f;
+            [Tooltip("Tallest lip the wizard walks up on their own, in boxes. This is for pixel " +
+                     "problems ONLY - tile seams, the teeth along a ramp, a prop set down half a " +
+                     "pixel proud - and NOT for anything the player would read as a step. A tile " +
+                     "is one box and a half tile is 0.5, so a quarter box is knee-high on a " +
+                     "wizard, twice the 0.125 tread of a 45 degree ramp, and four times the worst " +
+                     "a one-pixel sprite outline can be out by. Under 0.15 the ramps start " +
+                     "stalling; over 0.35 you are eating into real geometry the staff is meant to " +
+                     "be planted against. 0 turns it off.")]
+            [Min(0f)] public float stepHeight = 0.25f;
 
             [Tooltip("How far PAST THE TOES to look for that lip, in boxes, and how far forward " +
                      "the step carries them. Roughly one physics step of running - keep it small. " +
@@ -694,6 +770,11 @@ namespace FallingWizard.Player
 
             [NonSerialized] Vector2 wind;
             [NonSerialized] float lockout;
+
+            // How much of the acceleration and the ground friction below the floor underfoot
+            // actually gives back, 0 to 1. Not serialized and not a Modifier: it is written every
+            // fixed step from PlayerLogic.ApplyExternalForce and is 1 on any ordinary floor.
+            [NonSerialized] float grip = 1f;
 
             // Which way the floor underfoot is tilted, and whether the last step drove the
             // wizard along that tilt. The second one is only ever read to take the climb back
@@ -779,6 +860,9 @@ namespace FallingWizard.Player
                 };
             }
 
+            // Presses are buffered even with canJump off. Nothing but TryJump ever reads the
+            // timer, so it costs nothing, and it means the switch can be flicked back on in the
+            // middle of a playtest with no state anywhere that needs resetting first.
             public void Tick(bool jumpPressedThisFrame, float deltaTime)
             {
                 if (jumpPressedThisFrame)
@@ -823,6 +907,7 @@ namespace FallingWizard.Player
             {
                 body.linearVelocity = Vector2.zero;
                 wind = Vector2.zero;
+                grip = 1f;
                 climbedLastStep = false;
             }
 
@@ -982,6 +1067,11 @@ namespace FallingWizard.Player
                 float rate = rampup > 0f ? rampup : windDecay;
                 wind = Vector2.MoveTowards(wind, target * scale, rate * fixedDeltaTime);
             }
+
+            // Set outright rather than eased into, unlike the wind above. Ice has a hard edge you
+            // can see, and a grip that ramped in over a few steps would put the slippery part of
+            // the patch somewhere other than where the patch is drawn.
+            public void SetGrip(float value) => grip = Mathf.Clamp01(value);
 
             public void AddImpulse(Vector2 velocity, float controlLockout)
             {
@@ -1401,9 +1491,21 @@ namespace FallingWizard.Player
                 bool steering = Mathf.Abs(steer) > steerDeadzone;
                 float rate = steering ? acceleration : groundFriction;
 
+                // Grip scales BOTH branches above, because ice is two things at once and one of
+                // them alone is not ice: you keep going after you let go (groundFriction) and you
+                // cannot turn round in a hurry (acceleration). Scaling only the first gives a
+                // wizard who slides but corners like a car; only the second gives one who feels
+                // heavy but stops dead, which reads as mud.
+                //
+                // ON THE GROUND ONLY, and deliberately. The air rate is already airControl of
+                // what it was; putting sheet ice through it as well is not "slippery" but "no
+                // air control", and it would mean a trigger box taller than the patch robs the
+                // steering of anyone sailing through the top of it for no visible reason.
                 if (!IsGrounded)
                     rate *= airControl *
                             (steering ? stats.AirControlMultiplier : stats.AirDragMultiplier);
+                else
+                    rate *= grip;
 
                 if (TryRunAlongRamp(targetSpeed, topSpeed * stats.MoveSpeedMultiplier,
                         rate * fixedDeltaTime))
@@ -1475,6 +1577,18 @@ namespace FallingWizard.Player
 
             void TryJump(Modifiers stats)
             {
+                // ABOVE the air-jump count, not folded into the test below it. Spellbook.Rebuild
+                // resets and re-applies every equipped spell each fixed step, so a spell granting
+                // ExtraJumps hands them out continuously - and a wizard who cannot jump off the
+                // floor but can still jump in mid-air is the worst of both.
+                //
+                // This is the ONLY thing switched off. Launch is a separate entry point that
+                // nothing here reaches, so a slime, a fling and a ramp all carry on unchanged,
+                // and `rising` simply never becomes true, which leaves ApplyShortHop inert rather
+                // than clipping a bounce when the button comes up.
+                if (!canJump)
+                    return;
+
                 bool onGroundOrCoyote = coyoteTimer > 0f;
                 bool hasAirJump = airJumpsUsed < stats.ExtraJumps;
 
@@ -1598,12 +1712,25 @@ namespace FallingWizard.Player
                 Show();
             }
 
-            public void Begin(int direction)
+            public void Begin(int direction) => Begin(direction, true);
+
+            // keepMomentum off drops the sideways speed they arrived with instead of adding to
+            // it. That is only ever right when the tumble goes the OTHER way to the wizard - see
+            // PlayerLogic.Trip(int) - and the decision is made here rather than by the caller
+            // because momentumKept lives here, and there should be exactly one place that
+            // decides what happens to the speed a trip inherits.
+            //
+            // The pleasant side effect: with nothing carried, thrown falls to -launchForward,
+            // which is under minimumLaunch, so a reversed trip always comes out at exactly
+            // minimumLaunch backwards however fast they hit it. A rake throws the same distance
+            // every time, which is what makes it a thing you can learn.
+            public void Begin(int direction, bool keepMomentum)
             {
                 spin = -direction * spinSpeed;
                 angle = 0f;
 
-                float thrown = body.linearVelocityX * momentumKept + direction * launchForward;
+                float carried = keepMomentum ? body.linearVelocityX * momentumKept : 0f;
+                float thrown = carried + direction * launchForward;
 
                 if (Mathf.Abs(thrown) < minimumLaunch)
                     thrown = direction * minimumLaunch;
@@ -2259,7 +2386,7 @@ namespace FallingWizard.Player
                 if (!explainRefusals || string.IsNullOrEmpty(reason))
                     return;
 
-                string named = spell != null ? spell.displayName : $"Slot {slot + 1}";
+                string named = spell != null ? spell.Name : $"Slot {slot + 1}";
 
                 Debug.LogWarning($"{named} did not cast: {reason}.");
 #endif

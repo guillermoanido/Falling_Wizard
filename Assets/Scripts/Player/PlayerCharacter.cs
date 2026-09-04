@@ -113,17 +113,19 @@ namespace FallingWizard.Player
 
         void AskWhereToGo()
         {
-            ChoiceScreen screen = ChoiceScreen.Open(
-                "You fell", "The wisps you were carrying went out with you, and are back " +
-                             "where you found them.");
+            // Built once and never rebuilt, which is safe: ChoiceScreen.Open calls Screens.Claim,
+            // and MenuScreen.Update refuses to open the pause menu while ModalOpen - so there is
+            // no way to reach the settings panel and change language over the top of this.
+            ChoiceScreen screen = ChoiceScreen.Open(Loc.Get(Loc.Keys.DeathTitle),
+                                                    Loc.Get(Loc.Keys.DeathBlurb));
 
-            screen.Status($"{Progress.Wisps} wisps still banked");
+            screen.Status(Loc.Format(Loc.Keys.DeathStatus, Progress.Wisps));
 
             if (Progress.HasCheckpoint)
-                screen.Choice("Take it from the last rest",
+                screen.Choice(Loc.Get(Loc.Keys.DeathContinue),
                     () => screen.CloseThen(Game.ReloadCurrentScene));
 
-            screen.Choice("Give up the run and go back", () => screen.CloseThen(() =>
+            screen.Choice(Loc.Get(Loc.Keys.DeathGiveUp), () => screen.CloseThen(() =>
             {
                 Progress.EndRun();
                 SkillScreen.Open(Game.LoadFirstLevel);

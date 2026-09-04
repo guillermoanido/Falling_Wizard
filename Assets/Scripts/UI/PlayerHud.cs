@@ -36,9 +36,13 @@ namespace FallingWizard.UI
         public Color emptyHeart = new Color(0.20f, 0.16f, 0.22f);
 
         [Header("Wisps")]
-        [Tooltip("How the counter reads. {0} is what you are carrying and would lose, {1} is " +
-                 "what is already safely banked.")]
-        public string wispFormat = "{0} carried    {1} banked";
+        [Tooltip("How the counter reads, for a scene that wants its own wording. {0} is what you " +
+                 "are carrying and would lose, {1} is what is already safely banked. " +
+                 "LEAVE IT " +
+                 "EMPTY, which is what you want almost always: the counter then uses the " +
+                 "translated line and follows the player's language. Anything typed here is used " +
+                 "exactly as typed, in every language.")]
+        public string wispFormat = "";
 
         [Header("Spells")]
         [Tooltip("Draw a dimmed slot for an empty button, so the bar never shifts around and the " +
@@ -121,8 +125,12 @@ namespace FallingWizard.UI
             {
                 wispLabel.enabled = showing;
 
+                // No caching and no subscription to Loc.Changed: this already runs every frame
+                // and rebuilds the string every frame, so it picks a language change up on its own.
                 if (showing)
-                    wispLabel.text = string.Format(wispFormat, Progress.CarriedWisps, Progress.Wisps);
+                    wispLabel.text = string.IsNullOrEmpty(wispFormat)
+                        ? Loc.Format(Loc.Keys.HudWisps, Progress.CarriedWisps, Progress.Wisps)
+                        : string.Format(wispFormat, Progress.CarriedWisps, Progress.Wisps);
             }
 
             if (!showing)
