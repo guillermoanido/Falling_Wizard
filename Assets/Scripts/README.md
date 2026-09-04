@@ -26,17 +26,40 @@ Jump height being under the damage floor is deliberate: a jump can never hurt yo
 | Folder | What lives there |
 | --- | --- |
 | `Core/` | `Game` (pause, scene flow, quit), `GameSettings`, `Controls` (every input lookup, plus which device is in use), `Progress` (what the wizard has learned), `SingletonBehaviour` |
-| `Player/` | `PlayerCharacter`, `PlayerLogic`, `Staff` |
+| `Player/` | `PlayerCharacter`, `PlayerLogic` and its parts, `Staff` |
 | `Player/Abilities/` | `Ability` and the spells, `AbilityBook`, `AbilityShrine` |
-| `World/` | `PlayerTrigger`, `Hazard`, `Rock`, `Slime`, `WindZone2D`, `FollowCamera` |
-| `UI/` | `PlayerHud` |
+| `Localization/` | `Loc`, `LanguageTable`, `LocalizedText` |
+| `World/` | `PlayerTrigger`, `Hazard` and the six hazards, `Pickup`, `TileGrid`, `FollowCamera` |
+| `UI/` | `PlayerHud`, `HudSlot`, `FlingArc`, `Ui` and the two runtime screens |
 | `Menus/`, `Cutscenes/` | `MenuScreen` and the three menus; `CutsceneRunner` |
 
-Three files hold the whole wizard. `Movement`, `Ragdoll`, `Health`, `Modifiers`, `Spellbook`,
-`Intent` and `Command` are all **nested classes of `PlayerLogic`** — they are parts of a wizard and
-meaningless on their own, so they live inside it rather than in seven files of their own. `Staff`
+### Two classes, thirteen files
+
+`Movement`, `Ragdoll`, `Health`, `Modifiers`, `Vine`, `Spellbook`, `Intent` and `Command` are all
+**nested classes of `PlayerLogic`** — they are parts of a wizard and meaningless on their own, so
+they stay inside it rather than becoming eight top-level types called things like `Health`. `Staff`
 likewise contains `Staff.Pole`. Nested `[Serializable]` classes serialize exactly like top-level
 ones and show up as foldouts in the inspector.
+
+Nesting is not the same thing as living in one file, though, and they no longer do. Both are
+`partial`, split one part per file, named for what is in them:
+
+| | |
+| --- | --- |
+| `PlayerLogic.cs` | The state machine, and every verb the world calls: `Trip`, `Bounce`, `Push`, `Hurt`, `TryPlantStaff`. Plus `Intent` and `Command`, which are what it is told. |
+| `PlayerLogic.Movement.cs` | Every tunable, the derived numbers, `Attach`, `FixedTick`, the external forces, `Validate` and the gizmos. |
+| `PlayerLogic.Movement.Sensing.cs` | What is under and in front of the wizard: `SenseGround`, `SenseSlope`, `TryFindLedgeEdge`, `TryFindLip`, `TryFindClimb`. Answers questions; moves nothing. |
+| `PlayerLogic.Movement.Locomotion.cs` | What moves them: `Run`, `TryRunAlongRamp`, `TryStepUp`, `TryJump`, `ApplyFallGravity`. |
+| `PlayerLogic.Movement.Arc.cs` | `PredictArc` and what it answers with. |
+| `PlayerLogic.Health.cs`, `.Modifiers.cs`, `.Ragdoll.cs`, `.Vine.cs`, `.Spellbook.cs` | One part each. |
+| `Staff.cs` | The `MonoBehaviour`: the rig in the scene and nothing about how a pole behaves. |
+| `Staff.Pole.cs` | What the pole is — binding, anchoring, length, geometry. |
+| `Staff.Pole.Planting.cs` | How it goes in: `Plant`, `PlantAsLadder`, `PlantAsClimb`, `PlantAsBridge`. |
+| `Staff.Pole.Riding.cs` | What happens while you are on it: `Slide`, `Release`, `PositionAt`. |
+
+**Every serialized field of a class stays in that class's own file**, all of them together. Unity
+lays the inspector out in reflection order, and reflection order across `partial` files is not
+something the language promises — split the fields and the `[Header]`s scramble.
 
 ### Rules that keep it working
 
@@ -146,7 +169,7 @@ The Staff is yours from the start and welded to E; everything else fights over t
 
 | Spell | What it is | Rank 2 / 3 |
 | --- | --- | --- |
-| **Staff** | Plant it at a ledge and climb down. | longer staff |
+| **Staff** | Plant it at a ledge and climb down, or raise it against a wall and climb up. | longer staff |
 | **Mage Hand** | A spectral hand you swing from. | wider swing / climb it |
 | **Wall Growth** | One tile of stone, put down on the grid beside you. | further reach |
 | **Glide** | A canopy. It barely slows the drop - it carries you. | wider wing |
@@ -155,8 +178,8 @@ The Staff is yours from the start and welded to E; everything else fights over t
 | **Fling** | Hold to wind up and aim, let go to fly. | harder throw |
 
 Two of them want level content and already have it: Mage Hand needs a `Vine`, Telekinesis needs a
-`Carryable` — which the `Slime` and `Rock` prefabs now carry, so every slime and rock already in a
-level can be picked up and put down somewhere better.
+`Carryable` — which the `Slime` and `Wet Floor Sign` prefabs now carry, so every slime and sign
+already in a level can be picked up and put down somewhere better.
 
 **Glide does not forgive fall damage, and that is the design.** Feather Fall — the spell that
 used to live in this slot — did, and that forgiveness was the only reason it was worth a button.
@@ -165,7 +188,7 @@ turning a 2.3-box leap into nearly 4. Giving one spell both would make it two sp
 contested buttons.
 
 Note what `fallSpeed` does *not* buy. Fall damage counts **boxes fallen**, not how fast
-(`UpdateGroundedState` bills `highestPoint - position.y`), so dropping the canopy's fall speed to
+(`SenseGround` bills `highestPoint - position.y`), so dropping the canopy's fall speed to
 0.8 lowers the terminal speed and bills you exactly the same. That is worth letting a player
 discover once. You survive under a canopy by **going somewhere else**, not by falling softer.
 
@@ -186,11 +209,6 @@ first of a session. After a single jump it was true forever, and throwing the ca
 stood at a ledge folded it on the next physics step, put it on cooldown, and left the wizard
 falling at completely normal speed with nothing to say why. The `Wing.flown` flag is set the first
 step the wizard is off the ground and cleared on every cast.
-
-**Bubble is the opposite trade, on purpose.** It does not forgive the drop — pop it high up and you
-are still high up. What it buys is that nothing can touch you (`Modifiers.Shielded`) and that wind
-pushes you three and a half times as hard (`Modifiers.WindMultiplier`). A gale you would normally
-brace against becomes the ride. It is the only spell that wants a hazard nearby.
 
 **Telekinesis is one button doing two jobs**, chosen by whether your hands are full. Empty, the
 press takes hold of the nearest `Carryable` and stows it; full, the press sets it down in the first
@@ -651,16 +669,19 @@ a sprite of yours.
 | --- | --- | --- |
 | `Wisp` | The currency. Banking it spends it for good. | Default |
 | `Heart Upgrade` | +1 max HP, permanently, once ever. | Default |
-| `Rock` | Trips a runner. `minimumSpeed` 4, so a walk is safe. | Hazard |
+| `Wet Floor Sign` | Trips a runner. `minimumSpeed` 3, so a walk is safe. | Hazard |
+| `Rake` | Trips you BACKWARDS, the way you came. | Hazard |
+| `Ice` | Ground that does not hold you. Nothing else changes. | Hazard |
 | `Slime` | Bounces you three boxes and sends you tumbling. | Hazard |
-| `Wind` | Pushes you sideways, and shows it. Bubble turns this into a lift. | Hazard |
-| `Vine` | What Vine Grasp catches. | Default |
+| `Wind` | Pushes you sideways, and shows it. | Hazard |
+| `Wind Trap` | The same push, on a timer, behind a shutter that opens and closes. | Hazard |
+| `Hand Hold` | The knot Mage Hand catches. | Default |
 | `Boulder` | What Telekinesis lifts. Solid, so it is also a platform. | **Ground** |
 | `Stone Wall` | What Wall Growth raises. Already wired into the spell. | **Ground** |
 | `Level Exit` | The bottom. Starts the level again for now. | Default |
 
 The two on **Ground** are there because the wizard has to be able to stand on them, and the ground
-check only looks at that layer. The three on **Hazard** are triggers you pass straight through —
+check only looks at that layer. The six on **Hazard** are triggers you pass straight through —
 `Hazard.passThrough` sets that on Awake, so ticking the box fixes one already placed.
 
 `Stone Wall` is shaped the way the spell needs: the root carries nothing and the **first child**
@@ -762,9 +783,36 @@ A child of the wizard with its own hitbox and sprite. **The hitbox's height is t
 the wizard travels its span and then the length of their own hand-hang past the tip, so a taller
 collider is a longer climb and nothing else has to be told about it.
 
-**Ladder** is the only mode a spell reaches today. The pole is driven in just past the lip with its
-top flush to the ledge, so the far end is where your feet will end up and you can read the drop off
-it. Slide down, and keep pushing down at the bottom to let go.
+**Ladder** is the only mode a spell reaches today, and it has **two doors**. Which one you get is
+decided by what is in front of you, not by a second button.
+
+*Down*, when you are stood at a ledge: the pole is driven in just past the lip with its top flush to
+the ledge, so the far end is where your feet will end up and you can read the drop off it. Slide
+down, and keep pushing down at the bottom to let go.
+
+*Up*, when you are not: the staff is raised against whatever is ahead, and `Movement.TryFindClimb`
+asks whether it caught anything — a forward cast for the face, a downward cast for the top, and an
+`OverlapBox` proving the whole wizard fits up there. It starts looking **above** the step assist, so
+a tile seam can never put the staff spell in front of you, and it refuses a wall taller than the
+pole by rejecting a down-cast that reports distance zero. That zero is `queriesStartInColliders`
+biting: a cast beginning inside a tall wall answers with a top at exactly the height it was asked
+about, which would make every tower in the level read as climbable right up until you were left
+dangling against it.
+
+The climb runs **straight up the near face** — `PositionAt` short-circuits its swing for a climb.
+The swing lerps you towards where the *pole* is, and on a descent that is out over the drop, away
+from anything solid; raised against a wall the pole is *on* the face, so the same lerp would walk
+you into it while you were still below the lip with nowhere for the collider to go. Stepping over
+the lip happens once, on release, to the spot `TryFindClimb` already proved empty — and while the
+body is still kinematic, so nothing has to be resolved out of the wall afterwards.
+
+**A drop always wins.** A wall and a ledge can both answer within a quarter box of each other at
+the lip of a step, and leaving that to whichever cast ran first would have the staff go up or down
+there at random — so `CanClimbHere` and `TryClimbStaff` both refuse outright while `IsAtEdge` is up,
+before either probe is asked. There is deliberately no `Validate` warning comparing `climbReach`
+against `ledgeCheckAhead`: the wall probe genuinely does reach further once the wizard's own
+half-width is counted, so such a warning would be a guarantee about a race that cannot happen, and
+somebody would trust it.
 
 `Staff.cs` can still lay the pole flat as a **Bridge** — `StaffMode.Bridge`, `PlantAsBridge`, and a
 separate solid collider on a child on the Ground layer, because the staff itself is on the Player
@@ -781,9 +829,12 @@ from under you.
 
 | | What it is | Notes |
 | --- | --- | --- |
-| `Rock` | A stone you clip at a run | `minimumSpeed` 4 means a run trips and a walk does not. |
+| `WetFloorSign` | A wet patch you clip at a run | `minimumSpeed` 3 means a run trips and a walk does not. |
+| `Rake` | Tread on it, go down backwards | The one hazard that reverses you, and deliberately the only one. |
+| `SlipperyFloor` | Ground that does not hold you | Calls `Slicken` every step you are in it; nothing to leave, because not calling IS leaving. |
 | `Slime` | Fall into it, get thrown back up | Launches you on the way past. |
 | `WindZone2D` | A volume that pushes you | One `Vector2` covers left, right, up and down. `groundScale` decides how much you feel with both feet down. |
+| `WindTrap` | A `WindZone2D` on a timer | Shuts, warns, then blows. `Blast` is a one-off `Shove`; the rest is the base class's steady `Push`. |
 
 **Nothing on the Hazard layer blocks you.** `Hazard.passThrough` is on by default and applied on
 `Awake`, so hazards are things you pass straight through that do something to you on the way, not
@@ -792,8 +843,8 @@ so a *solid* hazard there would be something the wizard comes to rest on while t
 believes they are falling — no jump, and no way out of a tumble, since a ragdoll only recovers once
 grounded. Ticking `passThrough` off is supported, but move it off layer 8 if you do.
 
-All three sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach
-a wizard who is on their staff or already tumbling. **Adding hazard #6 is one subclass with one
+All six sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach a
+wizard who is on their staff or already tumbling. **Adding hazard #7 is one subclass with one
 `Affect` method.**
 
 ### Seeing the wind
@@ -912,7 +963,7 @@ There is no editor tooling any more. These are the things it used to know.
 
 A `Grid` is a coordinate system. A collider or a rigidbody on one is always a mistake.
 
-**Hazards.** A trigger collider plus a `Rock`, `Slime` or `WindZone2D`, on layer **Hazard**, at the
+**Hazards.** A trigger collider plus one of the six above, on layer **Hazard**, at the
 scene root — several platforms carry non-uniform scales that would squash a child.
 `Hazard.passThrough` sets the collider to a trigger on Awake, so an existing one is fixed by
 ticking a box.
@@ -925,9 +976,6 @@ two templates start inactive; `PlayerHud` copies them.
 `ParallaxLayer`. Put them on a sorting layer below `Default` — **and add that layer to the
 `Light2D`'s Target Sorting Layers**, or in URP 2D they render pure black. Simpler alternative:
 leave them on `Default` at negative sorting orders, which the existing light already covers.
-
-**Jump arc.** An empty object at the scene root with a `JumpArc`. Not parented to the wizard, or
-every dot gets dragged along as they fly.
 
 ## Worth knowing
 

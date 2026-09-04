@@ -34,6 +34,16 @@ namespace FallingWizard.World
         static readonly Collider2D[] Room = new Collider2D[4];
         static readonly RaycastHit2D[] Below = new RaycastHit2D[2];
 
+        // What both queries below ask with. Triggers OFF: the project queries them by default,
+        // and a hazard's trigger sitting in a cell is not a tile - read as one, Wall Growth
+        // refuses to build beside a slime and Telekinesis refuses to set anything down near one.
+        static ContactFilter2D Solid(LayerMask groundLayers) => new ContactFilter2D
+        {
+            useTriggers = false,
+            useLayerMask = true,
+            layerMask = groundLayers,
+        };
+
         public static Vector2Int CellOf(Vector2 world) =>
             new Vector2Int(Mathf.FloorToInt(world.x), Mathf.FloorToInt(world.y));
 
@@ -56,18 +66,9 @@ namespace FallingWizard.World
             return CellOf(new Vector2(soles.x, soles.y + OffTheLine));
         }
 
-        public static bool IsSolid(Vector2Int cell, LayerMask groundLayers)
-        {
-            var filter = new ContactFilter2D
-            {
-                useTriggers = false,
-                useLayerMask = true,
-                layerMask = groundLayers,
-            };
-
-            return Physics2D.OverlapBox(CentreOf(cell), Vector2.one * (Inset * 2f), 0f,
-                filter, Room) > 0;
-        }
+        public static bool IsSolid(Vector2Int cell, LayerMask groundLayers) =>
+            Physics2D.OverlapBox(CentreOf(cell), Vector2.one * (Inset * 2f), 0f,
+                Solid(groundLayers), Room) > 0;
 
         public static bool IsFree(Vector2Int cell, LayerMask groundLayers) =>
             !IsSolid(cell, groundLayers);
@@ -136,13 +137,6 @@ namespace FallingWizard.World
         // instead of carrying a constant that would go stale the day the sheet is re-sliced.
         public static bool SurfaceUnder(Vector2Int cell, LayerMask groundLayers, out float top)
         {
-            var filter = new ContactFilter2D
-            {
-                useTriggers = false,
-                useLayerMask = true,
-                layerMask = groundLayers,
-            };
-
             // Begun just inside the top of the cell, which the caller has already found to be
             // empty, so the cast cannot start inside the very thing it is looking for - and
             // carried the full LookDown rather than a single box. Stopping at one box meant a
@@ -151,7 +145,7 @@ namespace FallingWizard.World
             // the wrong floor: it reports the FIRST thing it meets on the way down.
             var from = new Vector2(cell.x + 0.5f, cell.y + 0.95f);
 
-            if (Physics2D.Raycast(from, Vector2.down, filter, Below, LookDown) > 0)
+            if (Physics2D.Raycast(from, Vector2.down, Solid(groundLayers), Below, LookDown) > 0)
             {
                 top = Below[0].point.y;
                 return true;

@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   id: staff
   displayName: Staff
-  description: Plant the staff over a ledge and climb down it.
+  description: At a ledge, plant it and climb down. Anywhere else, raise it against what is in front of you and climb up.
   icon: {fileID: 0}
   cost: 0
   locked: 1
@@ -29,7 +29,7 @@ MonoBehaviour:
   upgrades:
   - cost: 1
     title: Longer staff
-    description: Half again as long, so it reaches drops that used to be too deep.
+    description: Half again as long, so it reaches drops that used to be too deep and walls that used to be too tall.
   lengthByRank:
   - 1
   - 1.5

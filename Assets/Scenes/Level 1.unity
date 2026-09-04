@@ -2376,6 +2376,7 @@ MonoBehaviour:
       slopeProbeDepth: 0.5
       stepHeight: 0.25
       stepReach: 0.1
+      climbReach: 0.25
       surfaceFriction: 0
       windDecay: 24
     ragdoll:

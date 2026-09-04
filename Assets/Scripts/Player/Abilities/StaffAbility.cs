@@ -19,9 +19,12 @@ namespace FallingWizard.Player
 
         public override void OnUnequipped(PlayerLogic wizard) => wizard.SetStaffLength(1f);
 
+        // Two ways in, and which one you get is decided by what is in front of you rather than
+        // by a second button. A ledge means the staff goes over it and you climb DOWN; anything
+        // else means the staff goes UP against whatever is there, and you climb it.
         public override bool CanCast(PlayerLogic wizard) =>
             wizard.StaffIsPlantedAs(StaffMode.Ladder) ||
-            (wizard.StaffIsFree && wizard.movement.IsAtEdge);
+            (wizard.StaffIsFree && (wizard.movement.IsAtEdge || wizard.CanClimbHere));
 
         public override string WhyNot(PlayerLogic wizard)
         {
@@ -34,10 +37,21 @@ namespace FallingWizard.Player
             if (wizard.State != PlayerState.Normal)
                 return $"you are {wizard.State}";
 
-            if (!wizard.movement.IsAtEdge)
-                return "you are not stood at a ledge";
+            // Asked POSITIVELY, and never off IsAtEdge. That flag is a physics step old - it is
+            // not refreshed while the wizard is on the staff - and it says only that ground is
+            // MISSING ahead, not that a pole can be driven in there. Testing it left the one
+            // case that actually needs explaining, a ledge the staff cannot use, returning null
+            // and printing nothing at all.
+            bool ledge = wizard.movement.TryFindLedgeEdge(out _);
 
-            return null;
+            if (!ledge && !wizard.CanClimbHere)
+                return "there is no ledge to hang the staff over and nothing ahead of you it " +
+                       "will reach the top of";
+
+            if (ledge)
+                return "the drop here is too shallow for the staff to reach down into";
+
+            return "the wall ahead is too tall for the staff to reach the top of";
         }
 
         public override bool OnCast(PlayerLogic wizard)
@@ -48,7 +62,14 @@ namespace FallingWizard.Player
                 return true;
             }
 
-            return wizard.TryPlantStaff(StaffMode.Ladder);
+            // The ledge first, so the descent behaves exactly as it always has. Falling through
+            // to the climb when that refuses is deliberate: at the very lip of a step both are
+            // arguably true, and being carried up is the more useful of the two answers when the
+            // drop was too shallow to plant over.
+            if (wizard.movement.IsAtEdge && wizard.TryPlantStaff(StaffMode.Ladder))
+                return true;
+
+            return wizard.TryClimbStaff();
         }
     }
 }
