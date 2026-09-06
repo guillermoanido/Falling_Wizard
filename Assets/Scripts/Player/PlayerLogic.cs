@@ -798,6 +798,15 @@ namespace FallingWizard.Player
                      "slope.")]
             [Min(0.02f)] public float stepReach = 0.1f;
 
+            [Tooltip("How fast the step assist carries the wizard up a lip, in boxes per " +
+                     "second. It used to be instant - one write to the body's position - and a " +
+                     "quarter of a box in a single frame is exactly what 'the movement " +
+                     "teleports' looks like, because writing a position outright also throws " +
+                     "away the Rigidbody2D's interpolation for that frame. Anything from about " +
+                     "3 upward is quick enough not to feel like wading; under 2 the wizard " +
+                     "visibly crawls up tile seams.")]
+            [Min(0.5f)] public float stepClimbSpeed = 6f;
+
             [Header("Climbing")]
             [Tooltip("How far past the toes to look for a WALL to raise the staff against, in " +
                      "boxes. The wizard walks into a wall and stops flush with it, so this only " +
@@ -850,6 +859,10 @@ namespace FallingWizard.Player
             [NonSerialized] Vector2 groundNormal = Vector2.up;
             [NonSerialized] float groundAngle;
             [NonSerialized] bool climbedLastStep;
+
+            // Whether the last step was one the step assist was driving. Only ever read to take
+            // the lift back off again the moment the lip runs out - see TryStepUp.
+            [NonSerialized] bool steppedLastStep;
 
             // Why the last look for a climb came to nothing, and what it measured on the way.
             // Recorded rather than returned, so the hot path stays a bool and nothing builds a
@@ -1000,7 +1013,7 @@ namespace FallingWizard.Player
                 // AFTER Run, so the sideways speed it just chose is what carries the wizard
                 // forward off the lip on the next physics step, and BEFORE TryJump, so a jump
                 // buffered on the same step launches from the height they have just gained.
-                TryStepUp(command, stats);
+                TryStepUp(command, stats, fixedDeltaTime);
 
                 TryJump(stats);
                 ApplyShortHop(command.JumpHeld);
@@ -1027,6 +1040,7 @@ namespace FallingWizard.Player
                 wind = Vector2.zero;
                 grip = 1f;
                 climbedLastStep = false;
+                steppedLastStep = false;
             }
 
             public void BeginFallFrom(float height)
@@ -1064,6 +1078,7 @@ namespace FallingWizard.Player
                 // So the ramp's own tidy-up does not read this shove as leftover climb and take
                 // it straight back off again.
                 climbedLastStep = false;
+                steppedLastStep = false;
 
                 lockout = Mathf.Max(lockout, controlLockout);
             }
@@ -1084,6 +1099,7 @@ namespace FallingWizard.Player
 
                 rising = false;
                 climbedLastStep = false;
+                steppedLastStep = false;
 
                 if (!resetsFall)
                     return;
@@ -1586,19 +1602,37 @@ namespace FallingWizard.Player
             // Kept far below a whole box on purpose. This is for tile seams and the pixel-high
             // teeth along a ramp's edge, NOT for real steps - a wizard who climbs a box without
             // jumping is a wizard for whom jumping has stopped mattering.
-            void TryStepUp(Command command, Modifiers stats)
+            void TryStepUp(Command command, Modifiers stats, float fixedDeltaTime)
+            {
+                bool stepping = StepUp(command, stats, fixedDeltaTime);
+
+                // The lip has just been cleared. Whatever upward speed carried them over it is a
+                // hop nobody asked for now, so it is taken back - but only if the assist could
+                // plausibly have produced it, which leaves a jump, a slime and a fling alone.
+                // This is the identical tidy-up TryRunAlongRamp does when a ramp runs out, and
+                // it is here for the identical reason: the thing that was driving them stopped,
+                // and what it was driving them with must not outlive it.
+                if (steppedLastStep && !stepping && !rising &&
+                    body.linearVelocityY > 0f && body.linearVelocityY <= stepClimbSpeed)
+                    body.linearVelocityY = 0f;
+
+                steppedLastStep = stepping;
+            }
+
+            bool StepUp(Command command, Modifiers stats, float fixedDeltaTime)
             {
                 if (stepHeight <= 0f || body == null || hull == null)
-                    return;
+                    return false;
 
                 if (lockout > 0f || stats.Rooted)
-                    return;
+                    return false;
 
                 // The same window a jump is allowed in, so a step taken just after walking off a
                 // lip is no more generous than the jump they could have had instead. Anyone
-                // genuinely on their way up - a jump, a slime, a fling - is left alone.
-                if (coyoteTimer <= 0f || body.linearVelocityY > 0f)
-                    return;
+                // genuinely on their way up is left alone - unless it is THIS that is carrying
+                // them up, which after the first step it is.
+                if (coyoteTimer <= 0f || (body.linearVelocityY > 0f && !steppedLastStep))
+                    return false;
 
                 // The STICK, not the speed. Pressed against a lip, Run only ever lands one
                 // step's worth of acceleration before the solver takes it away again, so a test
@@ -1607,38 +1641,51 @@ namespace FallingWizard.Player
                 float steer = command.Steer;
 
                 if (Mathf.Abs(steer) <= steerDeadzone)
-                    return;
+                    return false;
 
                 int direction = steer < 0f ? -1 : 1;
 
                 if (!TryFindLip(direction, out float lipTop))
-                    return;
+                    return false;
 
                 Bounds box = hull.bounds;
                 float rise = lipTop - box.min.y;
 
-                // Under the skin there is nothing to climb and the contact rides over it on its
-                // own; over stepHeight it is a wall, and walls are what the jump is for.
-                if (rise <= groundCheckSkin || rise > stepHeight)
-                    return;
+                // Below a hair there is nothing left to climb; over stepHeight it is a wall, and
+                // walls are what the staff is for.
+                if (rise <= StepClearance || rise > stepHeight)
+                    return false;
 
-                Vector2 offset = body.position - (Vector2)box.center;
-                var landing = new Vector2(
-                    box.center.x + direction * stepReach,
-                    box.min.y + rise + StepClearance + box.extents.y);
+                // Only the sliver they are moving INTO, one step's worth. Where they already are
+                // is somewhere they demonstrably fit, and checking it again would fail every
+                // time: the solver lets them overlap the lip they are pressed against by a hair,
+                // and a full-width box reads that hair as a ceiling.
+                float sliver = stepClimbSpeed * fixedDeltaTime;
 
-                // The whole wizard has to fit where they are going. This is the headroom check
-                // and the "is that lip actually the top of a wall" check in one query, and it is
-                // also what makes the move below safe: the destination is proved empty before
-                // the body is ever put there, so it cannot be shoved back out.
-                if (Physics2D.OverlapBox(landing, box.size, 0f, GroundFilter, Overlaps) > 0)
-                    return;
+                var slab = new Vector2(box.center.x, box.max.y + sliver * 0.5f);
+                var slabSize = new Vector2(box.size.x - StepClearance * 2f, sliver);
 
-                // Written straight to Rigidbody2D.position rather than added as upward speed.
-                // An impulse IS a jump - it leaves the ground, counts as airtime, fights the
-                // short hop, and goes as high as the number of steps the player stayed pressed
-                // against the lip. This is a move of a known, already-checked distance.
-                body.position = landing + offset;
+                if (Physics2D.OverlapBox(slab, slabSize, 0f, GroundFilter, Overlaps) > 0)
+                    return false;
+
+                // SPEED, not a position. This used to write Rigidbody2D.position outright and
+                // carry the wizard up and forward in a single frame - correct, and it teleported
+                // twice over: a quarter of a box in one frame is a jump cut, and writing a
+                // position outright makes Unity throw away that frame's interpolation, so even a
+                // small one snaps. Driven by velocity, the same climb is spread over three or
+                // four physics steps and interpolated across every rendered frame between them.
+                //
+                // Straight UP, and nothing horizontal, which is what makes spreading it safe:
+                // the line to a destination out over the lip passes through the lip's own
+                // corner, so a partial move along it can end up inside the geometry. The column
+                // overhead cannot, because the wizard is standing in it. Once their soles clear
+                // the lip, Run carries them forward on its own - the solver stops fighting them
+                // the moment there is nothing left to fight.
+                //
+                // It is not a jump: `rising` stays false, so ApplyShortHop leaves it alone, and
+                // the wrapper above takes the leftover speed back the moment the lip is cleared.
+                body.linearVelocityY = stepClimbSpeed;
+                return true;
             }
 
             void Run(Command command, Modifiers stats, float fixedDeltaTime)
@@ -1730,14 +1777,28 @@ namespace FallingWizard.Player
                 if (along.x < 0f)
                     along = -along;
 
+                // targetSpeed is a HORIZONTAL speed - it is the same number the flat ground
+                // uses - so on a slope it has to be divided by the tangent's x to keep the
+                // wizard covering ground at the same rate. Without this a 45 degree ramp quietly
+                // costs them 30% of their pace the moment they touch it and gives it back at the
+                // top, which does not read as "that was steep"; it reads as the stairs being
+                // sticky. The same divide goes on the top speed and on the acceleration, so a
+                // slope changes neither how fast they end up nor how long it takes to get there.
+                //
+                // Bounded by the steepest thing that counts as a floor at all, so a wall-ish
+                // surface sneaking past the walkable test cannot divide by nothing.
+                float lean = Mathf.Max(along.x, Mathf.Cos(maxSlopeAngle * Mathf.Deg2Rad));
+
                 // How fast they are already going along the face - CLAMPED to what walking could
                 // have produced. Dropping onto a ramp otherwise arrives with the whole fall
                 // pointing down the slope, and a 16 b/s landing would fire the wizard away
                 // downhill faster than they can ever run back up.
-                float carried = Mathf.Clamp(
-                    Vector2.Dot(body.linearVelocity, along), -topSpeed, topSpeed);
+                float cap = topSpeed / lean;
 
-                float speed = Mathf.MoveTowards(carried, targetSpeed, change);
+                float carried = Mathf.Clamp(
+                    Vector2.Dot(body.linearVelocity, along), -cap, cap);
+
+                float speed = Mathf.MoveTowards(carried, targetSpeed / lean, change / lean);
 
                 // Both components written together, and gravity left out of the sum entirely.
                 // That is the whole trick: with nothing pulling them down the face, letting go

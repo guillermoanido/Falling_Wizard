@@ -29,6 +29,13 @@ namespace FallingWizard.World
         [Tooltip("Seconds before it can catch the wizard again.")]
         [Min(0f)] public float rearmDelay = 0.5f;
 
+        [Tooltip("Fire on every step the wizard is inside it, rather than only on the way in. " +
+                 "Off is right for something you HIT - a slime, a rake, a sign - which happens " +
+                 "once and is over. On is right for a PLACE, like a staircase, where breaking " +
+                 "into a run half way along should count for as much as arriving at a run. The " +
+                 "re-arm delay above is what stops it firing every physics step.")]
+        public bool everyStep = false;
+
         [Tooltip("Hearts taken on contact. 0 for hazards that only shove you around.")]
         [Min(0)] public int damage = 0;
 
@@ -57,7 +64,18 @@ namespace FallingWizard.World
                 hitbox.isTrigger = passThrough;
         }
 
-        protected sealed override void OnPlayerEntered(PlayerCharacter wizard)
+        protected override bool Continuous => everyStep;
+
+        protected sealed override void OnPlayerEntered(PlayerCharacter wizard) => Catch(wizard);
+
+        // NOT sealed, and not calling Catch from a sealed override either. SlipperyFloor and
+        // WindZone2D are continuous hazards that do their own thing every step and deliberately
+        // want none of the gating below - a floor cannot be dodged by being slow and does not
+        // re-arm - so they override this instead and never reach Catch at all.
+        protected override void OnPlayerInside(PlayerCharacter wizard, float fixedDeltaTime) =>
+            Catch(wizard);
+
+        void Catch(PlayerCharacter wizard)
         {
             if (Time.time < readyAt || !Allowed(wizard))
                 return;

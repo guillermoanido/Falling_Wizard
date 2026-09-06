@@ -30,7 +30,7 @@ coming back down it can never hurt you.
 | `Player/` | `PlayerCharacter`, `PlayerLogic` and its parts, `Staff` |
 | `Player/Abilities/` | `Ability` and the spells, `AbilityBook`, `AbilityShrine` |
 | `Localization/` | `Loc`, `LanguageTable`, `LocalizedText` |
-| `World/` | `PlayerTrigger`, `Hazard` and the six hazards, `Pickup`, `TileGrid`, `FollowCamera` |
+| `World/` | `PlayerTrigger`, `Hazard` and the seven hazards, `Pickup`, `TileGrid`, `FollowCamera` |
 | `UI/` | `PlayerHud`, `HudSlot`, `FlingArc`, `Ui` and the two runtime screens |
 | `Menus/`, `Cutscenes/` | `MenuScreen` and the three menus; `CutsceneRunner` |
 
@@ -659,6 +659,7 @@ a sprite of yours.
 | `Wet Floor Sign` | Trips a runner. `minimumSpeed` 3, so a walk is safe. | Hazard |
 | `Rake` | Trips you BACKWARDS, the way you came. | Hazard |
 | `Ice` | Ground that does not hold you. Nothing else changes. | Hazard |
+| `Stairs` | Lay it over a staircase. Take them fast and you tumble down them. | Hazard |
 | `Slime` | Bounces you three boxes and sends you tumbling. | Hazard |
 | `Wind` | Pushes you sideways, and shows it. | Hazard |
 | `Wind Trap` | The same push, on a timer, behind a shutter that opens and closes. | Hazard |
@@ -668,7 +669,7 @@ a sprite of yours.
 | `Level Exit` | The bottom. Starts the level again for now. | Default |
 
 The two on **Ground** are there because the wizard has to be able to stand on them, and the ground
-check only looks at that layer. The six on **Hazard** are triggers you pass straight through —
+check only looks at that layer. The seven on **Hazard** are triggers you pass straight through —
 `Hazard.passThrough` sets that on Awake, so ticking the box fixes one already placed.
 
 `Stone Wall` is shaped the way the spell needs: the root carries nothing and the **first child**
@@ -745,6 +746,52 @@ setting removes it because it is geometry, not bounciness. It also makes how far
 on which corner happens to be down. Spinning the art instead costs nothing and looks the same.
 
 The wizard's `Rigidbody2D` rotation is frozen and nothing in the game ever unfreezes it.
+
+## Slopes, steps, and why neither of them slows you down
+
+Two separate pieces of `Movement` handle uneven ground, and they answer different questions.
+
+**`TryRunAlongRamp` steers ALONG a slope instead of across it.** Driving sideways into a 45 degree
+face cannot work here and the numbers say why: acceleration is 20 boxes a second squared, of which
+only cos(45) — about 14 — pushes up the face, while gravity pulls about 21 straight back down it,
+and there is no friction to make up the difference. The wizard loses that argument every time and
+slides. So on a ramp both velocity components are written together and gravity is left out of the
+sum entirely, which is also what makes letting go of the stick leave them stood on the slope
+instead of sliding off it.
+
+**The target speed is a HORIZONTAL one**, the same number the flat ground uses, so it is divided by
+the tangent's x before being applied along the face — and so are the top speed and the
+acceleration. Without that divide a 45 degree ramp quietly costs the wizard 30% of their pace the
+moment they touch it and hands it back at the top, which does not read as *that was steep*; it
+reads as the stairs being sticky. With it, a slope changes neither how fast they end up nor how
+long it takes to get there. The divide is bounded by cos(`maxSlopeAngle`), so a wall-ish surface
+sneaking past the walkable test cannot divide by nothing.
+
+**`TryStepUp` carries them over a lip a box collider cannot climb.** The wizard is a box with
+square corners, frozen rotation and no friction, so a lip is a flat vertical face meeting a flat
+vertical face; the solver's only answer is to delete the sideways speed, and `Run` puts it straight
+back on the next step. That is what "stuck on the scenery" feels like — the stick is forward, the
+wizard is not moving, and nothing is actually broken.
+
+It drives **`linearVelocityY`, not `position`**, and that is the whole of "the movement teleports".
+Writing `Rigidbody2D.position` outright moves the body a quarter of a box in a single frame *and*
+makes Unity throw away that frame's interpolation, so even a small step snapped. Driven by speed,
+the same climb spreads over three or four physics steps and interpolates across every rendered
+frame between them.
+
+Two things follow from using speed, and both are handled:
+
+- It goes **straight up**, never diagonally. The line to a destination out over the lip passes
+  through the lip's own corner, so a partial move along it can end inside the geometry. The column
+  directly overhead cannot, because the wizard is standing in it. Once their soles clear the lip,
+  `Run` carries them forward on its own.
+- The leftover speed is **taken back** the moment the lip runs out, or the assist would read as a
+  small hop. `steppedLastStep` is what remembers, and the guard only takes back speed the assist
+  could plausibly have produced, so a jump, a slime or a fling is left alone. It is the identical
+  tidy-up `TryRunAlongRamp` does when a ramp ends.
+
+`stepHeight` stays far below a whole box on purpose. This is for tile seams and the pixel-high
+teeth along a ramp's edge, **not** for real steps — anything taller is what the staff is for.
 
 ## Ground, friction and getting stuck
 
@@ -855,6 +902,7 @@ from under you.
 | `Slime` | Fall into it, get thrown back up | Launches you on the way past. |
 | `WindZone2D` | A volume that pushes you | One `Vector2` covers left, right, up and down. `groundScale` decides how much you feel with both feet down. |
 | `WindTrap` | A `WindZone2D` on a timer | Shuts, warns, then blows. `Blast` is a one-off `Shove`; the rest is the base class's steady `Push`. |
+| `Stairs` | A stretch of floor that is a staircase | `minimumSpeed` 3 and `everyStep` on: a walk or a jog goes up and down them, a run puts you on your face. |
 
 **Nothing on the Hazard layer blocks you.** `Hazard.passThrough` is on by default and applied on
 `Awake`, so hazards are things you pass straight through that do something to you on the way, not
@@ -863,9 +911,27 @@ so a *solid* hazard there would be something the wizard comes to rest on while t
 believes they are falling — no jump, and no way out of a tumble, since a ragdoll only recovers once
 grounded. Ticking `passThrough` off is supported, but move it off layer 8 if you do.
 
-All six sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach a
-wizard who is on their staff or already tumbling. **Adding hazard #7 is one subclass with one
+All seven sit on `Hazard`, which handles speed gating, re-arming, damage, and whether it can reach
+a wizard who is on their staff or already tumbling. **Adding hazard #8 is one subclass with one
 `Affect` method.**
+
+**`Hazard.everyStep` is the difference between a thing and a place.** Off — the default — it fires
+once, on the way in, which is right for anything you HIT: a slime, a rake, a sign. On, it is asked
+every physics step you are inside it, which is right for a stretch of floor, where breaking into a
+run half way along has to count for as much as arriving at a run. `rearmDelay` is what stops it
+firing fifty times a second. `SlipperyFloor` and `WindZone2D` are continuous by their own override
+and deliberately skip the gate entirely — a floor cannot be dodged by being slow.
+
+### Stairs
+
+The steps themselves are **tilemap**, not the hazard. `Movement` already walks them: the slope
+handling steers along the face and the step assist carries the wizard over each tread. `Stairs` is
+a trigger box you lay over the top saying *this stretch of floor is a staircase*, and all it does
+is `Trip()` above `minimumSpeed`.
+
+That gives the whole rule in two numbers a designer can see: **run at them and you go down them the
+way you were already travelling; walk, or jog, and you go up and down without noticing.** The
+tumble is `Ragdoll`'s, shared with every other trip in the game, so all of them tune together.
 
 ### Seeing the wind
 
