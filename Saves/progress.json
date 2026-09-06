@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "wisps": 2,
+    "bonusHearts": 1,
+    "loadout": [
+        "staff",
+        "",
+        "",
+        ""
+    ],
+    "ranks": [
+        {
+            "key": "staff",
+            "rank": 1
+        }
+    ],
+    "spent": [
+        "heartLevel 1:167,-229",
+        "wispLevel 1:41,-14",
+        "wispLevel 1:80,-65"
+    ]
+}

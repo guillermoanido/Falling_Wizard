@@ -132,11 +132,11 @@ MonoBehaviour:
   - key: ability.staff.name
     text: 'Bastón'
   - key: ability.staff.desc
-    text: 'En un borde, clávalo y baja. En cualquier otro lado, apóyalo en lo que tengas delante y sube.'
+    text: 'Apóyalo en un muro y trepa, tan alto como largo sea. En un borde lo clavas sobre el filo y bajas.'
   - key: ability.staff.upgrade.0.title
     text: 'Bastón largo'
   - key: ability.staff.upgrade.0.desc
-    text: 'La mitad más largo: llega a caídas más hondas y a muros más altos.'
+    text: 'La mitad más largo: trepa muros que antes eran demasiado altos y llega a caídas más hondas.'
   - key: ability.hand.name
     text: 'Telequinesis'
   - key: ability.hand.desc

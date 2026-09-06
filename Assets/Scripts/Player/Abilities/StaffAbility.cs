@@ -2,13 +2,23 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
+    // The staff is the wizard's legs. Jumping is switched off in Movement, so this is the only
+    // thing in the game that takes them upward under their own power.
+    //
+    // It is a HELD spell, not a pressed one - chargesOnHold on the asset - and the reason is one
+    // specific failure. A press is a single instant, and if the wall was a finger's width too far
+    // away on that instant, nothing happened and nothing said why. A hold asks again every
+    // physics step: raise the staff, look, and the moment the wizard shuffles into range they go
+    // up. The wizard holding the staff in the air with nothing in front of them is not a bug -
+    // it is the spell telling them there is nothing here to climb.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Staff", fileName = "Staff")]
     public class StaffAbility : Ability
     {
         [Header("Ranks")]
         [Tooltip("How long the staff is at each rank, against the length you built it. Element 0 " +
-                 "is rank 1. The reach is measured off the pole's own scale, so this is the only " +
-                 "number that has to change - the climb, the hang and the drop all follow.")]
+                 "is rank 1. Everything is measured off the pole's own scale, so this is the only " +
+                 "number that has to change - how tall a wall it will climb, how deep a drop it " +
+                 "will reach down and where the hand-hang ends all follow.")]
         public float[] lengthByRank = { 1f, 1.5f };
 
         // Applied from here rather than OnEquipped because buying a rank does not change WHICH
@@ -19,11 +29,11 @@ namespace FallingWizard.Player
 
         public override void OnUnequipped(PlayerLogic wizard) => wizard.SetStaffLength(1f);
 
-        // Two ways in, and which one you get is decided by what is in front of you rather than
-        // by a second button. A ledge means the staff goes over it and you climb DOWN; anything
-        // else means the staff goes UP against whatever is there, and you climb it.
+        // One button, two directions, and which one you get is decided by the ground rather than
+        // by a second button: a drop in front of you means down, a wall means up. Both end with
+        // the wizard hanging on the same pole, driven by the same stick.
         public override bool CanCast(PlayerLogic wizard) =>
-            wizard.StaffIsPlantedAs(StaffMode.Ladder) ||
+            wizard.IsOnStaff ||
             (wizard.StaffIsFree && (wizard.movement.IsAtEdge || wizard.CanClimbHere));
 
         public override string WhyNot(PlayerLogic wizard)
@@ -37,39 +47,49 @@ namespace FallingWizard.Player
             if (wizard.State != PlayerState.Normal)
                 return $"you are {wizard.State}";
 
-            // Asked POSITIVELY, and never off IsAtEdge. That flag is a physics step old - it is
-            // not refreshed while the wizard is on the staff - and it says only that ground is
-            // MISSING ahead, not that a pole can be driven in there. Testing it left the one
-            // case that actually needs explaining, a ledge the staff cannot use, returning null
-            // and printing nothing at all.
-            bool ledge = wizard.movement.TryFindLedgeEdge(out _);
-
-            if (!ledge && !wizard.CanClimbHere)
-                return "there is no ledge to hang the staff over and nothing ahead of you it " +
-                       "will reach the top of";
-
-            if (ledge)
+            // Asked POSITIVELY, and never off IsAtEdge - that flag is a physics step old and it
+            // says only that ground is MISSING ahead, not that a pole can be driven in there.
+            if (wizard.movement.TryFindLedgeEdge(out _))
                 return "the drop here is too shallow for the staff to reach down into";
 
-            return "the wall ahead is too tall for the staff to reach the top of";
+            // Split so the console names the ACTUAL refusal. "Nothing to climb" and "too tall to
+            // climb" are the same silence to a player and completely different problems to fix.
+            if (!wizard.movement.TryFindWall(wizard.Pole.ClimbHeight, out _))
+                return "there is nothing within reach in front of you to raise the staff against";
+
+            return "what is ahead of you is too tall for the staff, or there is no room to stand " +
+                   "on top of it";
         }
 
-        public override bool OnCast(PlayerLogic wizard)
+        // Every fixed step the button is down.
+        public override void OnHeld(PlayerLogic wizard, float heldSeconds, float fixedDeltaTime)
         {
-            if (wizard.IsOnStaff)
-            {
-                wizard.DropFromStaff();
-                return true;
-            }
+            // Already hanging on the pole. The stick drives it from there - up at the top steps
+            // off onto the ledge, down at the bottom lets go - and this button has nothing to
+            // add. Releasing it does NOT drop them off, because a climb is a place you are, not
+            // a button you are holding.
+            if (wizard.IsOnStaff || !wizard.StaffIsFree)
+                return;
 
-            // The ledge first, so the descent behaves exactly as it always has. Falling through
-            // to the climb when that refuses is deliberate: at the very lip of a step both are
-            // arguably true, and being carried up is the more useful of the two answers when the
-            // drop was too shallow to plant over.
+            // The staff goes up whether or not there turns out to be anything to climb. That is
+            // the whole of what the player is promised for holding the button, and it is what
+            // makes a refusal legible: staff up and going nowhere means nothing here, rather
+            // than a press that vanished.
+            wizard.RaiseStaff();
+
+            // A drop wins. The pole goes over the lip and they climb down it - asked every step
+            // rather than only the first, so walking up to a ledge with the button already held
+            // plants the moment the ledge arrives.
             if (wizard.movement.IsAtEdge && wizard.TryPlantStaff(StaffMode.Ladder))
-                return true;
+                return;
 
-            return wizard.TryClimbStaff();
+            wizard.TryClimbStaff();
         }
+
+        public override void OnReleased(PlayerLogic wizard, float heldSeconds) =>
+            wizard.LowerStaff();
+
+        // The button came up behind a pause menu, where nothing is watching for the release.
+        public override void OnChargeLost(PlayerLogic wizard) => wizard.LowerStaff();
     }
 }

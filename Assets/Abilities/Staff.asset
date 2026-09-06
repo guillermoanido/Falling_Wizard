@@ -14,14 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   id: staff
   displayName: Staff
-  description: At a ledge, plant it and climb down. Anywhere else, raise it against what is in front of you and climb up.
+  description: Hold it up against a wall and climb, as high as the staff is long. At a ledge it goes over the lip and you climb down instead.
   icon: {fileID: 0}
   cost: 0
   locked: 1
   fixedSlot: 0
   passive: 0
-  pressBuffer: 0.12
-  chargesOnHold: 0
+  pressBuffer: 0
+  chargesOnHold: 1
   activeDuration: 0
   cooldown: 0
   usesPerLevel: 0
@@ -29,7 +29,7 @@ MonoBehaviour:
   upgrades:
   - cost: 1
     title: Longer staff
-    description: Half again as long, so it reaches drops that used to be too deep and walls that used to be too tall.
+    description: Half again as long, so it climbs walls that used to be too tall and reaches drops that used to be too deep.
   lengthByRank:
   - 1
   - 1.5

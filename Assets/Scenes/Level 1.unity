@@ -2353,7 +2353,7 @@ MonoBehaviour:
       groundFriction: 40
       airControl: 0.7
       steerDeadzone: 0.01
-      canJump: 1
+      canJump: 0
       jumpHeight: 1.5
       coyoteTime: 0.12
       jumpBuffer: 0.12
@@ -2376,7 +2376,7 @@ MonoBehaviour:
       slopeProbeDepth: 0.5
       stepHeight: 0.25
       stepReach: 0.1
-      climbReach: 0.25
+      climbReach: 0.35
       surfaceFriction: 0
       windDecay: 24
     ragdoll:

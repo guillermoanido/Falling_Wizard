@@ -14,12 +14,13 @@ Every number in the game is expressed in boxes or boxes per second:
 | | |
 | --- | --- |
 | Run / walk | 6 and 2 boxes per second |
-| Jump | 2 boxes |
+| Staff climb | about 1.9 boxes of wall — there is no jump |
 | Free fall | 3 boxes |
 | Fall damage | 1 heart per box past that — so 8 boxes kills a full-health wizard |
 | Staff reach | pole height + the wizard's hand-hang, about 1.9 boxes |
 
-Jump height being under the damage floor is deliberate: a jump can never hurt you.
+The climb being under the damage floor is deliberate: going up something the staff can reach and
+coming back down it can never hurt you.
 
 ## Layout
 
@@ -33,33 +34,19 @@ Jump height being under the damage floor is deliberate: a jump can never hurt yo
 | `UI/` | `PlayerHud`, `HudSlot`, `FlingArc`, `Ui` and the two runtime screens |
 | `Menus/`, `Cutscenes/` | `MenuScreen` and the three menus; `CutsceneRunner` |
 
-### Two classes, thirteen files
+### Three files hold the whole wizard
 
 `Movement`, `Ragdoll`, `Health`, `Modifiers`, `Vine`, `Spellbook`, `Intent` and `Command` are all
-**nested classes of `PlayerLogic`** — they are parts of a wizard and meaningless on their own, so
-they stay inside it rather than becoming eight top-level types called things like `Health`. `Staff`
-likewise contains `Staff.Pole`. Nested `[Serializable]` classes serialize exactly like top-level
-ones and show up as foldouts in the inspector.
+**nested classes of `PlayerLogic`**, in `PlayerLogic.cs` with it — they are parts of a wizard and
+meaningless on their own, so they stay inside it rather than becoming eight top-level types called
+things like `Health`. `Staff.cs` likewise holds `Staff.Pole`. Nested `[Serializable]` classes
+serialize exactly like top-level ones and show up as foldouts in the inspector.
 
-Nesting is not the same thing as living in one file, though, and they no longer do. Both are
-`partial`, split one part per file, named for what is in them:
-
-| | |
-| --- | --- |
-| `PlayerLogic.cs` | The state machine, and every verb the world calls: `Trip`, `Bounce`, `Push`, `Hurt`, `TryPlantStaff`. Plus `Intent` and `Command`, which are what it is told. |
-| `PlayerLogic.Movement.cs` | Every tunable, the derived numbers, `Attach`, `FixedTick`, the external forces, `Validate` and the gizmos. |
-| `PlayerLogic.Movement.Sensing.cs` | What is under and in front of the wizard: `SenseGround`, `SenseSlope`, `TryFindLedgeEdge`, `TryFindLip`, `TryFindClimb`. Answers questions; moves nothing. |
-| `PlayerLogic.Movement.Locomotion.cs` | What moves them: `Run`, `TryRunAlongRamp`, `TryStepUp`, `TryJump`, `ApplyFallGravity`. |
-| `PlayerLogic.Movement.Arc.cs` | `PredictArc` and what it answers with. |
-| `PlayerLogic.Health.cs`, `.Modifiers.cs`, `.Ragdoll.cs`, `.Vine.cs`, `.Spellbook.cs` | One part each. |
-| `Staff.cs` | The `MonoBehaviour`: the rig in the scene and nothing about how a pole behaves. |
-| `Staff.Pole.cs` | What the pole is — binding, anchoring, length, geometry. |
-| `Staff.Pole.Planting.cs` | How it goes in: `Plant`, `PlantAsLadder`, `PlantAsClimb`, `PlantAsBridge`. |
-| `Staff.Pole.Riding.cs` | What happens while you are on it: `Slide`, `Release`, `PositionAt`. |
-
-**Every serialized field of a class stays in that class's own file**, all of them together. Unity
-lays the inspector out in reflection order, and reflection order across `partial` files is not
-something the language promises — split the fields and the `[Header]`s scramble.
+They are long files and that is the trade: **one script per thing in Unity's Project window.**
+Splitting them across `partial` files was tried and taken back out — a wizard that shows up as nine
+scripts is harder to find your way around in the editor than one long file is to scroll, and Unity
+lays the inspector out in reflection order, which across `partial` files is not something the
+language promises.
 
 ### Rules that keep it working
 
@@ -783,36 +770,69 @@ A child of the wizard with its own hitbox and sprite. **The hitbox's height is t
 the wizard travels its span and then the length of their own hand-hang past the tip, so a taller
 collider is a longer climb and nothing else has to be told about it.
 
-**Ladder** is the only mode a spell reaches today, and it has **two doors**. Which one you get is
-decided by what is in front of you, not by a second button.
+**`Movement.canJump` is off**, and the staff is what replaced it. Nothing else in the game takes
+the wizard upward under their own power.
 
-*Down*, when you are stood at a ledge: the pole is driven in just past the lip with its top flush to
-the ledge, so the far end is where your feet will end up and you can read the drop off it. Slide
-down, and keep pushing down at the bottom to let go.
+It is a **held** button, not a pressed one, and that is not cosmetic. A press is a single instant:
+if the wall was a finger's width too far away on that instant, nothing happened and nothing said
+why. A hold asks again every physics step — raise the staff, look, and the moment the wizard
+shuffles into range they go up. Holding it with nothing in front of you is not a failure, it is the
+answer: the staff is in the air and you are still on the ground.
 
-*Up*, when you are not: the staff is raised against whatever is ahead, and `Movement.TryFindClimb`
-asks whether it caught anything — a forward cast for the face, a downward cast for the top, and an
-`OverlapBox` proving the whole wizard fits up there. It starts looking **above** the step assist, so
-a tile seam can never put the staff spell in front of you, and it refuses a wall taller than the
-pole by rejecting a down-cast that reports distance zero. That zero is `queriesStartInColliders`
-biting: a cast beginning inside a tall wall answers with a top at exactly the height it was asked
-about, which would make every tower in the level read as climbable right up until you were left
-dangling against it.
+Two directions, and which one you get is decided by the ground rather than by a second button.
+Both end with the wizard hanging on the same pole, driven by the same stick.
 
-The climb runs **straight up the near face** — `PositionAt` short-circuits its swing for a climb.
-The swing lerps you towards where the *pole* is, and on a descent that is out over the drop, away
-from anything solid; raised against a wall the pole is *on* the face, so the same lerp would walk
-you into it while you were still below the lip with nowhere for the collider to go. Stepping over
-the lip happens once, on release, to the spot `TryFindClimb` already proved empty — and while the
-body is still kinematic, so nothing has to be resolved out of the wall afterwards.
+*Down*, at a ledge: the pole is driven in just past the lip with its top flush to the ledge, so the
+far end is where your feet will end up and you can read the drop off it. Slide down, and keep
+pushing down at the bottom to let go.
 
-**A drop always wins.** A wall and a ledge can both answer within a quarter box of each other at
-the lip of a step, and leaving that to whichever cast ran first would have the staff go up or down
-there at random — so `CanClimbHere` and `TryClimbStaff` both refuse outright while `IsAtEdge` is up,
-before either probe is asked. There is deliberately no `Validate` warning comparing `climbReach`
-against `ledgeCheckAhead`: the wall probe genuinely does reach further once the wizard's own
-half-width is counted, so such a warning would be a guarantee about a race that cannot happen, and
-somebody would trust it.
+*Up*, against a wall: `Movement.TryFindClimb` measures the wall, `Staff.Pole.PlantAsClimb` stands
+the pole against it, and from there it is the identical ride — push up to climb, push up at the top
+to step over the lip. Releasing the button does **not** drop you off: a climb is a place you are,
+not a button you are holding.
+
+**A drop wins.** A wall and a ledge can both answer within a quarter box of each other at the lip
+of a step, and leaving that to whichever cast ran first would send the staff up or down there at
+random — so `CanClimbHere` and `TryClimbStaff` refuse outright while `IsAtEdge` is up, before the
+wall is even looked for.
+
+### Finding the wall, and the one ray that used to miss it
+
+`Movement.TryFindWall` casts forward from the toes at a **fan of heights**, every quarter box from
+the step assist up to the top of the staff's reach. The nearest hit across the fan is the face.
+
+It used to be one ray, at one height, a hair above the step assist — and that is the whole reason
+the staff answered "no wall" while the wizard stood flush against one. A tile whose collider is
+bevelled, notched, or simply starts a few pixels up is empty at exactly that height and solid
+everywhere else. One ray, one chance, and the failure was silent.
+
+Taking the **nearest** hit is also what makes a staircase behave: the first tread is the closest
+thing ahead, so the top found is that tread's — a tenth of a box up, under the step assist, refused
+here and walked over instead.
+
+From the face, `TryFindClimb` casts **down** from as high as the staff reaches, inset past the face
+so the ray lands on the surface rather than skimming the wall it is measuring. A down-cast that
+reports **distance zero** is refused: `queriesStartInColliders` is on in this project, so a cast
+beginning inside a tall wall answers with a top at exactly the height it was asked about, which
+would make every tower in the level read as climbable right up until you were left dangling.
+
+Then two overlaps: the wizard has to fit standing on the lip, and the space **above their head**
+has to be clear all the way up. That second box is narrow — six tenths of their width, centred on
+them — because the wall is a hand's breadth away and a full-width box catches it every time. A
+full-width column check is what made the first version refuse while the wizard stood flush against
+exactly the wall it had been asked about.
+
+`Movement.DrawGizmos` draws the whole fan from the toes. A wall the wizard is plainly against that
+none of those lines reaches is a wall the staff will refuse, and there is no other way to see it.
+
+### When it still says no
+
+A held spell never expires a buffered press, so the console line `Spellbook` prints for an ordinary
+refused press could never fire for this one — a button held down with nothing happening was exactly
+the silence that line exists to break. `Spellbook.AdvanceCharge` now reports a hold that is coming
+to nothing, once, after a third of a second, and `StaffAbility.WhyNot` splits the two cases that
+look identical from the outside: *nothing in reach to raise it against*, and *what is ahead is too
+tall, or there is no room on top of it*.
 
 `Staff.cs` can still lay the pole flat as a **Bridge** — `StaffMode.Bridge`, `PlantAsBridge`, and a
 separate solid collider on a child on the Ground layer, because the staff itself is on the Player
