@@ -52,13 +52,40 @@ namespace FallingWizard.Player
             if (wizard.movement.TryFindLedgeEdge(out _))
                 return "the drop here is too shallow for the staff to reach down into";
 
-            // Split so the console names the ACTUAL refusal. "Nothing to climb" and "too tall to
-            // climb" are the same silence to a player and completely different problems to fix.
-            if (!wizard.movement.TryFindWall(wizard.Pole.ClimbHeight, out _))
-                return "there is nothing within reach in front of you to raise the staff against";
+            // The measurement the search already took, put into words. Four different things can
+            // refuse a climb and from the outside they are the same silence - so the console
+            // names the one that actually happened, with the number it turned on.
+            PlayerLogic.Movement walk = wizard.movement;
 
-            return "what is ahead of you is too tall for the staff, or there is no room to stand " +
-                   "on top of it";
+            switch (walk.WhyNoClimb)
+            {
+                case PlayerLogic.Movement.ClimbRefusal.NotStanding:
+                    return "you are not stood on anything to raise the staff from";
+
+                case PlayerLogic.Movement.ClimbRefusal.NoWall:
+                    return $"there is nothing within {walk.climbReach:0.00} boxes in front of " +
+                           "you to raise the staff against - walk right up to it, or raise " +
+                           "Movement.climbReach";
+
+                case PlayerLogic.Movement.ClimbRefusal.NothingOnTop:
+                    return $"there is a wall ahead but nothing to stand on within the staff's " +
+                           $"{walk.ClimbCanReach:0.00} boxes of reach";
+
+                case PlayerLogic.Movement.ClimbRefusal.TooTall:
+                    return $"what is ahead is taller than the staff, which reaches " +
+                           $"{walk.ClimbCanReach:0.00} boxes up";
+
+                case PlayerLogic.Movement.ClimbRefusal.NoRoomOnTop:
+                    return $"the top is {walk.ClimbRise:0.00} boxes up, which the staff can " +
+                           "reach, but the wizard does not fit standing on it - something is in " +
+                           "the way just past the lip";
+
+                case PlayerLogic.Movement.ClimbRefusal.NoHeadroom:
+                    return $"the top is {walk.ClimbRise:0.00} boxes up, which the staff can " +
+                           "reach, but something is in the way directly above the wizard's head";
+            }
+
+            return null;
         }
 
         // Every fixed step the button is down.

@@ -851,6 +851,34 @@ namespace FallingWizard.Player
             [NonSerialized] float groundAngle;
             [NonSerialized] bool climbedLastStep;
 
+            // Why the last look for a climb came to nothing, and what it measured on the way.
+            // Recorded rather than returned, so the hot path stays a bool and nothing builds a
+            // string sixty times a second - the spell turns this into words only when it is
+            // about to print one, and DrawGizmos turns it into a red box.
+            public enum ClimbRefusal
+            {
+                None,
+                NotStanding,
+                NoWall,
+                NothingOnTop,
+                TooTall,
+                NoRoomOnTop,
+                NoHeadroom,
+            }
+
+            public ClimbRefusal WhyNoClimb { get; private set; }
+
+            // In boxes: how far up the top of the thing ahead turned out to be, and how far up
+            // the staff would have carried the wizard. Both are 0 until a wall has been found.
+            public float ClimbRise { get; private set; }
+            public float ClimbCanReach { get; private set; }
+
+            // The two boxes the climb has to find empty, kept so the scene view can draw them.
+            // Seeing WHICH one is red is the difference between a guess and a measurement.
+            [NonSerialized] Vector2 standBox;
+            [NonSerialized] Vector2 headBox;
+            [NonSerialized] Vector2 headBoxSize;
+
             public bool IsGrounded { get; private set; }
 
             // Counts up every time the wizard leaves the ground. A spell that should only fire
@@ -1142,6 +1170,34 @@ namespace FallingWizard.Player
                     var from = new Vector2(toes, soles + height);
                     Gizmos.DrawLine(from, from + new Vector2(Facing * climbReach, 0f));
                 }
+
+                // The two boxes the climb needs empty, drawn where they were last asked about.
+                // Red is the one that refused - which turns "the staff does nothing here" into
+                // a thing you can point at.
+                // Only the outcomes that actually MEASURED them. Drawing a box left over from
+                // some earlier frame, in red, beside a wall it was never asked about is worse
+                // than drawing nothing - it is a lie you would go and act on.
+                bool measured = WhyNoClimb == ClimbRefusal.None ||
+                                WhyNoClimb == ClimbRefusal.NoRoomOnTop ||
+                                WhyNoClimb == ClimbRefusal.NoHeadroom;
+
+                if (hull == null || !measured)
+                    return;
+
+                Gizmos.color = WhyNoClimb == ClimbRefusal.NoRoomOnTop
+                    ? Color.red
+                    : new Color(0.4f, 1f, 0.5f, 0.8f);
+
+                Gizmos.DrawWireCube(standBox, hull.bounds.size);
+
+                if (headBoxSize.y <= 0f)
+                    return;
+
+                Gizmos.color = WhyNoClimb == ClimbRefusal.NoHeadroom
+                    ? Color.red
+                    : new Color(0.4f, 1f, 0.5f, 0.5f);
+
+                Gizmos.DrawWireCube(headBox, headBoxSize);
             }
 
             public bool TryFindLedgeEdge(out float edgeX)
@@ -1367,10 +1423,18 @@ namespace FallingWizard.Player
             // It answers with the LIP - the top corner - and with the body position that standing
             // on it means, already proved empty. Both come back together because the same casts
             // find them and nothing else in the game has any business recomputing either one.
+            //
+            // Every way out records WHY in WhyNoClimb. Four different things can refuse here and
+            // they are the same silence from the outside, which is what made this impossible to
+            // chase: "no wall", "too tall", "nothing to stand on" and "your head is in the way"
+            // all read as a button that does nothing.
             public bool TryFindClimb(float highestRise, out Vector2 lip, out Vector2 landing)
             {
                 lip = Vector2.zero;
                 landing = Vector2.zero;
+
+                ClimbRise = 0f;
+                ClimbCanReach = highestRise;
 
                 if (!TryFindWall(highestRise, out float faceX))
                     return false;
@@ -1385,7 +1449,10 @@ namespace FallingWizard.Player
 
                 if (Physics2D.Raycast(above, Vector2.down, GroundFilter, Rays,
                         highestRise - stepHeight) <= 0)
+                {
+                    WhyNoClimb = ClimbRefusal.NothingOnTop;
                     return false;
+                }
 
                 // Distance zero means the cast STARTED inside the wall - queriesStartInColliders
                 // is on in this project - so whatever is ahead carries on up past the staff's
@@ -1393,9 +1460,13 @@ namespace FallingWizard.Player
                 // a top at exactly the height it was asked about, and every tower in the level
                 // reads as climbable right up until the wizard is left dangling against it.
                 if (Rays[0].distance <= 0f)
+                {
+                    WhyNoClimb = ClimbRefusal.TooTall;
                     return false;
+                }
 
                 lip = new Vector2(faceX, Rays[0].point.y);
+                ClimbRise = lip.y - soles;
 
                 // Where the COLLIDER would sit stood on top of that lip, and then where the BODY
                 // would have to be to put it there. The two are not the same point - the wizard's
@@ -1405,11 +1476,23 @@ namespace FallingWizard.Player
                     faceX + Facing * (box.extents.x + StepClearance),
                     lip.y + box.extents.y + StepClearance);
 
+                standBox = hullOnTop;
+
                 // The whole wizard has to fit up there. The same query TryStepUp uses, doing two
                 // jobs at once: headroom, and proof that the surface found is the top of
                 // something rather than a shelf inside a hole.
-                if (Physics2D.OverlapBox(hullOnTop, box.size, 0f, GroundFilter, Overlaps) > 0)
+                //
+                // Shrunk by a hair on both axes. The tiles in this level are sliced 34x35 px on a
+                // 32 px grid, so a tile is drawn and collides about a pixel proud of its cell and
+                // a gap the grid calls one box is a shade under one - which is a wizard 1.05
+                // boxes tall failing to fit somewhere they are plainly meant to stand.
+                var standing = (Vector2)box.size - Vector2.one * (StepClearance * 2f);
+
+                if (Physics2D.OverlapBox(hullOnTop, standing, 0f, GroundFilter, Overlaps) > 0)
+                {
+                    WhyNoClimb = ClimbRefusal.NoRoomOnTop;
                     return false;
+                }
 
                 // And the space they RISE THROUGH on the way, which is only the part above their
                 // head - where they already are is by definition somewhere they fit. Narrow, at
@@ -1417,18 +1500,20 @@ namespace FallingWizard.Player
                 // hand's breadth away and a full-width box would catch it every time: that is
                 // what made the first version of this refuse while the wizard stood flush against
                 // exactly the wall it was asked about.
-                float headroom = lip.y + box.size.y + StepClearance - box.max.y;
+                float headroom = hullOnTop.y + box.extents.y - box.max.y;
 
-                if (headroom > 0f)
+                headBox = new Vector2(box.center.x, box.max.y + headroom * 0.5f);
+                headBoxSize = new Vector2(box.size.x * 0.6f, Mathf.Max(0f, headroom));
+
+                if (headroom > 0f &&
+                    Physics2D.OverlapBox(headBox, headBoxSize, 0f, GroundFilter, Overlaps) > 0)
                 {
-                    var column = new Vector2(box.center.x, box.max.y + headroom * 0.5f);
-                    var columnSize = new Vector2(box.size.x * 0.6f, headroom);
-
-                    if (Physics2D.OverlapBox(column, columnSize, 0f, GroundFilter, Overlaps) > 0)
-                        return false;
+                    WhyNoClimb = ClimbRefusal.NoHeadroom;
+                    return false;
                 }
 
                 landing = hullOnTop + (body.position - (Vector2)box.center);
+                WhyNoClimb = ClimbRefusal.None;
                 return true;
             }
 
@@ -1450,7 +1535,10 @@ namespace FallingWizard.Player
                 faceX = 0f;
 
                 if (body == null || hull == null || !IsGrounded || highestRise <= stepHeight)
+                {
+                    WhyNoClimb = ClimbRefusal.NotStanding;
                     return false;
+                }
 
                 Bounds box = hull.bounds;
                 var forward = new Vector2(Facing, 0f);
@@ -1471,6 +1559,9 @@ namespace FallingWizard.Player
 
                     found = true;
                 }
+
+                if (!found)
+                    WhyNoClimb = ClimbRefusal.NoWall;
 
                 return found;
             }

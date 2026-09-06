@@ -132,6 +132,11 @@ namespace FallingWizard.Player
             // and a long staff will magnify it into something they can.
             const float MaxFootDrift = 0.01f;
 
+            // How much smaller the landing re-check is than the wizard. Bigger than the 0.02 a
+            // box inset Movement.TryFindClimb uses, so the two can never disagree about a spot
+            // that has not changed - see LandingIsClear.
+            const float LandingSlack = 0.06f;
+
             // Reused rather than allocated per query.
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(4);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
@@ -562,8 +567,12 @@ namespace FallingWizard.Player
                 if (pole == null)
                     return;
 
+                // Raising it moves it UP and nothing else. Centring it as well made the staff
+                // hop sideways across the wizard the instant the button went down, which reads
+                // as the prop being teleported rather than lifted - and it is carried on the
+                // side it is carried on for a reason: that is where the hand is.
                 pole.localPosition = new Vector3(
-                    raised ? 0f : sideOffset * facing,
+                    sideOffset * facing,
                     restPosition.y + (raised ? raiseHeight : 0f),
                     restPosition.z);
 
@@ -659,12 +668,15 @@ namespace FallingWizard.Player
                     return false;
                 }
 
-                // ClearReach stops the pole reaching down through the floor - which on a climb is
-                // the floor the wizard is stood on, so it answers with their own starting depth to
-                // the last decimal place. Taking whichever is larger means a rounding error there
-                // cannot leave them a hair past the bottom of their own pole, where Slide's clamp
-                // would snap them upward on the very first step.
-                reach = Mathf.Max(depth, ClearReach(climbHeight));
+                // The travel IS the wall. A descent has to measure how far down the pole can go
+                // before it meets the ground, because it starts at the top and the ground is
+                // somewhere below; a climb starts ON the ground, so the answer is already in
+                // hand. Asking ClearReach here and taking the larger of the two is how the
+                // wizard ended up with a reach LONGER than the wall whenever that downward cast
+                // missed the floor - and Slide would then happily clamp them below the floor
+                // they were stood on, straight through it, because the body is kinematic while
+                // it climbs and nothing in the level can stop it.
+                reach = depth;
 
                 climbing = true;
                 climbLanding = landing;
@@ -853,7 +865,25 @@ namespace FallingWizard.Player
                 Bounds box = wielderHitbox.bounds;
                 Vector2 hullAt = climbLanding + ((Vector2)box.center - wielder.position);
 
-                return Physics2D.OverlapBox(hullAt, box.size, 0f, GroundFilter, Overlaps) == 0;
+                // Deliberately MORE forgiving than Movement.TryFindClimb was when it approved
+                // this spot, and that ordering is the whole point of the number. This re-check
+                // exists to catch something NEW arriving during the climb - a rock set down in
+                // the gap - not to second-guess the measurement that got the wizard up here. The
+                // moment it is the stricter of the two, a climb that was allowed to start cannot
+                // finish: the wizard tops out, the landing is refused, and they are let go in
+                // mid-air beside the wall and fall back down it. Which is exactly what happened.
+                var room = (Vector2)box.size - Vector2.one * LandingSlack;
+
+                if (Physics2D.OverlapBox(hullAt, room, 0f, GroundFilter, Overlaps) == 0)
+                    return true;
+
+#if UNITY_EDITOR
+                Debug.LogWarning("A staff climb reached the top and then could not be set down " +
+                                 "on it, so the wizard was let go in mid-air and fell. Something " +
+                                 "on the ground layer is in the way just past the lip.", pole);
+#endif
+
+                return false;
             }
 
             public Vector2 PositionAt(float atDepth)
