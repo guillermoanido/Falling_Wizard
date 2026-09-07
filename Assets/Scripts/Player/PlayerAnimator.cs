@@ -23,29 +23,18 @@ namespace FallingWizard.Player
         static readonly int HurtId = Animator.StringToHash("Hurt");
 
         [Header("Ragdoll")]
-        [Tooltip("How many different landing reactions there are. The rig builds one Ragdoll " +
-                 "state per variant, and the wizard cycles to the next one every time they go " +
-                 "over AND every time they hit the floor on the way down. Raise it and rebuild " +
-                 "the controller from the Falling Wizard menu to get the extra states.")]
+        [Tooltip("How many ragdoll reactions to build and cycle through. Rebuild after changing.")]
         [Min(1)] public int ragdollVariants = 4;
 
         [Header("Locomotion")]
-        [Tooltip("Speed under which the wizard counts as standing still, in boxes per second. " +
-                 "Matched to Movement's own idea of a standstill so the feet do not scuff on the " +
-                 "last hair of ground friction.")]
+        [Tooltip("Speed below which the wizard counts as standing still, in boxes per second.")]
         [Min(0f)] public float standStillSpeed = 0.1f;
 
-        [Tooltip("Clamp on the cycle-rate multiplier handed to Walk and Run, so a wizard shoved " +
-                 "by wind or hasted past their own top speed speeds their legs up rather than " +
-                 "blurring, and one wading through treacle still picks their feet up.")]
+        [Tooltip("Min and max cycle-rate multiplier for Walk and Run.")]
         public Vector2 cycleRateRange = new Vector2(0.5f, 1.5f);
 
         [Header("Staff")]
-        [Tooltip("Hide the separate Staff art while the wizard is carrying it, for art that " +
-                 "already draws the staff into the character's own frames. Leave it OFF if your " +
-                 "sprites do not include the staff, or the wizard walks around empty-handed. " +
-                 "The real staff always comes back the moment it is planted, because from then " +
-                 "on the pole owns where it is and the drawing has to agree with it.")]
+        [Tooltip("Hide the separate staff art while carried, for art that draws it into the character.")]
         public bool staffIsDrawnIntoTheArt = false;
 
         Animator animator;

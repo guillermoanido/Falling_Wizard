@@ -141,18 +141,10 @@ namespace FallingWizard.Player
                      "enough to feel instant, long enough that sliding down is not a drop.")]
             [Min(0f)] public float dropHoldTime = 0.2f;
 
-            [Tooltip("Seconds after the staff comes out of the ground before it will go back in. " +
-                     "The spell is HELD, so without this the button that was still down at the " +
-                     "end of one ride plants the next on the very frame the wizard lets go - " +
-                     "which at the bottom of a descent is the pole reaching for the floor they " +
-                     "have just climbed down onto. Counted from the release rather than from the " +
-                     "plant, so it never interrupts a ride in progress.")]
+            [Tooltip("Seconds after the staff is released before it can be planted again.")]
             [Min(0f)] public float cooldown = 0.5f;
 
-            [Tooltip("How far the staff is lifted overhead while the wizard looks for something " +
-                     "to climb, in boxes. This is REACH, not just a picture: a climb goes as high " +
-                     "as the pole plus the hand-hang plus this, so raising it further genuinely " +
-                     "buys a taller wall. A descent does not get it - see ClimbUpHeight.")]
+            [Tooltip("How far the staff is lifted overhead, in boxes. Adds to climb reach.")]
             [Min(0f)] public float raiseHeight = 0.6f;
 
             [Header("Planting")]

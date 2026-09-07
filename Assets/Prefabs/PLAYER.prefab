@@ -446,6 +446,7 @@ MonoBehaviour:
     swingDepth: 0.5
     leanThreshold: 0.5
     dropHoldTime: 0.2
+    cooldown: 0.5
     raiseHeight: 0.6
     lipClearance: 0.15
     gripHeight: 0.25
