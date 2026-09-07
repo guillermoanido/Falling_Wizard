@@ -92,10 +92,28 @@ namespace FallingWizard.Player
         public override void OnHeld(PlayerLogic wizard, float heldSeconds, float fixedDeltaTime)
         {
             // Already hanging on the pole. The stick drives it from there - up at the top steps
-            // off onto the ledge, down at the bottom lets go - and this button has nothing to
-            // add. Releasing it does NOT drop them off, because a climb is a place you are, not
-            // a button you are holding.
-            if (wizard.IsOnStaff || !wizard.StaffIsFree)
+            // off onto the ledge, down at the bottom lets go - and HOLDING this button has
+            // nothing to add. Releasing it does NOT drop them off, because a climb is a place
+            // you are, not a button you are holding.
+            //
+            // A fresh press does, though: the button that put them on the pole takes them off
+            // it again, wherever up or down the wall they have got to. Without it the only ways
+            // off are the two ends of the pole, which is no use half way up a wall you have
+            // changed your mind about - and worse on the way DOWN, where the bottom is the drop
+            // you were trying not to take.
+            if (wizard.IsOnStaff)
+            {
+                // The first physics step of a hold and only that. Spellbook zeroes HeldFor on
+                // release and adds exactly one step before calling in, so this is the press
+                // edge itself. Read it any looser and the press that STARTED the climb would
+                // drop the wizard off it on the very next step.
+                if (heldSeconds <= fixedDeltaTime)
+                    wizard.DropFromStaff();
+
+                return;
+            }
+
+            if (!wizard.StaffIsFree)
                 return;
 
             // The staff goes up whether or not there turns out to be anything to climb. That is

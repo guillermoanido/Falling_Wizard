@@ -298,7 +298,7 @@ namespace FallingWizard.Player
         // the wizard has since walked away from.
         public bool CanClimbHere =>
             StaffIsFree && !movement.IsAtEdge &&
-            movement.TryFindClimb(pole.ClimbHeight, out _, out _);
+            movement.TryFindClimb(pole.ClimbUpHeight, out _, out _);
 
         // The same ladder, raised from the bottom. TryPlantStaff hangs the pole off a ledge the
         // wizard is stood ON; this raises it against a wall they are stood UNDER, and from there
@@ -315,7 +315,7 @@ namespace FallingWizard.Player
             if (movement.IsAtEdge)
                 return false;
 
-            if (!movement.TryFindClimb(pole.ClimbHeight, out Vector2 lip, out Vector2 landing))
+            if (!movement.TryFindClimb(pole.ClimbUpHeight, out Vector2 lip, out Vector2 landing))
                 return false;
 
             if (!pole.PlantAsClimb(movement.Facing, lip, landing))

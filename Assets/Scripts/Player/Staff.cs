@@ -156,15 +156,21 @@ namespace FallingWizard.Player
                      "enough to feel instant, long enough that sliding down is not a drop.")]
             [Min(0f)] public float dropHoldTime = 0.2f;
 
-            [Tooltip("How far the staff is lifted overhead while the wizard climbs it, in boxes. " +
-                     "Picture only - the height they actually reach is measured off the pole's " +
-                     "hitbox and this does not touch it.")]
+            [Tooltip("How far the staff is lifted overhead while the wizard looks for something " +
+                     "to climb, in boxes. This is REACH, not just a picture: a climb goes as high " +
+                     "as the pole plus the hand-hang plus this, so raising it further genuinely " +
+                     "buys a taller wall. A descent does not get it - see ClimbUpHeight.")]
             [Min(0f)] public float raiseHeight = 0.6f;
 
             [Header("Planting")]
             [Tooltip("How far past the lip of the ledge the pole is driven in, so it hangs clear " +
                      "of the ledge face instead of scraping down it.")]
             public float lipClearance = 0.15f;
+
+            [Tooltip("How far the top of the pole juts ABOVE the lip on a climb, so it reads as " +
+                     "hooked over the ledge rather than stood beside the wizard. Picture only - " +
+                     "how high they actually reach is ClimbUpHeight, and this does not touch it.")]
+            [Min(0f)] public float lipOverhang = 0.5f;
 
             [Tooltip("How far above their middle the wielder grips. They can lower themselves " +
                      "until that grip reaches the very end of the pole, so the last stretch is a " +
@@ -493,9 +499,21 @@ namespace FallingWizard.Player
             }
 
             // How far the staff carries the wizard: the pole itself, plus the hand-hang past
-            // its tip. The same number whichever way they are going - one staff is one distance -
-            // so it is both how deep a drop it will reach down and how tall a wall it will climb.
+            // its tip. This is the DESCENT reach. The pole goes over the lip from where the
+            // wizard already stands, so what they can reach down into is the pole and nothing
+            // else.
             public float ClimbHeight => MeasureReach() + HangBelowTip;
+
+            // Going UP reaches further, by exactly the height the staff is held overhead while
+            // the wizard looks for something to climb.
+            //
+            // raiseHeight used to be scenery - a picture that promised reach it did not deliver -
+            // so a wall the wizard was visibly stretching towards refused them over a distance
+            // they could watch themselves covering. Now the raise is the reach, which is also
+            // what makes the two directions honestly different numbers rather than one number
+            // used twice: a descent hangs the pole DOWN over a lip, and an overhead carry is the
+            // one thing that cannot help with that.
+            public float ClimbUpHeight => ClimbHeight + raiseHeight;
 
             public float MeasureReach()
             {
@@ -509,6 +527,7 @@ namespace FallingWizard.Player
             {
                 slideSpeed = Mathf.Max(MinSlideSpeed, slideSpeed);
                 raiseHeight = Mathf.Max(0f, raiseHeight);
+                lipOverhang = Mathf.Max(0f, lipOverhang);
                 swingDepth = Mathf.Max(0f, swingDepth);
                 dropHoldTime = Mathf.Max(0f, dropHoldTime);
             }
@@ -650,7 +669,7 @@ namespace FallingWizard.Player
                 plantedRotation = Quaternion.identity;
                 plantedPosition = new Vector3(
                     lip.x - facing * lipClearance,
-                    lip.y - TopAboveOrigin(),
+                    lip.y + lipOverhang - TopAboveOrigin(),
                     pole.position.z);
 
                 pole.SetPositionAndRotation(plantedPosition, plantedRotation);
@@ -660,7 +679,7 @@ namespace FallingWizard.Player
                 // pole is the whole gate - it is what stops a staff too short for the wall
                 // hauling the wizard up it anyway.
                 depth = anchor.y - wielder.position.y;
-                float climbHeight = ClimbHeight;
+                float climbHeight = ClimbUpHeight;
 
                 if (depth <= Epsilon || depth > climbHeight)
                 {
