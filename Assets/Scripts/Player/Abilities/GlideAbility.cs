@@ -3,10 +3,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // A paraglider, not a parachute. It barely slows the drop - the point is where you come down,
-    // not how hard. Note what it deliberately does NOT do: forgive fall damage. That was the old
-    // Feather Fall's whole reason to exist, and giving this spell both would make it two spells
-    // fighting over three buttons. Here you survive by going somewhere else.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Glide", fileName = "Glide")]
     public class GlideAbility : Ability
     {
@@ -57,9 +53,6 @@ namespace FallingWizard.Player
         [Tooltip("One block per rank. Element 0 is what learning it gives you.")]
         public Tier[] tiers = { new Tier() };
 
-        // Castable from the GROUND deliberately: every multiplier here is air-only, so throwing
-        // the canopy out and THEN running off a ledge is how you get the jump case. Gating on
-        // being airborne, the way the old Feather Fall did, would cost the spell half its job.
         public override bool CanCast(PlayerLogic wizard) => wizard.State == PlayerState.Normal;
 
         public override string WhyNot(PlayerLogic wizard) =>
@@ -92,12 +85,6 @@ namespace FallingWizard.Player
                 return;
             }
 
-            // Fold on LANDING, which means having been in the air since this cast - not
-            // "Movement.Airtime > 0", which is a lifetime counter that never goes back down.
-            // That guard only ever protected the first cast of a session: after one jump it is
-            // true forever, so throwing the canopy out while stood at a ledge folded it on the
-            // next physics step, put it on cooldown, and left the wizard falling at normal
-            // speed with no sign anything had happened.
             if (foldsOnLanding && wing.flown)
                 wizard.spellbook.Extinguish(this);
         }
@@ -171,7 +158,6 @@ namespace FallingWizard.Player
             [Min(1f)] public float airSpeed = 1.9f;
             [Min(0.5f)] public float airControl = 1.6f;
 
-            // OnValidate does not reach into a nested class, so the block clamps itself.
             public void Validate()
             {
                 fallSpeed = Mathf.Clamp(fallSpeed, 0.2f, 1f);
@@ -184,7 +170,6 @@ namespace FallingWizard.Player
         {
             public SpriteRenderer art;
 
-            // Airborne at some point since this cast, so touching down counts as landing.
             public bool flown;
         }
     }

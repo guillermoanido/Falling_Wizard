@@ -10,11 +10,8 @@ namespace FallingWizard.Menus
 {
     public class SettingsPanel : MonoBehaviour
     {
-        // The slider runs 0 to 1; players read volume as a percentage.
         const float AsPercent = 100f;
 
-        // Cached because Enum.GetValues allocates a fresh array every call, and this is read on
-        // every open of the panel.
         static readonly Language[] Languages = (Language[])Enum.GetValues(typeof(Language));
 
         [SerializeField] TMP_Dropdown resolutionDropdown;
@@ -61,8 +58,6 @@ namespace FallingWizard.Menus
                 EventSystem.current.SetSelectedGameObject(backButton.gameObject);
         }
 
-        // Nothing to add for the language: Loc saves it the moment it changes, because a language
-        // change repaints the panel you are standing in and there is no "apply" step to wait for.
         void OnDisable() => GameSettings.Save();
 
         void FillResolutionDropdown()
@@ -75,9 +70,6 @@ namespace FallingWizard.Menus
             resolutionDropdown.AddOptions(names);
         }
 
-        // Every language is written in ITS OWN language, never translated. The player hunting
-        // through this list is exactly the one who cannot read the menu it is sitting in, so a
-        // list that said "Spanish" in English and "Inglés" in Spanish would be no help to anyone.
         void FillLanguageDropdown()
         {
             if (languageDropdown == null)
@@ -108,9 +100,6 @@ namespace FallingWizard.Menus
             UpdateVolumeLabel(value);
         }
 
-        // Guarded because the dropdown's index and the enum are two lists that could drift apart -
-        // a stale options list left in the prefab, say. Reading past the end of Languages would
-        // otherwise throw from inside a UI callback, which swallows the stack trace.
         void OnLanguageChanged(int index)
         {
             if ((uint)index >= Languages.Length)

@@ -3,13 +3,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // A spectral hand that hangs where a vine hangs and swings like one.
-    //
-    // The range that decides whether you CAN call it and the range over which a grab may MOVE you
-    // are two different numbers, and conflating them was the teleport bug: eligibility is measured
-    // against the rope as a line segment, but the grab then lands you on a circular arc about the
-    // knot, clamped to the swing limit. Stood on the ledge the vine is tied to, those two points
-    // were four boxes apart - and the rope hauled you across the gap at fifteen times a run.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Mage Hand", fileName = "Mage Hand")]
     public class MageHandAbility : Ability
     {
@@ -81,8 +74,6 @@ namespace FallingWizard.Player
             if (vine == null || !wizard.TryGrabVine(Spec(wizard, vine)))
                 return false;
 
-            // The knot has been glowing at the player since they came into range; this is the
-            // moment it pays off and the hand actually reaches out.
             vine.CallDown();
 
             wizard.spellbook.StateOf<Grip>(this).held = vine;
@@ -113,8 +104,6 @@ namespace FallingWizard.Player
                 Anchor = vine.Knot,
                 Length = vine.length,
 
-                // The vine keeps its own ceiling and so does the wizard; the smallest of the
-                // three wins, so a rank can only ever open up what the level already allows.
                 MaxSwingDegrees = Mathf.Min(vine.maxSwing, tier.maxSwing),
                 ClimbSpeed = tier.climbSpeed,
                 SnapLimit = graspRange,
@@ -146,7 +135,6 @@ namespace FallingWizard.Player
                      "rank 1, and unlocking it is the upgrade.")]
             [Min(0f)] public float climbSpeed = 0f;
 
-            // OnValidate does not reach into a nested class, so the block clamps itself.
             public void Validate()
             {
                 maxSwing = Mathf.Clamp(maxSwing, 0f, 89f);

@@ -4,8 +4,6 @@ namespace FallingWizard.Core
 {
     public static class Placeholder
     {
-        // Four pixels square at four pixels per unit: the smallest texture that comes out exactly
-        // one box, which is the unit everything else in the game is measured in.
         const int Pixels = 4;
         const float PixelsPerUnit = Pixels;
 

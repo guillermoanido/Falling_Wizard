@@ -48,10 +48,6 @@ namespace FallingWizard.World
 
         [NonSerialized] float readyAt;
 
-        // Hold off for a moment. Awake does NOT run again when an object is switched back on,
-        // so a hazard that has been carried and set down still has whatever re-arm timer it had
-        // when it was picked up - which for a slime dropped at your feet means bouncing you on
-        // the very next physics step.
         public void Disarm(float seconds) => readyAt = Time.time + Mathf.Max(0f, seconds);
 
         protected abstract void Affect(PlayerLogic wizard);
@@ -68,10 +64,6 @@ namespace FallingWizard.World
 
         protected sealed override void OnPlayerEntered(PlayerCharacter wizard) => Catch(wizard);
 
-        // NOT sealed, and not calling Catch from a sealed override either. SlipperyFloor and
-        // WindZone2D are continuous hazards that do their own thing every step and deliberately
-        // want none of the gating below - a floor cannot be dodged by being slow and does not
-        // re-arm - so they override this instead and never reach Catch at all.
         protected override void OnPlayerInside(PlayerCharacter wizard, float fixedDeltaTime) =>
             Catch(wizard);
 

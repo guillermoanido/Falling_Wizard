@@ -5,13 +5,6 @@ using UnityEngine;
 
 namespace FallingWizard.UI
 {
-    // The dotted line for a charged fling. Ported from the jump-test branch, with one change:
-    // it is PUSHED a path rather than pulling one. It owns no physics and decides nothing, so
-    // the picture cannot drift away from the shot it is predicting.
-    //
-    // The arc arrives sampled by TIME, which bunches points around the apex where the wizard is
-    // slowest. Dots are re-spaced by DISTANCE on the way out, which is what makes it read as an
-    // even dotted line rather than a comet.
     public class FlingArc : MonoBehaviour
     {
         readonly List<SpriteRenderer> dots = new List<SpriteRenderer>();
@@ -80,8 +73,6 @@ namespace FallingWizard.UI
                 if (length <= Mathf.Epsilon)
                     continue;
 
-                // Walk this leg placing a dot every `spacing`, carrying the remainder into the
-                // next one so the spacing never resets at a sample boundary.
                 for (float along = spacing - carried; along <= length && used < maxDots;
                      along += spacing)
                 {

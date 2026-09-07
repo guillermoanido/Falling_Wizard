@@ -5,28 +5,10 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // A turbine. It sits shut, cracks its louvres open where you can watch them, punches you
-    // once, blows hard for a moment and slams shut again.
-    //
-    // It is a WindZone2D with a clock and a grille on it rather than a hazard of its own, so
-    // there is one wind implementation in the game and this gets the streaks, the haze and the
-    // scene-view arrows that have already been tuned.
-    //
-    // The single idea worth knowing: THE SHUTTER POSITION IS THE THROTTLE. Openness scales the
-    // push, the streak speed, the streak alpha and the haze all at once, so there is no second
-    // number that can fall out of step with the first. A trap the player can read is a trap
-    // whose art is physically incapable of lying about when it fires.
     public class WindTrap : WindZone2D
     {
-        // A cycle shorter than this is a flicker rather than a trap, and it is also what keeps
-        // Mathf.Repeat off a period of zero.
         const float MinPeriod = 0.1f;
 
-        // How long the punch stays available once the shutters reach full open. It has to
-        // outlive at least one physics step, because the step that spends it runs BEFORE the
-        // next Update - but only just, so that walking into a turbine already at full blast
-        // gets the gale and not the punch. The punch is for being caught over the vent when
-        // it fires.
         const float KickGrace = 0.2f;
 
         const float Tiny = 0.0001f;
@@ -141,8 +123,6 @@ namespace FallingWizard.World
         [NonSerialized] Vector2 slatUnit = Vector2.one;
         [NonSerialized] float slatWidth;
 
-        // Never wrapped. The punch's expiry is stamped on this, and a clock that reset to zero
-        // once a cycle would hand out a stamp in the past every time the cycle turned over.
         [NonSerialized] float clock;
         [NonSerialized] float armedUntil = -1f;
         [NonSerialized] bool wasOpen;
@@ -150,21 +130,12 @@ namespace FallingWizard.World
         public float Period =>
             Mathf.Max(MinPeriod, Mathf.Max(0f, shutSeconds) + Mathf.Max(0f, openSeconds));
 
-        // Seconds into the cycle, staggered by phase. Read by the art in Update and by the push
-        // in the fixed step - the SAME property, deliberately. Two timers, one ticking on
-        // deltaTime and one on fixedDeltaTime, would be two opinions about when the vent is live
-        // and they would part company within a minute. That, not float precision, is what
-        // "drift" means for a telegraphed trap.
         public float Phase => Mathf.Repeat(clock + phase * Period, Period);
 
         public bool IsOpen => Phase >= Mathf.Max(0f, shutSeconds);
 
-        // Never more than half the shut time, so there is always some of the cycle where the
-        // vent is genuinely closed and the player can tell that it is.
         float Travel => Mathf.Clamp(shutterTravel, 0f, Mathf.Max(0f, shutSeconds) * 0.5f);
 
-        // 0 shut, 1 wide open, ramping across the swing at each end. Everything the trap does
-        // hangs off this one number.
         protected override float Openness
         {
             get
@@ -194,9 +165,6 @@ namespace FallingWizard.World
             }
         }
 
-        // How loudly it is shouting, 0 to 1. The same as Openness on the way open, and flatly 0
-        // on the way shut: the slam at the end of a blast wants no alarm on it, because by then
-        // the dangerous part is over and a second flash teaches the player to ignore the first.
         public float Alarm
         {
             get
@@ -224,8 +192,6 @@ namespace FallingWizard.World
         {
             base.Reset();
 
-            // A gale worth being launched by, and one that grabs you standing up - a vent you
-            // can simply walk past with both feet down is not a trap.
             push = new Vector2(12f, 0f);
             rampup = 60f;
             groundScale = 0.6f;
@@ -233,15 +199,8 @@ namespace FallingWizard.World
             hazeTint = new Color(1f, 0.62f, 0.4f, 0.16f);
             streakTint = new Color(1f, 0.86f, 0.7f, 0.6f);
 
-            // affectsOnStaff stays OFF, and not merely as a kindness. A wizard on their staff
-            // - or on a vine - has the wind thrown away by PlayerLogic.ApplyExternalForce and
-            // the punch refused outright by PlayerLogic.Shove, so ticking the box would change
-            // nothing whatsoever. The staff is a safe perch by construction; the flag would be
-            // a lie in the inspector.
             affectsOnStaff = false;
 
-            // On, but see tumbleScale - a ragdoll takes wind straight into its velocity with
-            // nothing pushing back, so what reaches it is deliberately a fraction.
             affectsRagdolled = true;
         }
 
@@ -300,8 +259,6 @@ namespace FallingWizard.World
 
         protected override void Update()
         {
-            // BEFORE the base class, which reads Openness to drive the streaks. Advancing after
-            // it would draw one frame of last frame's wind on every frame.
             Advance();
 
             base.Update();
@@ -312,22 +269,10 @@ namespace FallingWizard.World
 
         void Advance()
         {
-            // Time.deltaTime, NOT unscaledDeltaTime. Pausing sets Time.timeScale to 0
-            // (Core/Game.SetPaused), and a turbine that kept counting behind the pause menu
-            // would fire the instant the menu closed - the one moment the player has had no
-            // warning at all. Unity also caps deltaTime at maximumDeltaTime, so a hitch cannot
-            // skip a whole blast either.
-            //
-            // Scaled by Haste for the same reason the push and the streaks are: the spell buys
-            // you time to get through things, and this is a thing to get through.
             clock += hasteSlowsCycle ? Haste.DeltaTime : Time.deltaTime;
 
             bool open = IsOpen;
 
-            // Armed here and spent in the physics step, rather than fired from here. The fixed
-            // step that spends it runs BEFORE the next Update, so a flag cleared on the
-            // following frame would already have been read - and a punch thrown from Update
-            // would land outside the physics step it belongs to.
             if (open && !wasOpen)
                 armedUntil = clock + KickGrace;
 
@@ -347,14 +292,10 @@ namespace FallingWizard.World
             PlayerLogic logic = wizard.Logic;
             bool tumbling = logic.State == PlayerState.Ragdoll;
 
-            // The shutter position is the throttle, so half-open really is half a gale and the
-            // wind arrives as the louvres part rather than all at once behind them.
             float strength = open * (tumbling ? tumbleScale : 1f);
 
             logic.Push(push * strength * Haste.WorldScale, rampup, groundScale);
 
-            // Not while still swinging, not on someone already on the floor, and only inside
-            // the window the vent armed when it opened.
             if (open < 1f || tumbling || clock > armedUntil)
                 return;
 
@@ -364,19 +305,9 @@ namespace FallingWizard.World
 
         void Blast(PlayerLogic wizard)
         {
-            // Tripped BEFORE the shove, exactly the way a slime does it: Ragdoll.Begin WRITES
-            // both velocity components rather than adding to them, so tripping afterwards would
-            // throw the whole launch away.
             if (tumbles)
                 wizard.Trip();
 
-            // Shove rather than Push, and NOT scaled by Haste. Rates scale with the world -
-            // the sustained gale above does - but a discrete impulse from a hazard does not, and
-            // neither Slime.Bounce nor Rock.Trip touches Haste either.
-            //
-            // It also has to land in this step. Movement.FixedTick never runs while tumbling, so
-            // an impulse queued for next step would sit unspent and then fire as the wizard
-            // stood back up, several seconds later and somewhere else.
             wizard.Shove(kick, kickLockout);
         }
 
@@ -385,9 +316,6 @@ namespace FallingWizard.World
             if (haze == null)
                 return;
 
-            // Written every frame rather than in FitHaze, which only ever runs on a settings
-            // change. Never quite reaching zero while shut, so an unlit trap is still a thing
-            // in the level rather than a patch of empty air that turns out to be a turbine.
             Color glow = Color.Lerp(hazeTint, warningTint, Alarm);
             glow.a = hazeTint.a * Mathf.Lerp(idleHaze, 1f, Openness);
             haze.color = glow;
@@ -400,18 +328,11 @@ namespace FallingWizard.World
 
             float open = Openness;
 
-            // A louvre turning edge-on loses its apparent width as the cosine of the angle it
-            // has turned through, which is why this is not a straight lerp. It keeps the grille
-            // nearly solid while barely cracked, so the gap you can see daylight through only
-            // appears once the blast is genuinely close - the tell accelerates towards the
-            // moment that matters instead of leaking away evenly across the whole swing.
             float showing = Mathf.Cos(open * Mathf.PI * 0.5f);
 
             float alarm = Alarm;
             Color tint = Color.Lerp(shutterTint, warningTint, alarm);
 
-            // Only while winding up. Once it is blowing there is nothing left to warn about,
-            // and a flicker that carries on through the blast stops meaning "about to fire".
             if (flashRate > 0f && alarm > 0f && alarm < 1f)
                 tint = Color.Lerp(tint, warningTint,
                     Mathf.Abs(Mathf.Sin(Phase * Mathf.PI * flashRate)));
@@ -433,10 +354,6 @@ namespace FallingWizard.World
             if (!TryFindMouth(out Vector2 centre, out Vector2 across, out float span))
                 return;
 
-            // Kept at the scene root under one container, exactly as the streaks are and for the
-            // same reason: several platforms in this project carry non-uniform scales, and a
-            // stretched zone would otherwise stretch every slat with it. They are placed in
-            // world space anyway.
             vent = new GameObject($"{name} Shutter").transform;
 
             slats = new Transform[blades];
@@ -463,9 +380,6 @@ namespace FallingWizard.World
                 art.sprite = shutterArt != null ? shutterArt : Placeholder.Box;
                 art.color = shutterTint;
 
-                // Above the streaks and the haze - the grille is solid metal in front of the
-                // vent - but still below the wizard, so standing on one draws you in front of it
-                // rather than inside it.
                 art.sortingOrder = sortingOrder + 1;
 
                 Vector2 unit = art.sprite.bounds.size;
@@ -480,9 +394,6 @@ namespace FallingWizard.World
             TickShutter();
         }
 
-        // Where the grille goes: the face the wind comes OUT of, which is the edge opposite the
-        // push. Fitting it to the far edge instead would put the shutters downwind of everything
-        // they are supposed to be holding back.
         bool TryFindMouth(out Vector2 centre, out Vector2 across, out float span)
         {
             centre = Vector2.zero;
@@ -500,9 +411,6 @@ namespace FallingWizard.World
 
             Vector2 half = box.extents;
 
-            // The box measured along the mouth's own axes rather than along x and y, so a
-            // turbine angled diagonally still sets its grille inside itself instead of hanging
-            // it out through a corner.
             float reach = Mathf.Abs(way.x) * half.x + Mathf.Abs(way.y) * half.y;
             span = 2f * (Mathf.Abs(across.x) * half.x + Mathf.Abs(across.y) * half.y);
 
@@ -524,14 +432,11 @@ namespace FallingWizard.World
 
         protected override void OnDrawGizmos()
         {
-            // The zone outline and the direction arrows, unchanged.
             base.OnDrawGizmos();
 
             if (!TryFindMouth(out Vector2 centre, out Vector2 across, out float span))
                 return;
 
-            // Drawn in the mouth's own frame so the grille lines are square to the vent rather
-            // than to the world, which is the only way they are readable on an angled turbine.
             float turn = Mathf.Atan2(across.y, across.x) * Mathf.Rad2Deg;
             Matrix4x4 was = Gizmos.matrix;
 
@@ -539,8 +444,6 @@ namespace FallingWizard.World
             Gizmos.color = warningTint;
             Gizmos.DrawWireCube(Vector3.zero, new Vector3(span, mouthDepth, 0f));
 
-            // The slat spacing. The grille itself is built at runtime like the streaks, so the
-            // scene view is the only place a designer can judge it before pressing play.
             for (int i = 1; i < blades; i++)
             {
                 float offset = ((float)i / blades - 0.5f) * span;

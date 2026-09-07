@@ -14,10 +14,6 @@ namespace FallingWizard.Core
         const string SkipPath = "UI/Skip";
         const string CancelPath = "UI/Cancel";
 
-        // The loadout door - Tab. On a key of its own rather than sharing Pause: two
-        // MonoBehaviours reading the same WasPressedThisFrame in an undefined order both act on
-        // it, which is how one press used to open the pause menu AND drop the skill screen on
-        // top of it.
         const string LoadoutPath = "UI/Loadout";
 
         static readonly HashSet<InputAction> Watched = new HashSet<InputAction>();

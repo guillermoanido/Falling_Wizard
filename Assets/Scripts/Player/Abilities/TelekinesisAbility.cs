@@ -3,13 +3,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // Take a hazard with you and put it down where you want it. The slot shows what you are
-    // carrying, so a stowed slime and a stowed rock are told apart without a menu.
-    //
-    // This is the one spell that edits the level rather than the wizard. A slime moved to the
-    // bottom of a drop is a trampoline you placed; a rock moved out of a corridor is a corridor
-    // you can run down. Everything else here changes how you move - this changes what you are
-    // moving through.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Telekinesis", fileName = "Telekinesis")]
     public class TelekinesisAbility : Ability
     {
@@ -81,9 +74,6 @@ namespace FallingWizard.Player
                 if (!FindShelf(wizard, out Vector2Int cell))
                     return false;
 
-                // On the ground it finds, and failing that at the wizard's own foot height -
-                // never on a grid line. A cell line is a guess about where the floor is; the
-                // soles are where the floor demonstrably IS.
                 hands.thing.PutDownOn(TileGrid.CentreOf(cell).x,
                     TileGrid.SurfaceUnder(cell, wizard.movement.groundLayers, out float top)
                         ? top
@@ -102,8 +92,6 @@ namespace FallingWizard.Player
             return true;
         }
 
-        // What is in the slot IS what is in your hands. With nothing stowed it falls back to the
-        // spell's own icon.
         public override Sprite IconFor(PlayerLogic wizard)
         {
             Carryable held = wizard.spellbook.StateOf<Hands>(this).thing;
@@ -118,9 +106,6 @@ namespace FallingWizard.Player
             return held != null ? held.tint : Color.white;
         }
 
-        // Dying reloads the level, which puts everything back where it was authored - so a
-        // carried thing is never destroyed, only forgotten. Dropping the SPELL is different:
-        // that has to put the thing back, or it is gone with nothing to show where.
         public override void OnRunReset(PlayerLogic wizard) =>
             wizard.spellbook.StateOf<Hands>(this).thing = null;
 
@@ -146,10 +131,6 @@ namespace FallingWizard.Player
             PlayerLogic.Movement walk = wizard.movement;
             Vector2Int stood = TileGrid.StandingCell(walk);
 
-            // Aimed at the wizard's own height, then let each column settle it: over a step
-            // that is in the way, and down onto the tiles. Testing one fixed row instead meant
-            // the spell only ever found room where that row happened to be empty - which on
-            // flat ground is nowhere, and at a ledge is the thin air past it.
             for (int step = 1; step <= placeInTiles; step++)
             {
                 if (TileGrid.RestingCell(stood.x + walk.Facing * step, stood.y + liftInTiles,

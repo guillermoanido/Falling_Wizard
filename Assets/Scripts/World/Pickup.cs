@@ -9,9 +9,6 @@ namespace FallingWizard.World
     [RequireComponent(typeof(Collider2D))]
     public abstract class Pickup : PlayerTrigger
     {
-        // A pickup with no id of its own is remembered by where it stands, rounded to this many
-        // steps per box. Fine enough that two pickups a quarter box apart stay separate, coarse
-        // enough that nudging one in the editor does not rename it.
         const float KeySteps = 4f;
 
         [Header("Identity")]

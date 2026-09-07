@@ -4,12 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.UI
 {
-    // Put this on a label that was typed into a scene or a prefab, and its words come from the
-    // translation instead of from whatever is sitting in the text box.
-    //
-    // Deliberately NOT [RequireComponent(typeof(TMP_Text))]: TMP_Text is abstract, so Unity cannot
-    // add one, and the attribute would only ever pop an error dialog on a label that is already
-    // there. The warning in Awake says the same thing, once, with an explanation.
     public class LocalizedText : MonoBehaviour
     {
         [Tooltip("Which line of the translation this label shows. It is a key, not a sentence: " +
@@ -36,10 +30,6 @@ namespace FallingWizard.UI
 
         void OnEnable()
         {
-            // Both, and in this order. Subscribing is what catches a language change while this
-            // panel is open; re-reading right now is what catches a change that happened while it
-            // was switched off, which is most of them - a disabled component is subscribed to
-            // nothing and never saw the event go past.
             Loc.Changed += Show;
             Show();
         }

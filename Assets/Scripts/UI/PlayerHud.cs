@@ -68,7 +68,6 @@ namespace FallingWizard.UI
                  "something you choose to release, the other is draining back to ready.")]
         public Color windupTint = new Color(1f, 0.85f, 0.35f, 0.7f);
 
-        // The corner counter, in reference-resolution pixels, when no label was wired by hand.
         static readonly Vector2 WispCorner = new Vector2(-24f, -20f);
         static readonly Vector2 WispSize = new Vector2(360f, 40f);
         const float WispFontSize = 26f;
@@ -125,8 +124,6 @@ namespace FallingWizard.UI
             {
                 wispLabel.enabled = showing;
 
-                // No caching and no subscription to Loc.Changed: this already runs every frame
-                // and rebuilds the string every frame, so it picks a language change up on its own.
                 if (showing)
                     wispLabel.text = string.IsNullOrEmpty(wispFormat)
                         ? Loc.Format(Loc.Keys.HudWisps, Progress.CarriedWisps, Progress.Wisps)

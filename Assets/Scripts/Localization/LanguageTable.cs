@@ -5,11 +5,6 @@ using UnityEngine;
 
 namespace FallingWizard.Core
 {
-    // One language's worth of words. Lives at Assets/Resources/Language/<Language>.asset, named
-    // exactly after the value in the Language enum - Loc loads it by that name.
-    //
-    // It holds ONLY the translation. The English is in Loc.cs, so a line left out or left blank
-    // here simply shows in English and the game is always playable half way through a translation.
     [CreateAssetMenu(menuName = "Falling Wizard/Language Table", fileName = "Spanish")]
     public class LanguageTable : ScriptableObject
     {
@@ -21,8 +16,6 @@ namespace FallingWizard.Core
                  "time and play what you have.")]
         public List<Line> lines = new List<Line>();
 
-        // Built on first use rather than in OnEnable, because a list this long is searched many
-        // times a frame by the HUD and a linear scan through seventy entries per label is waste.
         readonly Dictionary<string, string> lookup = new Dictionary<string, string>();
         bool built;
 
@@ -31,9 +24,6 @@ namespace FallingWizard.Core
             if (!built)
                 Rebuild();
 
-            // An EMPTY line counts as missing on purpose: it is what a half filled table looks
-            // like, and blanking a line in the inspector should put the English back rather than
-            // wipe the label off the screen.
             return lookup.TryGetValue(key, out text) && !string.IsNullOrEmpty(text);
         }
 
@@ -53,10 +43,6 @@ namespace FallingWizard.Core
             }
         }
 
-        // Deliberately a plain OnValidate rather than the Validate() pattern the spells use. That
-        // pattern exists because Unity delivers OnValidate to the most-derived type only and a
-        // spell subclass would hide Ability's. Nothing derives from this, so it is the same shape
-        // as AbilityBook's own OnValidate.
         void OnValidate()
         {
             built = false;
@@ -74,8 +60,6 @@ namespace FallingWizard.Core
                                      "that was copied to make the next one and never renamed.",
                                      this);
 
-                // A key under ability. is built from the spell's own id at runtime, so it can
-                // never appear in Loc's English list and must be let through unchecked.
                 if (line.key.StartsWith(Loc.AbilityPrefix, StringComparison.Ordinal))
                     continue;
 
@@ -87,8 +71,6 @@ namespace FallingWizard.Core
             }
         }
 
-        // Right-click the asset's header in the inspector to run this. Cheaper than a warning on
-        // every validate, which would fire constantly while a translation is being written.
         [ContextMenu("List Missing Strings")]
         void ListMissing()
         {

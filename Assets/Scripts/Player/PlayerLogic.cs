@@ -38,9 +38,6 @@ namespace FallingWizard.Player
         [NonSerialized] float pendingRampup;
         [NonSerialized] float pendingGroundScale = 1f;
 
-        // Sits at 1 - ordinary ground - unless something outside pushed a lower number in during
-        // the last physics step. ApplyExternalForce hands it to Movement and puts it straight
-        // back, so a floor stops being slippery by simply not calling any more.
         [NonSerialized] float pendingGrip = 1f;
 
         public event Action Died;
@@ -48,7 +45,8 @@ namespace FallingWizard.Player
         public Staff.Pole Pole => pole;
         public bool HasPole => pole != null && pole.HasPole;
 
-        public bool StaffIsFree => HasPole && !pole.IsPlanted && State == PlayerState.Normal;
+        public bool StaffIsFree =>
+            HasPole && !pole.IsPlanted && pole.IsReady && State == PlayerState.Normal;
 
         public bool StaffIsPlantedAs(StaffMode mode) =>
             HasPole && pole.IsPlanted && pole.Mode == mode;
@@ -84,9 +82,6 @@ namespace FallingWizard.Player
             movement.BufferJump(frame.JumpPressed, deltaTime);
             spellbook.Observe(deltaTime);
 
-            // Peeking drops the camera four boxes to show you where you are GOING, which is
-            // right for hanging off a ledge and exactly wrong for climbing a wall - it slides the
-            // one thing you need to see, the top, off the screen for the whole ascent.
             IsPeeking = (State == PlayerState.OnStaff && !(HasPole && pole.IsClimbing)) ||
                         (State == PlayerState.Normal && input.LookingDown);
         }
@@ -142,26 +137,13 @@ namespace FallingWizard.Player
 
         public bool Trip() => Trip(movement.TravelDirection);
 
-        // The same trip, aimed. A hazard that wants to put the wizard down somewhere other than
-        // straight ahead - a rake whose handle comes up in their face - passes the direction it
-        // wants rather than reaching into the ragdoll itself, so the State and IsAlive guards
-        // stay in exactly one place and cannot be forgotten by the next hazard somebody writes.
         public bool Trip(int direction)
         {
             if (State != PlayerState.Normal || !health.IsAlive)
                 return false;
 
-            // 0 is not a direction. Ragdoll.Begin multiplies BOTH the spin and the minimum
-            // launch by this, so a caller that worked its direction out from something which can
-            // come back zero would get a wizard lying on the floor, spinning at nothing, going
-            // nowhere - and nothing on screen to say why.
             int way = direction < 0 ? -1 : 1;
 
-            // Carry the speed they arrived with into the tumble only when the tumble goes the
-            // way they were already going. Thrown BACK, that carry is a subtraction: Begin adds
-            // launchForward to whatever they had, so a wizard running in at 4 boxes a second and
-            // thrown "backwards" comes out still going forwards, spinning the wrong way, which
-            // reads as a broken hazard rather than a rake.
             ragdoll.Begin(way, way == movement.TravelDirection);
 
             State = PlayerState.Ragdoll;
@@ -184,21 +166,6 @@ namespace FallingWizard.Player
             pendingGroundScale = groundScale;
         }
 
-        // Ground that does not hold you - water, wet flagstones, ice. 1 is a normal floor and 0
-        // is glass. It scales both halves of Movement.Run's rate at once: how hard the wizard can
-        // push off, and how hard they can dig in to stop.
-        //
-        // Pushed in from outside exactly the way Push does with wind, and for exactly the same
-        // reason. Spellbook.Rebuild calls stats.Reset() every fixed step and re-applies the
-        // equipped abilities on top, so a hazard that wrote a multiplier into Modifiers would
-        // have it thrown away before Run ever looked at it. This is per-step state instead: the
-        // patch calls every step the wizard is stood in it, ApplyExternalForce spends it and
-        // clears it, and stepping off the ice needs no exit event and no decay timer.
-        //
-        // The LOWEST grip wins rather than the sum, so a wizard straddling a puddle and a sheet
-        // of ice is on ice. Adding them the way wind adds would make two overlapping patches
-        // more slippery than either one, which is the sort of thing a designer only finds out by
-        // dragging a prefab a tile too far.
         public void Slicken(float grip) => pendingGrip = Mathf.Min(pendingGrip, Mathf.Clamp01(grip));
 
         public void Shove(Vector2 velocity, float controlLockout)
@@ -240,8 +207,6 @@ namespace FallingWizard.Player
         public int PredictArc(Vector2 launch, in Movement.ArcSettings look, List<Vector2> into,
             out Movement.ArcEnd end)
         {
-            // Only ever while they are stood there winding one up. Tumbling or hanging off the
-            // staff, there is no shot to draw.
             if (State != PlayerState.Normal || !health.IsAlive)
             {
                 into.Clear();
@@ -252,8 +217,6 @@ namespace FallingWizard.Player
             return movement.PredictArc(launch, Stats, look, into, out end);
         }
 
-        // One shove, aimed. Unlike Shove this clears whatever the wizard was already doing, so
-        // the launch is exactly the one the dotted line was drawing and nothing is added to it.
         public bool Fling(Vector2 velocity, float controlLockout)
         {
             if (State != PlayerState.Normal || !health.IsAlive)
@@ -270,7 +233,7 @@ namespace FallingWizard.Player
             if (State != PlayerState.Normal || !HasPole)
                 return false;
 
-            if (pole.IsPlanted)
+            if (pole.IsPlanted || !pole.IsReady)
                 return false;
 
             if (!movement.TryFindLedgeEdge(out float edgeX))
@@ -285,33 +248,19 @@ namespace FallingWizard.Player
             return true;
         }
 
-        // Hold the staff up. Only the picture - it says nothing about whether there is
-        // anything to climb, and that is the point: the wizard raises it, looks, and either goes
-        // up or stays where they are with the staff in the air.
         public void RaiseStaff() => pole?.Raise(true);
 
         public void LowerStaff() => pole?.Raise(false);
 
-        // Is there something in front of them the staff could get them on top of? Asked by the
-        // spell to decide whether the button does anything, and asked again by the climb itself -
-        // it is a handful of casts, cheap enough to run twice and far cheaper than caching a lip
-        // the wizard has since walked away from.
         public bool CanClimbHere =>
             StaffIsFree && !movement.IsAtEdge &&
             movement.TryFindClimb(pole.ClimbUpHeight, out _, out _);
 
-        // The same ladder, raised from the bottom. TryPlantStaff hangs the pole off a ledge the
-        // wizard is stood ON; this raises it against a wall they are stood UNDER, and from there
-        // it is the identical ride - the stick drives them up it and off the top.
         public bool TryClimbStaff()
         {
-            if (State != PlayerState.Normal || !HasPole || pole.IsPlanted)
+            if (State != PlayerState.Normal || !HasPole || pole.IsPlanted || !pole.IsReady)
                 return false;
 
-            // A drop in front of them is a descent, whatever is on the far side of it. Checked
-            // here rather than left to the two searches to disagree about: a ledge and a wall can
-            // both answer within a quarter box of each other at the lip of a step, and which one
-            // won would otherwise come down to which cast happened to run first.
             if (movement.IsAtEdge)
                 return false;
 
@@ -329,10 +278,6 @@ namespace FallingWizard.Player
 
         public void RecoverStaff() => RecoverStaff(false);
 
-        // arrived says the wizard got here by climbing to the very top and pushing up - the one
-        // case where a climb is allowed to set them down over the lip. Everything else that
-        // releases the pole while the depth happens to be near zero - dying, letting go at the
-        // bottom - must NOT be given the top of the wall for free.
         public void RecoverStaff(bool arrived)
         {
             pole?.Release(arrived);
@@ -355,7 +300,6 @@ namespace FallingWizard.Player
             return true;
         }
 
-        // So a spell can say WHY a grab was refused without duplicating the rope's own clamps.
         public float GrabSnapDistance(in Vine.Hold spec) =>
             Vector2.Distance(movement.Position, vine.WouldHangAt(spec, movement.Position));
 
@@ -426,19 +370,6 @@ namespace FallingWizard.Player
 
         void ApplyExternalForce(float fixedDeltaTime)
         {
-            // Before the switch and OUTSIDE it, so the grip is refreshed in EVERY state,
-            // including the two the switch does nothing for. A hazard cannot reach the wizard on
-            // their staff, so nothing calls Slicken up there and this puts the grip back to 1 -
-            // which is the point. Set it inside the default case instead and Movement would keep
-            // whatever the last patch wrote, so a wizard who climbed off an ice sheet and rode
-            // their staff across the room would come down onto ordinary stone that was still
-            // slippery.
-            //
-            // Simulate reaches this before the state switch, which is before UpdateNormal,
-            // FixedTick and Run. Unity runs every FixedUpdate, THEN the physics step, THEN the
-            // trigger callbacks - so the grip a patch pushed in during the previous physics step
-            // is on Movement before this step's Run reads it. One fixed step of lag, the same lag
-            // wind already has.
             movement.SetGrip(pendingGrip);
 
             switch (State)
@@ -461,9 +392,6 @@ namespace FallingWizard.Player
             pendingRampup = 0f;
             pendingGroundScale = 1f;
 
-            // Cleared HERE and nowhere else - after the consume, in the same call. Clearing it at
-            // the top of Simulate, or from Update, wipes the value between the trigger callback
-            // that set it and the Run that wants it, and ice then does nothing at all.
             pendingGrip = 1f;
         }
 
@@ -534,20 +462,14 @@ namespace FallingWizard.Player
             public float FallDamageMultiplier;
             public float WindMultiplier;
 
-            // Air only. MoveSpeedMultiplier cannot say that, and a canopy that made the wizard
-            // sprint along the floor would be a different spell.
             public float AirSpeedMultiplier;
             public float AirControlMultiplier;
 
-            // How fast sideways speed bleeds away in the air with nothing held. Separate from
-            // AirControlMultiplier on purpose: a wing should bite HARDER when steered and coast
-            // LONGER when not, and one multiplier over both does the second one backwards.
             public float AirDragMultiplier;
 
             public int ExtraJumps;
             public bool Shielded;
 
-            // The stick is aiming something, not steering the wizard.
             public bool Rooted;
 
             public Modifiers() => Reset();
@@ -633,37 +555,20 @@ namespace FallingWizard.Player
         {
             const float MinGravityScale = 0.01f;
 
-            // Unity has a fixed 32 layers, and the ground mask is checked against all of them
-            // when the wizard reports that it cannot find any floor.
             const int LayerCount = 32;
 
-            // A ground probe thinner than this in either direction misses the floor between
-            // physics steps, so Validate refuses to let one be typed in.
             static readonly Vector2 MinGroundCheck = new Vector2(0.05f, 0.01f);
 
             const float MinTravelSpeed = 0.1f;
 
-            // How far up inside the wizard the slope rays begin. queriesStartInColliders is on
-            // in this project, so a ray that starts already touching the floor answers "flat"
-            // whatever the floor is really doing.
             const float SlopeProbeLift = 0.25f;
 
-            // The hair of daylight a step leaves between the soles and the lip they have just
-            // been put on top of, so the move ends beside the geometry rather than inside it.
             const float StepClearance = 0.02f;
 
-            // How far PAST the wall's face the downward probe starts when it goes looking for
-            // the top of it. Cast exactly on the face and the ray skims straight down the wall it
-            // is trying to measure, which answers with the floor at the bottom of it.
             const float ClimbInset = 0.05f;
 
-            // How far apart the forward probes are stacked up the wall, in boxes. A quarter box,
-            // so a staff-length of reach is seven or eight rays - cheap, and close enough
-            // together that nothing a tile can be shaped like fits between two of them.
             const float ClimbProbeStep = 0.25f;
 
-            // Enough to clear the floor underfoot without meaningfully lying about where the
-            // arc begins - well under a tile, so the drawn landing point is still right.
             const float ArcClearance = 0.15f;
 
             const float GroundlessWarning = 3f;
@@ -672,8 +577,6 @@ namespace FallingWizard.Player
             static readonly List<Collider2D> Overlaps = new List<Collider2D>(8);
             static readonly List<RaycastHit2D> Rays = new List<RaycastHit2D>(4);
 
-            // Triggers ON, unlike the ground filter: the arc wants to know it is going to land
-            // on a slime, and every hazard in this game is a trigger you pass through.
             [NonSerialized] ContactFilter2D arcFilter = new ContactFilter2D
             {
                 useTriggers = true,
@@ -847,27 +750,14 @@ namespace FallingWizard.Player
             [NonSerialized] Vector2 wind;
             [NonSerialized] float lockout;
 
-
-            // How much of the acceleration and the ground friction below the floor underfoot
-            // actually gives back, 0 to 1. Not serialized and not a Modifier: it is written every
-            // fixed step from PlayerLogic.ApplyExternalForce and is 1 on any ordinary floor.
             [NonSerialized] float grip = 1f;
 
-            // Which way the floor underfoot is tilted, and whether the last step drove the
-            // wizard along that tilt. The second one is only ever read to take the climb back
-            // off again the moment the ramp runs out - see Run.
             [NonSerialized] Vector2 groundNormal = Vector2.up;
             [NonSerialized] float groundAngle;
             [NonSerialized] bool climbedLastStep;
 
-            // Whether the last step was one the step assist was driving. Only ever read to take
-            // the lift back off again the moment the lip runs out - see TryStepUp.
             [NonSerialized] bool steppedLastStep;
 
-            // Why the last look for a climb came to nothing, and what it measured on the way.
-            // Recorded rather than returned, so the hot path stays a bool and nothing builds a
-            // string sixty times a second - the spell turns this into words only when it is
-            // about to print one, and DrawGizmos turns it into a red box.
             public enum ClimbRefusal
             {
                 None,
@@ -881,23 +771,15 @@ namespace FallingWizard.Player
 
             public ClimbRefusal WhyNoClimb { get; private set; }
 
-            // In boxes: how far up the top of the thing ahead turned out to be, and how far up
-            // the staff would have carried the wizard. Both are 0 until a wall has been found.
             public float ClimbRise { get; private set; }
             public float ClimbCanReach { get; private set; }
 
-            // The two boxes the climb has to find empty, kept so the scene view can draw them.
-            // Seeing WHICH one is red is the difference between a guess and a measurement.
             [NonSerialized] Vector2 standBox;
             [NonSerialized] Vector2 headBox;
             [NonSerialized] Vector2 headBoxSize;
 
             public bool IsGrounded { get; private set; }
 
-            // Counts up every time the wizard leaves the ground. A spell that should only fire
-            // once per fall remembers the number it last fired on and compares - which needs no
-            // per-frame hook, and cannot drift out of step the way a flag being cleared somewhere
-            // else would.
             public int Airtime { get; private set; }
             public bool IsAtEdge { get; private set; }
 
@@ -917,40 +799,17 @@ namespace FallingWizard.Player
             public Transform Rig => body == null ? null : body.transform;
             public float FeetY => Position.y + groundCheckOffset.y;
 
-            // Where the soles actually meet the world, measured off the COLLIDER.
-            //
-            // FeetY is the centre of the ground probe, which hangs deliberately below the feet by
-            // groundCheckSkin - and drifts further the moment the collider is resized without the
-            // probe being refitted, which is exactly what had happened here: the probe sat almost
-            // a tenth of a box under the boots. Grid maths built on it read the FLOOR row as the
-            // row the wizard was standing in, and every spell that puts a tile down was one row
-            // out. Asking the collider cannot drift.
             public Vector2 Footing => hull != null
                 ? new Vector2(hull.bounds.center.x, hull.bounds.min.y)
                 : new Vector2(Position.x, FeetY + groundCheckSkin);
 
-            // Half the wizard's own width, worked back out of the ground probe so it is
-            // available in the editor too - FitGroundCheckTo sizes that probe as the collider's
-            // width times groundCheckWidthFactor, so this undoes exactly that.
             float HalfWidth => hull != null
                 ? hull.bounds.extents.x
                 : (groundCheckWidthFactor > 0f
                     ? groundCheckSize.x / groundCheckWidthFactor * 0.5f
                     : 0f);
 
-            // Where BOTH ground probes hang from: under the middle of the footprint, not under
-            // the middle of the transform. A collider carrying an x offset of its own puts those
-            // in different places, and the ledge check would then disagree with the ground check
-            // about which foot is over the drop.
             Vector2 ProbeOrigin => body.position + groundCheckOffset;
-            // What every ground query in this class asks with. Built to order rather than
-            // cached in Attach - it is a struct, so there is nothing to allocate - which means a
-            // mask corrected in the inspector mid-play takes effect on the very next step
-            // instead of on the next scene load, and no query can be written that forgets to
-            // refresh it first.
-            //
-            // Triggers OFF. The project queries them by default, so without this any trigger
-            // sitting on the Ground layer becomes floor the wizard can stand on.
             ContactFilter2D GroundFilter => new ContactFilter2D
             {
                 useLayerMask = true,
@@ -958,9 +817,6 @@ namespace FallingWizard.Player
                 useTriggers = false,
             };
 
-            // Gravity as the wizard would fall under it at rest, in boxes per second squared.
-            // The jump, the bounce and the drawn arc all size themselves off this one number, so
-            // none of them can drift from the others or from Project Settings.
             float BaseGravity => Mathf.Abs(Physics2D.gravity.y) * baseGravityScale;
 
             public float HorizontalSpeed => body == null ? 0f : Mathf.Abs(body.linearVelocityX);
@@ -991,9 +847,6 @@ namespace FallingWizard.Player
                 };
             }
 
-            // Presses are buffered even with canJump off. Nothing but TryJump ever reads the
-            // timer, so it costs nothing, and it means the switch can be flicked back on in the
-            // middle of a playtest with no state anywhere that needs resetting first.
             public void BufferJump(bool jumpPressedThisFrame, float deltaTime)
             {
                 if (jumpPressedThisFrame)
@@ -1010,9 +863,6 @@ namespace FallingWizard.Player
                 SenseGround(fixedDeltaTime);
                 Run(command, stats, fixedDeltaTime);
 
-                // AFTER Run, so the sideways speed it just chose is what carries the wizard
-                // forward off the lip on the next physics step, and BEFORE TryJump, so a jump
-                // buffered on the same step launches from the height they have just gained.
                 TryStepUp(command, stats, fixedDeltaTime);
 
                 TryJump(stats);
@@ -1062,9 +912,6 @@ namespace FallingWizard.Player
                 wind = Vector2.MoveTowards(wind, target * scale, rate * fixedDeltaTime);
             }
 
-            // Set outright rather than eased into, unlike the wind above. Ice has a hard edge you
-            // can see, and a grip that ramped in over a few steps would put the slippery part of
-            // the patch somewhere other than where the patch is drawn.
             public void SetGrip(float value) => grip = Mathf.Clamp01(value);
 
             public void AddImpulse(Vector2 velocity, float controlLockout)
@@ -1075,8 +922,6 @@ namespace FallingWizard.Player
                 body.linearVelocity += velocity;
                 rising = false;
 
-                // So the ramp's own tidy-up does not read this shove as leftover climb and take
-                // it straight back off again.
                 climbedLastStep = false;
                 steppedLastStep = false;
 
@@ -1111,10 +956,6 @@ namespace FallingWizard.Player
 
             public void FitGroundCheckTo(Collider2D collider2d)
             {
-                // Measured from the collider's BOTTOM and its own middle, not from half its
-                // height about the transform. A collider carrying an offset - which is what
-                // Unity's fit-to-sprite button writes - puts those in different places, and the
-                // probe ends up floating inside the wizard or trailing below their boots.
                 Bounds box = collider2d.bounds;
                 Vector3 middle = collider2d.transform.position;
 
@@ -1138,15 +979,11 @@ namespace FallingWizard.Player
                     Debug.LogWarning("Movement.groundLayers includes the Player layer, so the " +
                                      "wizard will try to stand on their own collider.");
 
-                // One box is the height of a tile, so a step assist that reaches one has quietly
-                // turned every wall in the game into something you walk up.
                 if (stepHeight >= 1f)
                     Debug.LogWarning("Movement.stepHeight is a whole box or more, so the wizard " +
                                      "walks up any one-tile wall without jumping. It is meant " +
                                      "for tile seams and the teeth along a ramp, not for steps.");
 
-                // A walking wizard refuses to step off a ledge, and one box is a whole tile, so
-                // under that they stop dead at the top of every step of a staircase.
                 if (stepHeight > 0f && ledgeCheckDepth <= 1f)
                     Debug.LogWarning("Movement.ledgeCheckDepth is one box or less, so the top of " +
                                      "every step down reads as a cliff and a walking wizard " +
@@ -1162,8 +999,6 @@ namespace FallingWizard.Player
                 Vector2 probe = origin + groundCheckOffset + new Vector2(Facing * ledgeCheckAhead, 0f);
                 Gizmos.DrawLine(probe, probe + Vector2.down * ledgeCheckDepth);
 
-                // The tallest lip that gets walked up rather than stopped at, drawn where the
-                // step actually looks for it.
                 if (stepHeight <= 0f)
                     return;
 
@@ -1172,10 +1007,6 @@ namespace FallingWizard.Player
                 var ahead = new Vector2(origin.x + groundCheckOffset.x + Facing * stepReach, soles);
                 Gizmos.DrawLine(ahead, ahead + Vector2.up * stepHeight);
 
-                // Every height the staff looks for a wall at, drawn from the toes. This is the
-                // one thing worth seeing in the scene view: a wall the wizard is plainly stood
-                // against that none of these lines reaches is a wall the staff will refuse, and
-                // there is no other way to tell that by looking.
                 Gizmos.color = new Color(0.98f, 0.86f, 0.42f);
 
                 float toes = origin.x + groundCheckOffset.x + Facing * HalfWidth;
@@ -1187,12 +1018,6 @@ namespace FallingWizard.Player
                     Gizmos.DrawLine(from, from + new Vector2(Facing * climbReach, 0f));
                 }
 
-                // The two boxes the climb needs empty, drawn where they were last asked about.
-                // Red is the one that refused - which turns "the staff does nothing here" into
-                // a thing you can point at.
-                // Only the outcomes that actually MEASURED them. Drawing a box left over from
-                // some earlier frame, in red, beside a wall it was never asked about is worse
-                // than drawing nothing - it is a lie you would go and act on.
                 bool measured = WhyNoClimb == ClimbRefusal.None ||
                                 WhyNoClimb == ClimbRefusal.NoRoomOnTop ||
                                 WhyNoClimb == ClimbRefusal.NoHeadroom;
@@ -1244,12 +1069,6 @@ namespace FallingWizard.Player
                         air = middle;
                 }
 
-                // Prove it. The search assumes there is a gap somewhere between footing and air
-                // and closes on the boundary, but it never checks that `air` IS air - and the
-                // grounded flags it started from are a physics step old, so after dropping off
-                // the staff they can still say "at a ledge" while the wizard stands on solid
-                // floor. Left unchecked it hands back a lip in the middle of the ground, the
-                // plant then fails on a reach of nothing, and the press dies silently.
                 if (HasGroundAt(air))
                     return false;
 
@@ -1257,9 +1076,6 @@ namespace FallingWizard.Player
                 return true;
             }
 
-            // Where the feet are, what they are stood on, and how far the wizard fell to get
-            // here. Run from FixedTick, and separately from the ragdoll - which does not steer
-            // or accelerate but still has to know the moment it has landed.
             public void SenseGround(float fixedDeltaTime)
             {
                 bool wasGrounded = IsGrounded;
@@ -1369,15 +1185,6 @@ namespace FallingWizard.Player
                 return Physics2D.Raycast(probe, Vector2.down, GroundFilter, Rays, ledgeCheckDepth) > 0;
             }
 
-            // Which way the floor underfoot is tilted. Three rays rather than one, across the
-            // width of the footprint, because a single ray under the middle reads the FLAT tile
-            // for the whole first half of stepping onto a ramp - and the steepest walkable
-            // answer wins, so the ramp is picked up the moment a toe is over it.
-            //
-            // Each ray starts a little way UP inside the wizard. Physics2D.queriesStartInColliders
-            // is on in this project, so a ray beginning level with the soles and already touching
-            // the floor comes back at distance zero with a normal of straight up, which reads as
-            // flat no matter what is really down there.
             void SenseSlope()
             {
                 groundNormal = Vector2.up;
@@ -1408,13 +1215,8 @@ namespace FallingWizard.Player
                 }
             }
 
-            // True while the wizard is stood on something tilted enough to be worth steering
-            // along rather than across.
             bool OnRamp => IsGrounded && groundAngle > flatSlopeAngle && groundAngle <= maxSlopeAngle;
 
-            // The top of whatever is directly in front of the soles, found by casting DOWN from
-            // step height onto it. Casting forward instead would answer with the face rather
-            // than the surface, and the height of a lip is the only thing worth knowing here.
             bool TryFindLip(int direction, out float top)
             {
                 top = 0f;
@@ -1432,18 +1234,6 @@ namespace FallingWizard.Player
                 return true;
             }
 
-            // Is there something in front of the wizard the staff could get them on top of?
-            // This is the mirror of the descent: there it is a drop to hang the pole over, here
-            // it is a wall to raise it against.
-            //
-            // It answers with the LIP - the top corner - and with the body position that standing
-            // on it means, already proved empty. Both come back together because the same casts
-            // find them and nothing else in the game has any business recomputing either one.
-            //
-            // Every way out records WHY in WhyNoClimb. Four different things can refuse here and
-            // they are the same silence from the outside, which is what made this impossible to
-            // chase: "no wall", "too tall", "nothing to stand on" and "your head is in the way"
-            // all read as a button that does nothing.
             public bool TryFindClimb(float highestRise, out Vector2 lip, out Vector2 landing)
             {
                 lip = Vector2.zero;
@@ -1458,9 +1248,6 @@ namespace FallingWizard.Player
                 Bounds box = hull.bounds;
                 float soles = box.min.y;
 
-                // THE TOP of it, cast down from as high as the staff reaches, a little way INSIDE
-                // the face so the ray lands on the surface rather than skimming down the wall it
-                // is measuring.
                 var above = new Vector2(faceX + Facing * ClimbInset, soles + highestRise);
 
                 if (Physics2D.Raycast(above, Vector2.down, GroundFilter, Rays,
@@ -1470,11 +1257,6 @@ namespace FallingWizard.Player
                     return false;
                 }
 
-                // Distance zero means the cast STARTED inside the wall - queriesStartInColliders
-                // is on in this project - so whatever is ahead carries on up past the staff's
-                // reach and there is nothing here to climb onto. Without this line a wall reports
-                // a top at exactly the height it was asked about, and every tower in the level
-                // reads as climbable right up until the wizard is left dangling against it.
                 if (Rays[0].distance <= 0f)
                 {
                     WhyNoClimb = ClimbRefusal.TooTall;
@@ -1484,24 +1266,12 @@ namespace FallingWizard.Player
                 lip = new Vector2(faceX, Rays[0].point.y);
                 ClimbRise = lip.y - soles;
 
-                // Where the COLLIDER would sit stood on top of that lip, and then where the BODY
-                // would have to be to put it there. The two are not the same point - the wizard's
-                // hull sits a twentieth of a box off their transform - and mixing them up lands
-                // them overhanging the lip one way round and buried in the wall the other.
                 var hullOnTop = new Vector2(
                     faceX + Facing * (box.extents.x + StepClearance),
                     lip.y + box.extents.y + StepClearance);
 
                 standBox = hullOnTop;
 
-                // The whole wizard has to fit up there. The same query TryStepUp uses, doing two
-                // jobs at once: headroom, and proof that the surface found is the top of
-                // something rather than a shelf inside a hole.
-                //
-                // Shrunk by a hair on both axes. The tiles in this level are sliced 34x35 px on a
-                // 32 px grid, so a tile is drawn and collides about a pixel proud of its cell and
-                // a gap the grid calls one box is a shade under one - which is a wizard 1.05
-                // boxes tall failing to fit somewhere they are plainly meant to stand.
                 var standing = (Vector2)box.size - Vector2.one * (StepClearance * 2f);
 
                 if (Physics2D.OverlapBox(hullOnTop, standing, 0f, GroundFilter, Overlaps) > 0)
@@ -1510,12 +1280,6 @@ namespace FallingWizard.Player
                     return false;
                 }
 
-                // And the space they RISE THROUGH on the way, which is only the part above their
-                // head - where they already are is by definition somewhere they fit. Narrow, at
-                // six tenths of their width and centred on them, because the wall itself is a
-                // hand's breadth away and a full-width box would catch it every time: that is
-                // what made the first version of this refuse while the wizard stood flush against
-                // exactly the wall it was asked about.
                 float headroom = hullOnTop.y + box.extents.y - box.max.y;
 
                 headBox = new Vector2(box.center.x, box.max.y + headroom * 0.5f);
@@ -1533,19 +1297,6 @@ namespace FallingWizard.Player
                 return true;
             }
 
-            // The nearest face in front of the wizard, looked for at a whole FAN of heights
-            // rather than at one.
-            //
-            // The single ray this replaced is the whole reason the staff used to answer "no wall"
-            // while the wizard was stood flush against one. It asked at exactly one height - a
-            // hair above the step assist - and a tile whose collider is bevelled, notched or
-            // simply starts a few pixels up is empty at precisely that height and solid
-            // everywhere else. One ray, one chance, and the failure was invisible: the button
-            // did nothing and nothing said why.
-            //
-            // The NEAREST hit wins, which is also what makes a staircase behave. The first tread
-            // is the closest thing ahead, so the top found is that tread's - a tenth of a box up,
-            // under the step assist, refused here and walked over instead of climbed.
             public bool TryFindWall(float highestRise, out float faceX)
             {
                 faceX = 0f;
@@ -1591,27 +1342,10 @@ namespace FallingWizard.Player
                     sprite.flipX = Facing < 0;
             }
 
-            // Walking up a low lip, because a BoxCollider2D cannot do it on its own.
-            //
-            // The wizard is a box with square corners, frozen rotation and - deliberately - no
-            // friction, so a lip is a flat vertical face meeting a flat vertical face. The
-            // solver's only answer to that is to delete the sideways speed, and Run puts it
-            // straight back on the next step. That is what "stuck on the scenery" feels like:
-            // the stick is forward, the wizard is not moving, and nothing is actually broken.
-            //
-            // Kept far below a whole box on purpose. This is for tile seams and the pixel-high
-            // teeth along a ramp's edge, NOT for real steps - a wizard who climbs a box without
-            // jumping is a wizard for whom jumping has stopped mattering.
             void TryStepUp(Command command, Modifiers stats, float fixedDeltaTime)
             {
                 bool stepping = StepUp(command, stats, fixedDeltaTime);
 
-                // The lip has just been cleared. Whatever upward speed carried them over it is a
-                // hop nobody asked for now, so it is taken back - but only if the assist could
-                // plausibly have produced it, which leaves a jump, a slime and a fling alone.
-                // This is the identical tidy-up TryRunAlongRamp does when a ramp runs out, and
-                // it is here for the identical reason: the thing that was driving them stopped,
-                // and what it was driving them with must not outlive it.
                 if (steppedLastStep && !stepping && !rising &&
                     body.linearVelocityY > 0f && body.linearVelocityY <= stepClimbSpeed)
                     body.linearVelocityY = 0f;
@@ -1627,17 +1361,9 @@ namespace FallingWizard.Player
                 if (lockout > 0f || stats.Rooted)
                     return false;
 
-                // The same window a jump is allowed in, so a step taken just after walking off a
-                // lip is no more generous than the jump they could have had instead. Anyone
-                // genuinely on their way up is left alone - unless it is THIS that is carrying
-                // them up, which after the first step it is.
                 if (coyoteTimer <= 0f || (body.linearVelocityY > 0f && !steppedLastStep))
                     return false;
 
-                // The STICK, not the speed. Pressed against a lip, Run only ever lands one
-                // step's worth of acceleration before the solver takes it away again, so a test
-                // on how fast the wizard is really travelling would be false at exactly the
-                // moment it matters.
                 float steer = command.Steer;
 
                 if (Mathf.Abs(steer) <= steerDeadzone)
@@ -1651,15 +1377,9 @@ namespace FallingWizard.Player
                 Bounds box = hull.bounds;
                 float rise = lipTop - box.min.y;
 
-                // Below a hair there is nothing left to climb; over stepHeight it is a wall, and
-                // walls are what the staff is for.
                 if (rise <= StepClearance || rise > stepHeight)
                     return false;
 
-                // Only the sliver they are moving INTO, one step's worth. Where they already are
-                // is somewhere they demonstrably fit, and checking it again would fail every
-                // time: the solver lets them overlap the lip they are pressed against by a hair,
-                // and a full-width box reads that hair as a ceiling.
                 float sliver = stepClimbSpeed * fixedDeltaTime;
 
                 var slab = new Vector2(box.center.x, box.max.y + sliver * 0.5f);
@@ -1668,22 +1388,6 @@ namespace FallingWizard.Player
                 if (Physics2D.OverlapBox(slab, slabSize, 0f, GroundFilter, Overlaps) > 0)
                     return false;
 
-                // SPEED, not a position. This used to write Rigidbody2D.position outright and
-                // carry the wizard up and forward in a single frame - correct, and it teleported
-                // twice over: a quarter of a box in one frame is a jump cut, and writing a
-                // position outright makes Unity throw away that frame's interpolation, so even a
-                // small one snaps. Driven by velocity, the same climb is spread over three or
-                // four physics steps and interpolated across every rendered frame between them.
-                //
-                // Straight UP, and nothing horizontal, which is what makes spreading it safe:
-                // the line to a destination out over the lip passes through the lip's own
-                // corner, so a partial move along it can end up inside the geometry. The column
-                // overhead cannot, because the wizard is standing in it. Once their soles clear
-                // the lip, Run carries them forward on its own - the solver stops fighting them
-                // the moment there is nothing left to fight.
-                //
-                // It is not a jump: `rising` stays false, so ApplyShortHop leaves it alone, and
-                // the wrapper above takes the leftover speed back the moment the lip is cleared.
                 body.linearVelocityY = stepClimbSpeed;
                 return true;
             }
@@ -1697,8 +1401,6 @@ namespace FallingWizard.Player
                 float topSpeed = command.Walk ? walkSpeed : runSpeed;
                 float targetSpeed = steer * topSpeed * stats.MoveSpeedMultiplier;
 
-                // After the move multiply and BEFORE the wind is added, so a canopy carries the
-                // wizard further under their own steam without also amplifying a gale.
                 if (!IsGrounded)
                     targetSpeed *= stats.AirSpeedMultiplier;
 
@@ -1710,16 +1412,6 @@ namespace FallingWizard.Player
                 bool steering = Mathf.Abs(steer) > steerDeadzone;
                 float rate = steering ? acceleration : groundFriction;
 
-                // Grip scales BOTH branches above, because ice is two things at once and one of
-                // them alone is not ice: you keep going after you let go (groundFriction) and you
-                // cannot turn round in a hurry (acceleration). Scaling only the first gives a
-                // wizard who slides but corners like a car; only the second gives one who feels
-                // heavy but stops dead, which reads as mud.
-                //
-                // ON THE GROUND ONLY, and deliberately. The air rate is already airControl of
-                // what it was; putting sheet ice through it as well is not "slippery" but "no
-                // air control", and it would mean a trigger box taller than the patch robs the
-                // steering of anyone sailing through the top of it for no visible reason.
                 if (!IsGrounded)
                     rate *= airControl *
                             (steering ? stats.AirControlMultiplier : stats.AirDragMultiplier);
@@ -1734,19 +1426,6 @@ namespace FallingWizard.Player
                     Mathf.MoveTowards(body.linearVelocityX, targetSpeed, rate * fixedDeltaTime);
             }
 
-            // Steering ALONG a ramp instead of across it.
-            //
-            // Driving purely sideways into a 45-degree face cannot work here and the numbers say
-            // why: acceleration is 20 boxes a second squared, of which only cos(45) - about 14 -
-            // pushes up the face, while gravity pulls 9.81 x gravityScale x sin(45) - about 21 -
-            // straight back down it, and there is no friction to make up the difference. The
-            // wizard loses that argument every time and slides, which is what "he glides down
-            // instead of going up" is. Worse, Run rewrites the sideways speed absolutely every
-            // step, so the up-the-slope velocity the contact solver correctly hands back is
-            // thrown away before it can ever add up.
-            //
-            // So on a ramp the wizard is steered along the surface, both components at once, and
-            // gravity is simply not part of the sum.
             bool TryRunAlongRamp(float targetSpeed, float topSpeed, float change)
             {
                 bool wasClimbing = climbedLastStep;
@@ -1754,10 +1433,6 @@ namespace FallingWizard.Player
 
                 if (!OnRamp)
                 {
-                    // The ramp has just run out. Whatever upward speed carried the wizard up it
-                    // is a hop nobody asked for now the ground is level again, so it is taken
-                    // back - but only if walking could plausibly have produced it. A jump or a
-                    // slime is faster than any ramp can push and is left alone.
                     if (wasClimbing && IsGrounded && !rising &&
                         body.linearVelocityY > 0f && body.linearVelocityY <= topSpeed)
                         body.linearVelocityY = 0f;
@@ -1765,34 +1440,16 @@ namespace FallingWizard.Player
                     return false;
                 }
 
-                // Already going up faster than walking ever could, so something else - a jump, a
-                // bounce, a fling - owns the wizard this step and the ramp keeps out of it.
                 if (rising || body.linearVelocityY > topSpeed)
                     return false;
 
-                // Tangent to the surface, always pointing the way x grows, so a positive target
-                // speed means "that way along the floor" exactly as it does on the flat.
                 var along = new Vector2(groundNormal.y, -groundNormal.x);
 
                 if (along.x < 0f)
                     along = -along;
 
-                // targetSpeed is a HORIZONTAL speed - it is the same number the flat ground
-                // uses - so on a slope it has to be divided by the tangent's x to keep the
-                // wizard covering ground at the same rate. Without this a 45 degree ramp quietly
-                // costs them 30% of their pace the moment they touch it and gives it back at the
-                // top, which does not read as "that was steep"; it reads as the stairs being
-                // sticky. The same divide goes on the top speed and on the acceleration, so a
-                // slope changes neither how fast they end up nor how long it takes to get there.
-                //
-                // Bounded by the steepest thing that counts as a floor at all, so a wall-ish
-                // surface sneaking past the walkable test cannot divide by nothing.
                 float lean = Mathf.Max(along.x, Mathf.Cos(maxSlopeAngle * Mathf.Deg2Rad));
 
-                // How fast they are already going along the face - CLAMPED to what walking could
-                // have produced. Dropping onto a ramp otherwise arrives with the whole fall
-                // pointing down the slope, and a 16 b/s landing would fire the wizard away
-                // downhill faster than they can ever run back up.
                 float cap = topSpeed / lean;
 
                 float carried = Mathf.Clamp(
@@ -1800,9 +1457,6 @@ namespace FallingWizard.Player
 
                 float speed = Mathf.MoveTowards(carried, targetSpeed / lean, change / lean);
 
-                // Both components written together, and gravity left out of the sum entirely.
-                // That is the whole trick: with nothing pulling them down the face, letting go
-                // of the stick leaves the wizard stood on the ramp instead of sliding off it.
                 body.linearVelocity = along * speed;
                 climbedLastStep = speed * along.y > 0f;
                 return true;
@@ -1810,15 +1464,6 @@ namespace FallingWizard.Player
 
             void TryJump(Modifiers stats)
             {
-                // ABOVE the air-jump count, not folded into the test below it. Spellbook.Rebuild
-                // resets and re-applies every equipped spell each fixed step, so a spell granting
-                // ExtraJumps hands them out continuously - and a wizard who cannot jump off the
-                // floor but can still jump in mid-air is the worst of both.
-                //
-                // This is the ONLY thing switched off. Launch is a separate entry point that
-                // nothing here reaches, so a slime, a fling and a ramp all carry on unchanged,
-                // and `rising` simply never becomes true, which leaves ApplyShortHop inert rather
-                // than clipping a bounce when the button comes up.
                 if (!canJump)
                     return;
 
@@ -1854,9 +1499,6 @@ namespace FallingWizard.Player
             {
                 float floatiness = stats.FallSpeedMultiplier;
 
-                // Not while stood on something. A wizard easing down a ramp has a negative
-                // vertical speed without falling at all, and putting the fall multiplier under
-                // them there turns every ramp into a slide they cannot walk back up.
                 bool falling = !IsGrounded && body.linearVelocityY < 0f;
 
                 body.gravityScale = falling
@@ -1868,26 +1510,6 @@ namespace FallingWizard.Player
                     body.linearVelocityY = -terminalSpeed;
             }
 
-            // Adapted from the jump-test branch, and the adaptations matter more than the port.
-            // It integrates the SAME model the real flight uses - fall gravity, the terminal
-            // clamp, the floatiness from Modifiers - so the picture cannot drift from the physics.
-            //
-            // Three things this game needs that a plain ballistic arc gets wrong:
-            //
-            //  * HAZARDS DO NOT STOP YOU. Every hazard here is a trigger you pass straight
-            //    through, so an arc that ended at the first slime would hide where you actually
-            //    land. It flies on and reports that it crossed one.
-            //  * WIND PUSHES YOU MID-FLIGHT. wind.y is added outside Run (FixedTick:719), so it
-            //    reaches a wizard whose steering is locked. wind.x is not - Run early-returns on
-            //    lockout - so only the vertical component belongs in here.
-            //  * THE FLIGHT HAS TO BE LOCKED. Run rewrites linearVelocityX every step, dragging
-            //    it to the stick at airControl x groundFriction. Unlocked, a 12 b/s fling is
-            //    spent inside half a second and the arc is a lie. ArcEnd.Seconds is how long the
-            //    caster must lock control for the drawing to stay true.
-            //
-            // Sampled by TIME, so points bunch around the apex where the wizard is slowest.
-            // Whatever draws it re-spaces by DISTANCE, which is what makes it read as an even
-            // dotted line rather than a comet.
             public int PredictArc(Vector2 launch, Modifiers stats, in ArcSettings look,
                 List<Vector2> into, out ArcEnd end)
             {
@@ -1904,11 +1526,6 @@ namespace FallingWizard.Player
                 float step = Mathf.Max(0.005f, look.Step);
                 float updraught = wind.y;
 
-                // Foot height, LIFTED CLEAR of the floor. The arc is a promise about where the
-                // feet land, so it starts there - but this project has
-                // Physics2D.queriesStartInColliders on, so a ray beginning flush with the ground
-                // the wizard is stood on reports a hit at distance zero and the whole arc
-                // collapses to a single point beside them.
                 var point = new Vector2(body.position.x, FeetY + ArcClearance);
                 Vector2 velocity = launch;
 
@@ -1939,8 +1556,6 @@ namespace FallingWizard.Player
                     {
                         int found = Physics2D.Raycast(point, leg / length, arcFilter, Rays, length);
 
-                        // Sorted by distance, so the first SOLID one is where the flight really
-                        // ends. Everything before it is scenery you pass through.
                         for (int hit = 0; hit < found; hit++)
                         {
                             Collider2D what = Rays[hit].collider;
@@ -1986,20 +1601,14 @@ namespace FallingWizard.Player
                 public float Distance;
             }
 
-            // What the arc ran into, if anything.
             public struct ArcEnd
             {
                 public Vector2 Point;
                 public bool Stopped;
 
-                // Something that will change where you end up was crossed on the way. The flight
-                // does NOT stop there - hazards in this game are things you pass through - so
-                // this is a warning about the arc, not the end of it.
                 public bool Hazard;
                 public Collider2D What;
 
-                // How long the flight takes. Lock control for at least this long or the drawing
-                // is a lie, because Run drags horizontal speed back to the stick every step.
                 public float Seconds;
             }
         }
@@ -2007,8 +1616,6 @@ namespace FallingWizard.Player
         [Serializable]
         public class Ragdoll
         {
-            // A stand-up of zero seconds divides by nothing, and a tumble whose ceiling equals
-            // its floor leaves no room to recover in.
             const float MinStandUp = 0.01f;
             const float MinTumbleSpread = 0.1f;
 
@@ -2081,16 +1688,6 @@ namespace FallingWizard.Player
 
             public void Begin(int direction) => Begin(direction, true);
 
-            // keepMomentum off drops the sideways speed they arrived with instead of adding to
-            // it. That is only ever right when the tumble goes the OTHER way to the wizard - see
-            // PlayerLogic.Trip(int) - and the decision is made here rather than by the caller
-            // because momentumKept lives here, and there should be exactly one place that
-            // decides what happens to the speed a trip inherits.
-            //
-            // The pleasant side effect: with nothing carried, thrown falls to -launchForward,
-            // which is under minimumLaunch, so a reversed trip always comes out at exactly
-            // minimumLaunch backwards however fast they hit it. A rake throws the same distance
-            // every time, which is what makes it a thing you can learn.
             public void Begin(int direction, bool keepMomentum)
             {
                 spin = -direction * spinSpeed;
@@ -2184,12 +1781,8 @@ namespace FallingWizard.Player
         {
             const float Epsilon = 0.0001f;
 
-            // Past this the rope has swung further than a rope plausibly can, and the maths for
-            // a vertical vine stops behaving.
             const float MaxLean = 89f;
 
-            // Climbing right up to the knot would put the wizard inside whatever the vine hangs
-            // from, so there is always a little rope left.
             const float MinReach = 0.1f;
 
             static readonly Color RopeColour = new Color(0.42f, 0.75f, 0.38f);
@@ -2247,13 +1840,8 @@ namespace FallingWizard.Player
                      "the very end.")]
             public bool letGoAtTheEnd = false;
 
-            // Fastest the rope is ever allowed to drag the wizard, in boxes per second. A
-            // guard against a single mad frame, not a tuning knob - the swing itself is capped
-            // by maxReleaseSpeed long before this.
             const float MaxHaul = 60f;
 
-            // How far the wizard can end a step from where the swing wanted them, in boxes,
-            // before it counts as having hit something.
             const float Blocked = 0.25f;
 
             [NonSerialized] Rigidbody2D body;
@@ -2277,16 +1865,13 @@ namespace FallingWizard.Player
 
             public Vector2 Anchor => anchor;
 
-            // What the SPELL supplies for one grab, as opposed to what the rope itself owns.
-            // These arrive per-grab because they are rankable, and a rank is a save-tier fact
-            // the wizard has no business caching.
             public struct Hold
             {
                 public Vector2 Anchor;
                 public float Length;
                 public float MaxSwingDegrees;
-                public float ClimbSpeed;      // 0 means you cannot climb - that is rank 1
-                public float SnapLimit;       // how far this grab may move you, in boxes
+                public float ClimbSpeed;
+                public float SnapLimit;
             }
 
             public Vector2 HangPosition => PositionAt(angle, depth);
@@ -2295,8 +1880,6 @@ namespace FallingWizard.Player
 
             public float Lean => angle * Mathf.Rad2Deg;
 
-            // Which way the wizard is actually travelling along the arc, right now. Nothing
-            // remembers the last button pressed: on a rope the swing is the truth.
             public int SwingDirection => spin < 0f ? -1 : 1;
 
             public float SwingSpeed => Mathf.Abs(spin) * depth;
@@ -2312,10 +1895,6 @@ namespace FallingWizard.Player
                 readyAt = 0f;
             }
 
-            // Where a grab from `from` would ACTUALLY put the wizard: the same two clamps Grab
-            // applies, run without touching any state. This is the only honest way to ask how far
-            // a grab would move them, because eligibility is measured against the ROPE while the
-            // place they land is on the ARC - and the gap between those two is the teleport.
             public Vector2 WouldHangAt(in Hold spec, Vector2 from)
             {
                 float cap = Mathf.Min(maxSwing, Mathf.Abs(spec.MaxSwingDegrees)) * Mathf.Deg2Rad;
@@ -2334,8 +1913,6 @@ namespace FallingWizard.Player
                 if (body == null || IsRiding || spec.Length <= minDepth)
                     return false;
 
-                // Refused BEFORE any state is written, so a grab that would yank the wizard
-                // simply does not happen and the press falls through to WhyNot with a reason.
                 if (Vector2.Distance(from, WouldHangAt(spec, from)) > spec.SnapLimit)
                     return false;
 
@@ -2343,8 +1920,6 @@ namespace FallingWizard.Player
                 length = spec.Length;
                 limit = Mathf.Min(maxSwing, Mathf.Abs(spec.MaxSwingDegrees)) * Mathf.Deg2Rad;
 
-                // The wizard's own climbSpeed stays the ceiling, exactly as maxSwing already is.
-                // Rank 1 passes 0 and the climb term goes identically to zero - no branch.
                 climb = Mathf.Min(climbSpeed, Mathf.Max(0f, spec.ClimbSpeed));
 
                 Vector2 reach = from - anchor;
@@ -2354,15 +1929,9 @@ namespace FallingWizard.Player
                     ? 0f
                     : Mathf.Clamp(Mathf.Atan2(reach.x, -reach.y), -limit, limit);
 
-                // Whatever they were already doing carries into the swing, so running at a vine
-                // and catching it launches you rather than stopping you dead.
                 Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
                 spin = depth <= Epsilon ? 0f : Vector2.Dot(carried, along) / depth;
 
-                // The body stays DYNAMIC and is steered by velocity. Going kinematic and
-                // teleporting with MovePosition - which is what the staff does, standing still
-                // against a ledge it already knows about - would swing the wizard straight
-                // through the level, because a kinematic body is not stopped by static geometry.
                 restoreGravity = body.gravityScale;
                 body.gravityScale = 0f;
                 body.linearVelocity = Vector2.zero;
@@ -2377,13 +1946,6 @@ namespace FallingWizard.Player
                 if (!IsRiding || body == null || fixedDeltaTime <= Epsilon)
                     return false;
 
-                // Start from where the wizard ACTUALLY is, not from where the swing left them.
-                // If a wall got in the way the arc has to admit it, or they would keep grinding
-                // along the inside of it while the maths insisted they were somewhere else.
-                // Compared against where the last step ASKED them to be, not against the arc
-                // recomputed from their own position - the rope pulling taut on the first step
-                // of a grab is not the same thing as hitting a wall, and would otherwise throw
-                // away the run they arrived with.
                 if (steered && (body.position - wanted).sqrMagnitude > Blocked * Blocked)
                     spin = 0f;
 
@@ -2400,10 +1962,6 @@ namespace FallingWizard.Player
                 float rope = Mathf.Max(depth, MinReach);
                 float gravity = Mathf.Abs(Physics2D.gravity.y) * weight;
 
-                // A pendulum, in one line: gravity always pulls the wizard back under the knot,
-                // and the further out they are the harder it pulls. Steering only adds to that,
-                // so letting go of the stick settles them at the bottom on its own rather than
-                // leaving them parked out at an angle.
                 float pull = -(gravity / rope) * Mathf.Sin(angle);
                 float push = lean.x * (swingPush / rope);
 
@@ -2416,9 +1974,6 @@ namespace FallingWizard.Player
                 {
                     angle = Mathf.Clamp(angle, -limit, limit);
 
-                    // Only kill the swing if it is still trying to go further out. A swing that
-                    // reaches the limit and is already on its way back should keep its speed,
-                    // or every big swing stalls at the top of the arc.
                     if (spin * angle > 0f)
                         spin = 0f;
                 }
@@ -2441,8 +1996,6 @@ namespace FallingWizard.Player
                 IsRiding = false;
                 readyAt = Time.time + regrabDelay;
 
-                // Leave along the arc at the speed you were actually going, which is the speed
-                // the swing has been showing the player for the last second or two.
                 Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
                 float speed = Mathf.Clamp(spin * depth * releaseBoost,
                     -maxReleaseSpeed, maxReleaseSpeed);
@@ -2496,9 +2049,6 @@ namespace FallingWizard.Player
         {
             public const int SlotCount = Progress.SlotCount;
 
-            // How long a spell has to be held with nothing happening before the console is told
-            // why. Long enough that a tap never prints, short enough that a player holding the
-            // button and frowning at the screen gets an answer while they are still holding it.
             const float ExplainAfter = 0.35f;
 
             public static readonly string[] SlotActions =
@@ -2554,9 +2104,6 @@ namespace FallingWizard.Player
                 Reload();
             }
 
-            // The starting kit, and the buttons that spells weld themselves to. Static because
-            // the skill screen can be opened from the main menu, where no wizard exists yet to
-            // have done this in Attach.
             public static void Seed(AbilityBook book)
             {
                 if (book == null)
@@ -2587,9 +2134,6 @@ namespace FallingWizard.Player
                     if (next != null && !Progress.Owns(next.Key))
                         next = null;
 
-                    // ABOVE the early-out on purpose. Buying an upgrade does not change WHICH
-                    // spell is in the slot, so a rank written below this line would not land
-                    // until the wizard next died - and nothing anywhere would say why.
                     slot.Rank = next != null ? Progress.Rank(next.Key) : 0;
 
                     if (slot.Ability == next)
@@ -2652,9 +2196,6 @@ namespace FallingWizard.Player
                 PutOut(slot);
             }
 
-            // The end of a lit window, however it came: the light goes off, the cooldown starts,
-            // and the spell is told last so anything it does in OnEnded sees a slot that has
-            // already finished.
             void PutOut(Slot slot)
             {
                 slot.LitLeft = 0f;
@@ -2688,11 +2229,6 @@ namespace FallingWizard.Player
                     {
                         slot.Buffer = 0f;
 
-                        // A wind-up cannot survive a pause. This loop is the only place a
-                        // release is ever seen and it does not run while paused, so a button let
-                        // go behind a menu is an edge nobody catches - and Fling roots the
-                        // wizard while it aims, so the charge staying live meant a wizard who
-                        // could never walk again for the rest of the level.
                         if (slot.HeldFor > 0f && slot.Ability != null)
                         {
                             slot.Ability.OnChargeLost(owner);
@@ -2727,14 +2263,11 @@ namespace FallingWizard.Player
                     }
 
                     if (slot.Ability.chargesOnHold)
-                        continue;           // a charged spell never expires a buffered press
+                        continue;
 
                     float had = slot.Buffer;
                     slot.Buffer -= deltaTime;
 
-                    // The press has run out of patience without ever going off. This is the
-                    // moment worth reporting: earlier than this it was still legitimately
-                    // waiting for a ledge to arrive.
                     if (had > 0f && slot.Buffer <= 0f && !slot.Fired)
                         Explain(i, slot.Ability, Refusal(slot));
                 }
@@ -2792,15 +2325,10 @@ namespace FallingWizard.Player
                 }
             }
 
-            // A spell held down rather than tapped: one step of winding up, or the release
-            // that ends it. Named for the charge and not for `wind`, which in this codebase is
-            // the thing that blows the wizard sideways.
             void AdvanceCharge(int index, Slot slot, float fixedDeltaTime)
             {
                 if (slot.ReleasedAfter >= 0f)
                 {
-                    // Consumed BEFORE the hook runs, so a spell that re-enters this path from
-                    // inside OnReleased cannot fire the same release twice.
                     float held = slot.ReleasedAfter;
 
                     slot.ReleasedAfter = -1f;
@@ -2819,10 +2347,6 @@ namespace FallingWizard.Player
                 slot.HeldFor += fixedDeltaTime;
                 slot.Ability.OnHeld(owner, slot.HeldFor, fixedDeltaTime);
 
-                // A held spell never expires a buffered press, so the report Observe prints for
-                // an ordinary spell can never fire for this one - and a button held down with
-                // nothing happening is exactly the silence that report exists to break. Said
-                // once per hold, after a beat, and only while the spell still refuses.
                 if (slot.Explained || slot.HeldFor < ExplainAfter || slot.Ability.CanCast(owner))
                     return;
 
@@ -2830,8 +2354,6 @@ namespace FallingWizard.Player
                 Explain(index, slot.Ability, Refusal(slot));
             }
 
-            // For a spell that goes off from OnReleased rather than OnCast: start its lit window,
-            // spend a charge and set the cooldown, exactly as a normal cast would.
             public bool Fire(Ability spell)
             {
                 Slot slot = SlotOf(spell);
@@ -2897,31 +2419,18 @@ namespace FallingWizard.Player
                 public float Buffer;
                 public bool Fired;
 
-                // Cached off Progress by Reload rather than read per frame: ModifyStats runs for
-                // every slot every fixed step, and Reload is the only thing that can change it.
                 public int Rank;
 
                 public bool Held;
                 public float HeldFor;
 
-                // Whether this hold has already been reported to the console. Editor only, and
-                // per HOLD rather than per slot, so letting go and trying again says it again.
                 public bool Explained;
 
-                // Seconds the button was down when it came up, latched in Observe and consumed
-                // by TryCast. Below zero means nothing is pending. Polling
-                // WasReleasedThisFrame from a fixed-step hook would miss the edge on a slow
-                // frame and fire twice on a fast one - Observe runs in Update, TryCast does not.
                 public float ReleasedAfter = -1f;
                 public float LitLeft;
                 public float CooldownLeft;
                 public int UsesLeft;
 
-                // Put a spell in, and blank everything that belonged to whatever was here
-                // before: the buffered press, the wind-up, the lit window, the cooldown and the
-                // charges. Passed the spell rather than reading Ability, because equipping calls
-                // this as the spell CHANGES - and resting calls it with the same one to put a
-                // slot back the way a fresh level would find it.
                 public void Fill(Ability spell)
                 {
                     Ability = spell;
@@ -2933,9 +2442,6 @@ namespace FallingWizard.Player
                     DropCharge();
                 }
 
-                // Let go of a wind-up without firing it. The button is forgotten as well as the
-                // seconds, or the very next frame reads the button as still held and starts
-                // charging again from nothing.
                 public void DropCharge()
                 {
                     Held = false;
@@ -2944,10 +2450,6 @@ namespace FallingWizard.Player
                     Explained = false;
                 }
 
-                // What a cast costs and what it starts: the lit window, a charge if the spell
-                // rations them, and - for a spell with no lit window at all - the cooldown
-                // straight away. Shared, so a spell that goes off from OnReleased is spent on
-                // exactly the same terms as one that goes off from OnCast.
                 public void BeginCast()
                 {
                     Fired = true;

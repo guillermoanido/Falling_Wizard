@@ -5,14 +5,6 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // A patch of floor that does not hold you: a puddle, wet flagstones, sheet ice.
-    //
-    // It does NOT write to PlayerLogic.Modifiers, and it cannot. Spellbook.Rebuild calls
-    // stats.Reset() every fixed step and re-applies the equipped abilities on top, so a
-    // multiplier set from out here would be wiped before Movement.Run ever looked at it. This
-    // goes in the way wind does instead: PlayerLogic.Slicken every step the wizard is inside,
-    // spent and cleared once per Simulate, and stepping off the ice is nothing more elaborate
-    // than this stopping calling. There is no exit event to miss and no decay timer to tune.
     public class SlipperyFloor : Hazard
     {
         const float Epsilon = 0.0001f;
@@ -20,7 +12,6 @@ namespace FallingWizard.World
         const float UnselectedGizmo = 0.5f;
         const float SelectedGizmo = 1f;
 
-        // Skid marks, all as fractions of the zone, so they read at any size of patch.
         const int SkidMarks = 6;
         const float SkidLengthOfZone = 0.3f;
         const float SkidLowRow = 0.25f;
@@ -86,15 +77,10 @@ namespace FallingWizard.World
 
         [NonSerialized] bool warnedAboutSpeedGate;
 
-        // Every step, not just on the way in. The whole hazard is a value that has to be there
-        // on the step Movement.Run reads it, and Run reads it every step.
         protected override bool Continuous => true;
 
         void Reset()
         {
-            // A floor cannot re-arm, cannot be dodged by being slow, and does not bite - so all
-            // three of Hazard's gates are off. It DOES reach a tumbling wizard, so that standing
-            // up on the ice finds the ice already there rather than a step of ordinary ground.
             minimumSpeed = 0f;
             rearmDelay = 0f;
             damage = 0;
@@ -121,11 +107,6 @@ namespace FallingWizard.World
             WarnAboutSpeedGate();
         }
 
-        // The step the wizard first touches the patch. PlayerTrigger lets exactly one of Enter
-        // and Stay through per physics step - they share the lastStep guard - and Enter wins, so
-        // without this the very first step on the ice would run at full grip. That is one step of
-        // ordinary braking at exactly the moment the player is trying to stop, and it is the
-        // difference between the ice starting at the ice and the ice starting a foot into it.
         protected override void Affect(PlayerLogic wizard) => wizard.Slicken(grip);
 
         protected override void OnPlayerInside(PlayerCharacter wizard, float fixedDeltaTime)
@@ -133,13 +114,6 @@ namespace FallingWizard.World
             if (!Allowed(wizard))
                 return;
 
-            // NOT scaled by Haste, unlike the wind's push next door. Haste is a flag, not
-            // Time.timeScale, and the wizard never asks it anything - so the wind has to be
-            // scaled by hand to slow down, while the wizard's own speed is already untouched.
-            // Grip is a ratio over that untouched speed, so there is nothing here to slow:
-            // multiplying it would make ice GRIPPIER the slower the world went, which is
-            // backwards, and it would be the only place in the game where Haste reached the
-            // wizard at all.
             wizard.Logic.Slicken(grip);
         }
 
@@ -148,9 +122,6 @@ namespace FallingWizard.World
             if (sheet == null)
                 sheet = GetComponentInChildren<SpriteRenderer>();
 
-            // No art is made here: OnValidate calls this, and building a texture inside a
-            // serialisation callback is how you earn a console full of warnings. Awake fills in a
-            // stand-in before the first call.
             if (sheet == null || sheet.sprite == null)
                 return;
 
@@ -170,11 +141,6 @@ namespace FallingWizard.World
             if (!fitSheetToZone)
                 return;
 
-            // Unlike the wind's haze this does NOT fill the zone, because ice is a surface and
-            // wind is a volume. The sheet is laid along the bottom edge of the collider, which is
-            // where the floor is: put the object down with its transform on the floor surface
-            // and the glaze lands exactly on the tiles, while the rest of the box reaches up past
-            // the wizard's knees where it can catch them without any measuring.
             float thick = Mathf.Min(sheetThickness, shape.size.y);
 
             sheet.transform.localPosition =
@@ -190,10 +156,6 @@ namespace FallingWizard.World
 
             warnedAboutSpeedGate = true;
 
-            // minimumSpeed is checked in Hazard.OnPlayerEntered and NOWHERE else. All the work
-            // here happens on the per-step path, which PlayerTrigger does not speed gate at all,
-            // so a number typed in here silently does nothing except skip the first step of
-            // contact - which is the one step it would be worst to skip.
             Debug.LogWarning(
                 $"{name}: SlipperyFloor.minimumSpeed is {minimumSpeed}, but a slippery floor " +
                 "works every step you are stood in it and that per-step path is not speed " +
@@ -223,10 +185,6 @@ namespace FallingWizard.World
             Gizmos.color = Faded(ZoneColour, strength);
             Gizmos.DrawWireCube(zone.center, zone.size);
 
-            // Streak length reads the grip, the way the wind's arrows read its strength. Nothing
-            // out here knows the wizard's real run speed, so it is a proportion of the patch
-            // rather than a distance in boxes - the job is telling two patches apart at a glance,
-            // not measuring one.
             float slide = 1f - Mathf.Clamp01(grip);
 
             if (slide <= Epsilon)
@@ -239,8 +197,6 @@ namespace FallingWizard.World
 
             for (int i = 1; i <= SkidMarks; i++)
             {
-                // Staggered across two rows rather than all on one line, so a long patch does
-                // not draw as a single dashed rule the eye mistakes for the collider itself.
                 float lift = zone.size.y * (i % 2 == 0 ? SkidHighRow : SkidLowRow);
 
                 var from = new Vector2(zone.min.x + spacing * i, zone.min.y + lift);

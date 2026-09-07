@@ -4,10 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // The wizard speeds up and the world wades. Everything that moves under its own steam reads
-    // Haste.WorldScale and slows itself; the wizard does not, and neither does their ragdoll,
-    // because neither of them asks. That is the whole trick, and it is why this is a flag rather
-    // than Time.timeScale - see Core/Haste.cs for why scaling time would have been worse.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Haste", fileName = "Haste")]
     public class HasteAbility : Ability
     {
@@ -102,8 +98,6 @@ namespace FallingWizard.Player
 
             Trail trail = wizard.spellbook.StateOf<Trail>(this);
 
-            // Retire rather than Destroy: the ghosts already out finish fading instead of
-            // blinking away the instant the spell ends.
             trail.images?.Retire();
             trail.images = null;
         }
@@ -115,7 +109,6 @@ namespace FallingWizard.Player
 
             [Range(0.05f, 1f)] public float worldScale = 0.35f;
 
-            // OnValidate does not reach into a nested class, so the block clamps itself.
             public void Validate()
             {
                 moveSpeed = Mathf.Max(1f, moveSpeed);

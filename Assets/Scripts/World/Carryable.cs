@@ -4,13 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // Something the wizard can pick up and set down somewhere else - a slime, a rock, anything
-    // the level would rather they moved than avoided.
-    //
-    // Carried by DEACTIVATING the object rather than destroying and re-spawning it. That keeps
-    // every field the level author set, keeps its icon available to the HUD while it is stowed,
-    // and means putting it down cannot lose anything. Death reloads the scene, which restores it
-    // to where it was authored - a carried hazard is not something you get to keep.
     public class Carryable : MonoBehaviour
     {
         static readonly List<Carryable> Loose = new List<Carryable>();
@@ -36,10 +29,6 @@ namespace FallingWizard.World
         [NonSerialized] Vector2 home;
         [NonSerialized] bool knowsHome;
 
-        // How far the hitbox's underside sits below the pivot, measured while the object is
-        // still switched ON. A collider on a GameObject that was reactivated this step has no
-        // shape in the physics world yet, so its bounds are whatever they were before it was
-        // stowed - and setting something down against those puts it wherever it used to be.
         [NonSerialized] float underside;
 
         public static IReadOnlyList<Carryable> All => Loose;
@@ -101,19 +90,9 @@ namespace FallingWizard.World
                 hazard.Disarm(settleTime);
         }
 
-        // Set down STANDING ON a line rather than floating on a point. A slime's hitbox is 0.7
-        // of a box tall and a rock's is 0.6, so dropping either on the middle of a cell leaves it
-        // hanging a fifth of a box off the ground.
-        //
-        // The footprint was measured back in Stow, on purpose. Doing it here meant reading
-        // bounds off a collider switched back on the same step, before the physics world had
-        // built its shape - and that answers with wherever the thing was standing when it was
-        // picked up, which is exactly how a rock ends up in mid-air.
         public void PutDownOn(float middleX, float floorY) =>
             PutDown(new Vector2(middleX, floorY + underside));
 
-        // Where it was standing when the level started, for putting a carried thing back if the
-        // spell is dropped rather than spent.
         public void GoHome() => PutDown(home);
 
         public static Carryable Nearest(Vector2 point, float reach)

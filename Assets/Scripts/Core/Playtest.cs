@@ -53,11 +53,6 @@ namespace FallingWizard.Core
             Sync();
         }
 
-        // Straight in OnValidate whenever it can be. A field written from delayCall is changed
-        // on the live object ONLY - nothing marks the component dirty, so the list you are
-        // looking at never reaches the scene file, and entering Play Mode deserialises an empty
-        // one back over it. That is why the book is a field: with one here no Resources.Load is
-        // needed, which was the only reason for deferring in the first place.
         void OnValidate()
         {
             if (book != null)
@@ -67,9 +62,6 @@ namespace FallingWizard.Core
             }
 
 #if UNITY_EDITOR
-            // No book yet - a component added before this field existed, most likely. Finding one
-            // does need the asset database, so that part still waits a tick, and SetDirty is what
-            // makes the result actually stick.
             UnityEditor.EditorApplication.delayCall += () =>
             {
                 if (this == null || book != null)
@@ -101,10 +93,6 @@ namespace FallingWizard.Core
                 return;
             }
 
-            // Already dealt this session, so touch nothing: what is in Progress is the
-            // loadout the player last chose, and re-dealing here is exactly what made every
-            // restart forget it. The Staff still lands - Spellbook.Attach grants book.known and
-            // Reload re-seeds any owned locked spell that is not in a slot.
             if (Progress.SandboxSeeded && !redealOnEveryLoad)
             {
                 if (announce)
@@ -122,9 +110,6 @@ namespace FallingWizard.Core
             Hand();
         }
 
-        // Spells welded to a slot get theirs before anything else is placed. Otherwise the
-        // Staff's own slot is filled by a ticked spell, and the spellbook evicts it a moment
-        // later when it puts the Staff where it belongs.
         void Reserve()
         {
             foreach (Ability spell in book.spells)

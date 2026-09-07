@@ -77,9 +77,6 @@ namespace FallingWizard.World
         [NonSerialized] float unrolled;
         [NonSerialized] bool called;
 
-        // Only art this component built for itself is ever resized. Anything you put here is
-        // yours, and having it silently snapped back to knotSize every time OnValidate ran is
-        // not a component being helpful.
         [NonSerialized] bool builtKnot;
         [NonSerialized] bool builtRope;
 
@@ -144,8 +141,6 @@ namespace FallingWizard.World
 
         public bool IsWithinReach(Vector2 point) => DistanceTo(point) <= grabRange;
 
-        // Called by the spell, not by walking past. Finding a vine is something the player does
-        // on purpose with a button, so the knot is the invitation and this is accepting it.
         public void CallDown()
         {
             called = true;
@@ -182,8 +177,6 @@ namespace FallingWizard.World
             return closest;
         }
 
-        // The angle the wizard is hanging at, so the drawn vine can lean with them. Straight
-        // down whenever nobody is on it.
         float Swing => BeingRidden ? PlayerCharacter.Instance.Logic.vine.Lean : 0f;
 
         void Glow()
@@ -207,9 +200,6 @@ namespace FallingWizard.World
             knot.color = Color.Lerp(dormant, glow, pulse);
         }
 
-        // True when the wizard is hanging on THIS vine. Asked rather than told: letting go
-        // with Jump never passes through the spell, so a vine that waited to be informed would
-        // stay hanging there after a jump release.
         bool BeingRidden
         {
             get
@@ -321,17 +311,11 @@ namespace FallingWizard.World
             float hangs = length * howFar;
             float tilt = lean * Mathf.Deg2Rad;
 
-            // The way the rope actually points, which is the way the wizard hangs - so the drawn
-            // vine leans with the swing instead of standing bolt upright while the wizard arcs
-            // away from underneath it. Grown downward from the knot rather than around its own
-            // middle, so a half-unrolled vine reaches half way down.
             var along = new Vector2(Mathf.Sin(tilt), -Mathf.Cos(tilt));
 
             rope.transform.position = Knot + along * (hangs * 0.5f);
             rope.transform.rotation = Quaternion.Euler(0f, 0f, lean);
 
-            // Only the length is driven. The width stays whatever it was authored at, so making
-            // a vine fatter to see it stays made.
             rope.transform.localScale =
                 new Vector3(ropeThickness, Mathf.Max(Epsilon, hangs) / unit.y, 1f);
         }

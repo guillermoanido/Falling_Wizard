@@ -2,15 +2,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // The staff is the wizard's legs. Jumping is switched off in Movement, so this is the only
-    // thing in the game that takes them upward under their own power.
-    //
-    // It is a HELD spell, not a pressed one - chargesOnHold on the asset - and the reason is one
-    // specific failure. A press is a single instant, and if the wall was a finger's width too far
-    // away on that instant, nothing happened and nothing said why. A hold asks again every
-    // physics step: raise the staff, look, and the moment the wizard shuffles into range they go
-    // up. The wizard holding the staff in the air with nothing in front of them is not a bug -
-    // it is the spell telling them there is nothing here to climb.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Staff", fileName = "Staff")]
     public class StaffAbility : Ability
     {
@@ -21,17 +12,11 @@ namespace FallingWizard.Player
                  "will reach down and where the hand-hang ends all follow.")]
         public float[] lengthByRank = { 1f, 1.5f };
 
-        // Applied from here rather than OnEquipped because buying a rank does not change WHICH
-        // spell is in the slot, so OnEquipped would not fire and the staff would stay short until
-        // the wizard next died. SetLengthScale early-outs when the number has not moved.
         public override void ModifyStats(PlayerLogic wizard, PlayerLogic.Modifiers stats) =>
             wizard.SetStaffLength(TierFor(lengthByRank, wizard.spellbook.RankOf(this)));
 
         public override void OnUnequipped(PlayerLogic wizard) => wizard.SetStaffLength(1f);
 
-        // One button, two directions, and which one you get is decided by the ground rather than
-        // by a second button: a drop in front of you means down, a wall means up. Both end with
-        // the wizard hanging on the same pole, driven by the same stick.
         public override bool CanCast(PlayerLogic wizard) =>
             wizard.IsOnStaff ||
             (wizard.StaffIsFree && (wizard.movement.IsAtEdge || wizard.CanClimbHere));
@@ -47,14 +32,13 @@ namespace FallingWizard.Player
             if (wizard.State != PlayerState.Normal)
                 return $"you are {wizard.State}";
 
-            // Asked POSITIVELY, and never off IsAtEdge - that flag is a physics step old and it
-            // says only that ground is MISSING ahead, not that a pole can be driven in there.
+            if (wizard.HasPole && !wizard.Pole.IsReady)
+                return "the staff is still being brought back to hand, " +
+                       $"{wizard.Pole.CooldownLeft:0.00}s to go";
+
             if (wizard.movement.TryFindLedgeEdge(out _))
                 return "the drop here is too shallow for the staff to reach down into";
 
-            // The measurement the search already took, put into words. Four different things can
-            // refuse a climb and from the outside they are the same silence - so the console
-            // names the one that actually happened, with the number it turned on.
             PlayerLogic.Movement walk = wizard.movement;
 
             switch (walk.WhyNoClimb)
@@ -88,43 +72,13 @@ namespace FallingWizard.Player
             return null;
         }
 
-        // Every fixed step the button is down.
         public override void OnHeld(PlayerLogic wizard, float heldSeconds, float fixedDeltaTime)
         {
-            // Already hanging on the pole. The stick drives it from there - up at the top steps
-            // off onto the ledge, down at the bottom lets go - and HOLDING this button has
-            // nothing to add. Releasing it does NOT drop them off, because a climb is a place
-            // you are, not a button you are holding.
-            //
-            // A fresh press does, though: the button that put them on the pole takes them off
-            // it again, wherever up or down the wall they have got to. Without it the only ways
-            // off are the two ends of the pole, which is no use half way up a wall you have
-            // changed your mind about - and worse on the way DOWN, where the bottom is the drop
-            // you were trying not to take.
-            if (wizard.IsOnStaff)
-            {
-                // The first physics step of a hold and only that. Spellbook zeroes HeldFor on
-                // release and adds exactly one step before calling in, so this is the press
-                // edge itself. Read it any looser and the press that STARTED the climb would
-                // drop the wizard off it on the very next step.
-                if (heldSeconds <= fixedDeltaTime)
-                    wizard.DropFromStaff();
-
-                return;
-            }
-
-            if (!wizard.StaffIsFree)
+            if (wizard.IsOnStaff || !wizard.StaffIsFree)
                 return;
 
-            // The staff goes up whether or not there turns out to be anything to climb. That is
-            // the whole of what the player is promised for holding the button, and it is what
-            // makes a refusal legible: staff up and going nowhere means nothing here, rather
-            // than a press that vanished.
             wizard.RaiseStaff();
 
-            // A drop wins. The pole goes over the lip and they climb down it - asked every step
-            // rather than only the first, so walking up to a ledge with the button already held
-            // plants the moment the ledge arrives.
             if (wizard.movement.IsAtEdge && wizard.TryPlantStaff(StaffMode.Ladder))
                 return;
 
@@ -134,7 +88,6 @@ namespace FallingWizard.Player
         public override void OnReleased(PlayerLogic wizard, float heldSeconds) =>
             wizard.LowerStaff();
 
-        // The button came up behind a pause menu, where nothing is watching for the release.
         public override void OnChargeLost(PlayerLogic wizard) => wizard.LowerStaff();
     }
 }

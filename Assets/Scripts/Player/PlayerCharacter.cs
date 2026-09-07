@@ -113,9 +113,6 @@ namespace FallingWizard.Player
 
         void AskWhereToGo()
         {
-            // Built once and never rebuilt, which is safe: ChoiceScreen.Open calls Screens.Claim,
-            // and MenuScreen.Update refuses to open the pause menu while ModalOpen - so there is
-            // no way to reach the settings panel and change language over the top of this.
             ChoiceScreen screen = ChoiceScreen.Open(Loc.Get(Loc.Keys.DeathTitle),
                                                     Loc.Get(Loc.Keys.DeathBlurb));
 

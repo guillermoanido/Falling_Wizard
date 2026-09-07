@@ -21,12 +21,8 @@ namespace FallingWizard.UI
         public static readonly Color Heart = new Color(0.88f, 0.30f, 0.38f);
         public static readonly Color Warning = new Color(0.95f, 0.72f, 0.36f);
 
-        // Everything below is in reference-resolution pixels, and the scaler maps them onto
-        // whatever the player's screen actually is.
         static readonly Vector2 ReferenceResolution = new Vector2(1920f, 1080f);
 
-        // Split the difference between matching width and matching height, so an ultrawide and a
-        // tall window both keep the panels on screen.
         const float ScalerBalance = 0.5f;
 
         public const float SheetPadding = 36f;
@@ -39,8 +35,6 @@ namespace FallingWizard.UI
 
         public static readonly Color PipEmpty = new Color(1f, 1f, 1f, 0.16f);
 
-        // Unity's defaultColorBlock steps normal (1,1,1) to selected (0.961,...) - a four per
-        // cent change nobody can see, and on a gamepad the selection IS the cursor.
         public static ColorBlock Tints
         {
             get
@@ -56,9 +50,6 @@ namespace FallingWizard.UI
             }
         }
 
-        // For a plate already tinted Ui.Card: multiplier 2 with a normal of 0.5 lands it back on
-        // exactly Ui.Card when idle and near Ui.CardLit when selected, which is the colour this
-        // project already uses everywhere for "this is the one".
         public static ColorBlock CardTints
         {
             get
@@ -74,7 +65,6 @@ namespace FallingWizard.UI
                 return block;
             }
         }
-
 
         public static Canvas CreateCanvas(string name, int sortingOrder)
         {
@@ -196,9 +186,6 @@ namespace FallingWizard.UI
             return art;
         }
 
-        // Turn a plate into something you can click or navigate to. Its children are already
-        // raycast-deaf (Icon and Label both switch theirs off), so the plate is what the pointer
-        // hits and there is nothing to fight over.
         public static Button Pressable(Image plate)
         {
             var button = plate.gameObject.AddComponent<Button>();
@@ -208,9 +195,6 @@ namespace FallingWizard.UI
             return button;
         }
 
-        // Deselect first: SetSelectedGameObject early-outs when the object is already selected,
-        // so re-selecting the same row after a rebuild would never fire OnSelect and the
-        // highlight would be lost.
         public static void Focus(GameObject what)
         {
             if (EventSystem.current == null || what == null)

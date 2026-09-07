@@ -77,8 +77,6 @@ namespace FallingWizard.Player
 
         public bool IsPassive => passive;
 
-        // Deliberately no separate maxRank field: two numbers that can disagree is a bug waiting
-        // to be authored. The list IS the cap.
         public int MaxRank => upgrades != null ? upgrades.Length + 1 : 1;
 
         public bool HasUpgrades => upgrades != null && upgrades.Length > 0;
@@ -88,24 +86,12 @@ namespace FallingWizard.Player
 
         public string Key => string.IsNullOrEmpty(id) ? name : id;
 
-        // Where this spell's words are filed in a translation. Built from Key - the id the save
-        // file already uses - and NOT from displayName, so renaming what the player sees can
-        // never orphan the Spanish.
-        //
-        // Watch out when writing a translation: 'Mage Hand' has the id 'vine' and 'Telekinesis'
-        // has the id 'hand'. They read like each other's, they are not swapped, and they cannot
-        // be changed without every existing save forgetting both spells.
         public string LocKey => Loc.AbilityPrefix + Key;
 
-        // The English typed into this asset is the fallback, so a spell added tomorrow reads
-        // correctly in every language until somebody gets round to translating it.
         public string Name => Loc.Text(LocKey + ".name", displayName);
 
         public string Description => Loc.Text(LocKey + ".desc", description);
 
-        // Keyed by the ELEMENT NUMBER in the inspector, which is what a designer looking at the
-        // upgrades list is counting: element 0 is the step from rank 1 to rank 2, and that is
-        // exactly the upgrades[rank - 1] that NextUpgrade hands back.
         public string UpgradeTitle(int rank)
         {
             Upgrade step = NextUpgrade(rank);
@@ -134,32 +120,20 @@ namespace FallingWizard.Player
 
         public virtual void ModifyStatsWhileLit(PlayerLogic wizard, PlayerLogic.Modifiers stats) { }
 
-        // What the HUD should draw for this spell right now. Telekinesis answers with the icon of
-        // whatever it is carrying, which is the only way a player can tell a stored slime from a
-        // stored rock without opening a menu.
         public virtual Sprite IconFor(PlayerLogic wizard) => icon;
 
         public virtual Color IconTintFor(PlayerLogic wizard) => Color.white;
 
-        // 0..1 to draw a meter of the spell's own, or below zero for "I have nothing to show and
-        // the slot should fall back to its cooldown wipe".
         public virtual float ChargeFor(PlayerLogic wizard) => -1f;
 
         public virtual void OnHeld(PlayerLogic wizard, float heldSeconds, float fixedDeltaTime) { }
 
         public virtual void OnReleased(PlayerLogic wizard, float heldSeconds) { }
 
-        // The wind-up was LOST rather than let go: the button came up behind the pause menu,
-        // where nothing is watching for the release. A charged spell has to undo whatever the
-        // hold switched on - Fling roots the wizard on the spot while it aims - or it sits wound
-        // up for the rest of the level with no button left that can end it.
         public virtual void OnChargeLost(PlayerLogic wizard) { }
 
         public virtual bool CanCast(PlayerLogic wizard) => true;
 
-        // Why the press just now did nothing, in the player's words and without a full stop.
-        // Null says nothing at all. Only ever reaches the console, and only in the editor - it
-        // exists because a spell that silently refuses is a spell you cannot debug.
         public virtual string WhyNot(PlayerLogic wizard) => null;
 
         public virtual bool OnCast(PlayerLogic wizard) => false;
@@ -168,9 +142,6 @@ namespace FallingWizard.Player
 
         public virtual void OnEnded(PlayerLogic wizard) { }
 
-        // Pick the block of per-rank numbers for a rank, clamped both ways. A tier list shorter
-        // than the upgrade list is a designer half way through filling it in: the top ranks repeat
-        // the last block, which is wrong but visible, rather than throwing at runtime.
         protected static T TierFor<T>(T[] tiers, int rank) where T : class =>
             tiers == null || tiers.Length == 0
                 ? null
@@ -189,10 +160,6 @@ namespace FallingWizard.Player
                                  this);
         }
 
-        // Unity delivers OnValidate to the MOST-DERIVED type only. A subclass declaring its own
-        // would hide this one and every clamp on the chain would quietly stop running, with
-        // nothing in the compiler to catch it. A spell overrides Validate() and never writes an
-        // OnValidate of its own.
         void OnValidate()
         {
             cost = Mathf.Max(0, cost);
@@ -219,7 +186,6 @@ namespace FallingWizard.Player
             [Tooltip("What it buys, in the player's words. One sentence.")]
             public string description = "";
 
-            // OnValidate does not reach into a nested class, so the block clamps itself.
             public void Validate() => cost = Mathf.Max(0, cost);
         }
     }

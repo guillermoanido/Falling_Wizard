@@ -7,8 +7,6 @@ namespace FallingWizard.Player
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Wall Growth", fileName = "Wall Growth")]
     public class WallGrowthAbility : Ability
     {
-        // A block of literally no size has a degenerate collider, which Unity complains about
-        // every frame it exists.
         const float MinGrown = 0.01f;
 
         [Header("Wall")]
@@ -72,8 +70,6 @@ namespace FallingWizard.Player
             if (wizard.State != PlayerState.Normal)
                 return $"you are {wizard.State} and need both feet under you";
 
-            // The line above has always promised this. Without the check the spell also grew a
-            // block under a FALLING wizard, one step at a time, which is a flying spell.
             if (!wizard.movement.IsGrounded)
                 return "you are in the air - this grows out of the ground you are stood on";
 
@@ -135,8 +131,6 @@ namespace FallingWizard.Player
             growth.age = 0f;
         }
 
-        // `top` comes back as the height the finished block's surface has to sit at for the
-        // wizard to walk across the seam without catching on it.
         bool FindCell(PlayerLogic wizard, out Vector2Int cell, out float top)
         {
             PlayerLogic.Movement walk = wizard.movement;
@@ -145,16 +139,9 @@ namespace FallingWizard.Player
             cell = default;
             top = 0f;
 
-            // The floor is FOUND, not counted off the row the wizard is in. Counting put the
-            // whole search a row into the rock whenever that row was even slightly out, and a
-            // search that begins inside the ground never finds a lip to build off.
             if (!TileGrid.FloorRowUnder(stood, walk.groundLayers, out int floorRow))
                 return false;
 
-            // Find the LIP first - the nearest column ahead whose floor has run out - and place
-            // relative to that. Placing relative to the wizard instead was the bug: standing at
-            // the very edge put the block one tile out, standing a tile back put it two, and
-            // which of those you got depended on exactly where you stopped walking.
             for (int step = 0; step <= reachInTiles; step++)
             {
                 int x = stood.x + walk.Facing * step;
@@ -164,13 +151,8 @@ namespace FallingWizard.Player
 
                 cell = new Vector2Int(x + walk.Facing * outFromEdge, floorRow + 1 + liftInTiles);
 
-                // The wizard is STOOD on the platform being extended, so their soles ARE its
-                // surface - the one height the block has to match for the seam to be walkable.
-                // No constant, and no assumption about how the tile sheet was sliced.
                 top = walk.Footing.y + (cell.y - floorRow);
 
-                // No floor test, unlike Telekinesis. Putting a block where there ISN'T one is
-                // the entire spell - a block grown over solid ground would be grown over nothing.
                 return TileGrid.IsFree(cell, walk.groundLayers);
             }
 
@@ -213,9 +195,6 @@ namespace FallingWizard.Player
             if (growth.wall == null)
                 return;
 
-            // Grown about its own middle. The root is already stood on the floor line by
-            // OnCast, so the finished block rests exactly where the tilemap's own tiles rest -
-            // the few frames of growing under that are three fiftieths of a second.
             growth.wall.transform.localScale = new Vector3(
                 Mathf.Max(MinGrown, size.x * grown),
                 Mathf.Max(MinGrown, size.y * grown), 1f);

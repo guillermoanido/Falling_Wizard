@@ -4,9 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.World
 {
-    // A trail of the wizard, stamped behind them and left to fade. Built the same way WindZone2D
-    // builds its streaks: throwaway SpriteRenderers under one container at the scene root, so
-    // nothing inherits a scale or a flip from whatever it was copied off.
     public class Afterimages : MonoBehaviour
     {
         readonly List<Ghost> ghosts = new List<Ghost>();
@@ -42,7 +39,6 @@ namespace FallingWizard.World
 
         public void Run(bool on) => running = on;
 
-        // Stop stamping but let what is already out fade, rather than blinking the trail away.
         public void Retire()
         {
             running = false;

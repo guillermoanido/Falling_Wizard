@@ -10,18 +10,10 @@ using UnityEngine.UI;
 
 namespace FallingWizard.UI
 {
-    // Two jobs, kept apart on purpose. The ROWS are the shop: learn a spell, raise its rank. The
-    // RAIL along the top is the loadout: which button each spell answers to. Mixing them is what
-    // the old screen did, and it is why there was no way to say "put this one on R" - every path
-    // went through FirstEmptySlot.
     public class SkillScreen : MonoBehaviour
     {
-        // Above the Pause Menu (100) and above a rest or death screen (200), since this is what
-        // those open on top of themselves.
         const int SortingOrder = 220;
 
-        // Sized so eight spells still fit a 1080-tall canvas without a scroll view. Past that the
-        // panel starts running off the bottom and this wants a real one.
         const float PanelWidth = 1180f;
         const float PanelPadding = 24f;
         const float PanelSpacing = 8f;
@@ -33,7 +25,6 @@ namespace FallingWizard.UI
         const float ActionFontSize = 22f;
         const float SlotSize = 92f;
 
-        // Room under a slot for the button glyph and whatever is sitting on it.
         const float SlotCaption = 30f;
 
         const float TitleSize = 44f;
@@ -67,11 +58,8 @@ namespace FallingWizard.UI
         const float CellSpacing = 4f;
         const float WordSpacing = 2f;
 
-        // What the icon, the action button, the card's own padding and the gaps between them take
-        // out of a row. Whatever is left is where the words go.
         const float RowFurniture = IconSize + ActionWidth + CardPadding * 2f + CardSpacing * 2f;
 
-        // The panel's content area, inside its padding.
         const float Inner = PanelWidth - PanelPadding * 2f;
 
         static readonly Color UnownedIcon = new Color(1f, 1f, 1f, 0.3f);
@@ -82,19 +70,15 @@ namespace FallingWizard.UI
         Action dive;
         Action closed;
 
-        // The KEY of the button at the bottom, not the words. Redraw resolves it every time it
-        // runs, which is what lets the button change language under an open screen.
         string diveKey = Loc.Keys.SkillDive;
 
         RectTransform body;
         InputAction[] slotKeys;
 
-        // Survives a Redraw, which throws every row away and builds new ones.
         string focusKey = string.Empty;
 
         [NonSerialized] int openedOn;
 
-        // labelKey is a translation key, not words. Null asks for the usual one.
         public static SkillScreen Open(Action onDive, string labelKey = null) =>
             Raise(onDive, labelKey, null);
 
@@ -127,7 +111,6 @@ namespace FallingWizard.UI
             for (int i = 0; i < slotKeys.Length; i++)
                 slotKeys[i] = Controls.Player(PlayerLogic.Spellbook.SlotActions[i]);
 
-            // Reachable from the main menu, where no wizard exists to have done this in Attach.
             if (book != null)
                 PlayerLogic.Spellbook.Seed(book);
 
@@ -145,9 +128,6 @@ namespace FallingWizard.UI
 
         void Update()
         {
-            // Not paranoia: the door and this screen both read WasPressedThisFrame, and execution
-            // order between two arbitrary MonoBehaviours is undefined - without the guard the
-            // screen closes on the very press that opened it.
             if (Time.frameCount != openedOn &&
                 (Core.Controls.PausePressed || Core.Controls.CancelPressed ||
                  Core.Controls.LoadoutPressed))
@@ -226,8 +206,6 @@ namespace FallingWizard.UI
             Ui.CreateButton(Loc.Get(diveKey), body, DiveWidth, DiveHeight, DiveFontSize)
                 .onClick.AddListener(Leave);
 
-            // Without this a gamepad is stuck: Navigate has nowhere to move from, and the old
-            // screen actively cleared the selection on every rebuild.
             Ui.Focus(first);
         }
 
@@ -425,7 +403,6 @@ namespace FallingWizard.UI
                 });
         }
 
-        // The rule about what may go where lives in ONE place. The screen asks; it does not decide.
         void Assign(Ability spell, int slot)
         {
             if (spell == null || !Progress.Owns(spell.Key) || spell.locked)
@@ -434,14 +411,14 @@ namespace FallingWizard.UI
             Ability resident = book != null ? book.Find(Progress.EquippedIn(slot)) : null;
 
             if (resident != null && resident.locked)
-                return;                              // the Staff's button stays shut
+                return;
 
             PlayerCharacter wizard = PlayerCharacter.Instance;
 
             if (wizard != null)
-                wizard.Logic.spellbook.Equip(spell, slot);   // swaps, honours locked, reloads
+                wizard.Logic.spellbook.Equip(spell, slot);
             else
-                Progress.Place(slot, spell.Key);             // main menu: nobody to tell
+                Progress.Place(slot, spell.Key);
 
             focusKey = spell.Key;
             Apply();
@@ -481,38 +458,17 @@ namespace FallingWizard.UI
                 Core.Controls.Player(PlayerLogic.Spellbook.SlotActions[slot]));
         }
 
-        // The two real doors into this screen both cost the run and both dive to level one, and
-        // a level with no rest site leaves dying as the only way in. This is the playtest door.
-        // For now it installs ALWAYS - see Install - so the loadout can be opened mid-fall while
-        // the game is being built. That does suspend the "decide before you go down" rule, so it
-        // wants putting back behind the sandbox before anyone plays this for real.
-        //
-        // It listens on UI/Loadout - Tab - and NOT on Pause. Sharing Pause with the pause menu
-        // was a race nobody could win: Controls.PausePressed is WasPressedThisFrame, which stays
-        // true for the whole frame, so MenuScreen.Update and this both acted on the one press.
-        // Screens.Claim happens inside Raise, far too late to stop a pause menu that already
-        // ran, so Escape opened the pause menu AND buried it under this screen's shroud at
-        // sorting order 220. From the player's seat, Escape opened the skill menu.
         class Door : MonoBehaviour
         {
             static Door live;
 
             SkillScreen open;
 
-            // Whether the world was ALREADY paused when this door opened. Raise pauses
-            // unconditionally and Leave never unpauses, so without remembering this the door
-            // either left the game frozen after closing, or - if it had been opened over a
-            // pause menu - would start the world running again underneath a menu still sitting
-            // there eating clicks.
             bool wasPaused;
 
             [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
             static void Install()
             {
-                // TEMPORARY: this used to install only while the playtest sandbox was on, so it
-                // could not exist in a real playthrough and the "decide before you go down" rule
-                // was untouched. The sandbox is off now, so the gate would mean no door at all.
-                // Put `|| !Progress.Sandbox` back on the line below to restore that rule.
                 if (live != null)
                     return;
 

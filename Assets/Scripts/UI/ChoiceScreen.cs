@@ -10,7 +10,6 @@ namespace FallingWizard.UI
 {
     public class ChoiceScreen : MonoBehaviour
     {
-        // Above the Pause Menu's canvas, which sits at 100.
         const int DefaultSortingOrder = 200;
 
         const float PanelWidth = 760f;
@@ -24,7 +23,6 @@ namespace FallingWizard.UI
         const float TitleSize = 56f;
         const float TitleHeight = 70f;
 
-        // Two lines' worth: the blurb wraps, and a clipped explanation is worse than none.
         const float BlurbSize = 26f;
         const float BlurbHeight = 72f;
 

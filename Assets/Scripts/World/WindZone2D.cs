@@ -9,8 +9,6 @@ namespace FallingWizard.World
     {
         const float Epsilon = 0.0001f;
 
-        // Gizmo shape, all as fractions of the zone or of the push, so an arrow is readable at
-        // any size of zone and any strength of wind.
         const float ArrowLengthPerBox = 0.25f;
         const float ArrowLengthOfZone = 0.4f;
         const float ArrowSpreadOfZone = 0.3f;
@@ -94,10 +92,6 @@ namespace FallingWizard.World
 
         protected override bool Continuous => true;
 
-        // How much of this zone is actually blowing, 0 to 1. A plain wind zone is always wide
-        // open; a shuttered one overrides this and everything downstream follows on its own -
-        // the push, the drift, the streak alpha - so a trap's art physically cannot tell the
-        // player a different story from its physics.
         protected virtual float Openness => 1f;
 
         public Vector2 Drift => push * streakSpeed * Haste.WorldScale * Openness;
@@ -134,8 +128,6 @@ namespace FallingWizard.World
             if (!Allowed(wizard))
                 return;
 
-            // Scaled by Haste: a gale you cannot walk into is exactly what the spell is for,
-            // and the streaks below slow with it so the two never disagree.
             wizard.Logic.Push(push * Haste.WorldScale, rampup, groundScale);
         }
 
@@ -146,11 +138,6 @@ namespace FallingWizard.World
 
             Vector2 drift = Drift;
 
-            // Measured on the PUSH, not on the drift. A shuttered zone that has closed has a
-            // drift of zero, and bailing here left its streaks frozen in mid-air at whatever
-            // alpha they were last handed - lit, motionless, and pointing at a vent that is not
-            // running. Wrap does nothing with a zero step and Fade still fades, so falling
-            // through to the loop is both correct and cheap.
             if (push.sqrMagnitude < Epsilon)
                 return;
 
@@ -179,8 +166,6 @@ namespace FallingWizard.World
 
         Color Fade(Vector2 point, Bounds zone, Vector2 drift)
         {
-            // Fade in from the edge it enters by and out at the one it leaves by, so nothing
-            // blinks into existence mid-air. Measured along whichever way the wind mostly blows.
             bool sideways = Mathf.Abs(drift.x) >= Mathf.Abs(drift.y);
 
             float low = sideways ? zone.min.x : zone.min.y;
@@ -200,9 +185,6 @@ namespace FallingWizard.World
             if (haze == null)
                 haze = GetComponentInChildren<SpriteRenderer>();
 
-            // No art is made here: OnValidate calls this, and building a texture inside a
-            // serialisation callback is how you earn a console full of warnings. Awake fills
-            // in a stand-in before the first call.
             if (haze == null || haze.sprite == null)
                 return;
 
@@ -233,9 +215,6 @@ namespace FallingWizard.World
 
             Bounds zone = area.bounds;
 
-            // Kept at the scene root under one container rather than parented to the zone: a
-            // stretched wind zone would otherwise stretch every streak with it, and these are
-            // driven in world space anyway.
             gust = new GameObject($"{name} Streaks").transform;
 
             blown = new Transform[streaks];
@@ -301,8 +280,6 @@ namespace FallingWizard.World
             Vector2 way = push.normalized;
             Vector2 across = new Vector2(-way.y, way.x);
 
-            // Arrow length reads the strength: a run is 6 boxes a second, so a gale you cannot
-            // walk out of draws longer than the wizard is tall.
             float narrow = Mathf.Min(zone.size.x, zone.size.y);
 
             float length = Mathf.Min(push.magnitude * ArrowLengthPerBox,

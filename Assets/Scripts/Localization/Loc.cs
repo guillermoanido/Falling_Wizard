@@ -4,50 +4,28 @@ using UnityEngine;
 
 namespace FallingWizard.Core
 {
-    // The languages the game can be played in. The ORDER is the order of the settings dropdown,
-    // and the NAME is what goes in the save file - so a language may be added to the end, but
-    // never renamed and never reordered, or every player's saved choice points somewhere else.
     public enum Language
     {
         English,
         Spanish,
     }
 
-    // Every word the player reads goes through here.
-    //
-    // English is the source and lives in this file, right next to the code that asks for it, so a
-    // key can never be asked for in one place and defined in another. A TRANSLATION is a
-    // LanguageTable asset in Resources/Language, so the Spanish can be reworded in the inspector
-    // without a recompile, and a half finished one is safe to play: anything the table has not
-    // got yet falls back to the English rather than showing a blank or a raw key.
     public static class Loc
     {
-        // Resources.Load path. "Language/Spanish" is Assets/Resources/Language/Spanish.asset.
         const string TableFolder = "Language/";
 
-        // A key filed under an ability is looked up by the spell's own id, so it can never be
-        // listed here. LanguageTable's own check has to let this prefix through unquestioned.
         public const string AbilityPrefix = "ability.";
 
-        // Fired after the language has actually changed. Anything showing words subscribes and
-        // re-reads; it does not need to know what the new language is.
         public static event Action Changed;
 
-        // Keys already complained about. Without it a bad key in the HUD, which is rebuilt in
-        // LateUpdate every single frame, writes sixty warnings a second and the console is gone.
         static readonly HashSet<string> Warned = new HashSet<string>();
 
         static LanguageTable table;
 
         public static Language Language { get; private set; } = Language.English;
 
-        // Read-only so LanguageTable can check its own keys against it at author time, and so
-        // nothing can quietly add a string at runtime that no translation will ever cover.
         public static IReadOnlyDictionary<string, string> English => Source;
 
-        // A language is always named in ITS OWN language. The player hunting through this list is
-        // exactly the person who cannot read the menu it is sitting in, and "Spanish" is no use
-        // to them. That is why these are here and not in the tables.
         public static string NameOf(Language language)
         {
             switch (language)
@@ -65,21 +43,14 @@ namespace FallingWizard.Core
             Language = language;
             table = FindTable(language);
 
-            // The new table has its own holes, so old complaints say nothing about it.
             Warned.Clear();
 
-            // Through GameSettings, which already owns settings.json and already has a slot for
-            // this. Written the moment it changes rather than on SettingsPanel.OnDisable, because
-            // a language change repaints the menu you are standing in - there is no "apply" step
-            // to hang it on.
             GameSettings.Language = CodeFor(language);
             GameSettings.Save();
 
             Changed?.Invoke();
         }
 
-        // What the player reads for this key. Table, then English, then the key itself - which is
-        // ugly on purpose, because a key on screen is a bug you want to see.
         public static string Get(string key)
         {
             if (string.IsNullOrEmpty(key))
@@ -98,9 +69,6 @@ namespace FallingWizard.Core
             return key;
         }
 
-        // For a string that carries its own English on the object that shows it - a rest site's
-        // own heading, a spell's displayName. Leave the key empty and the typed English is used
-        // exactly as typed, which is how a one-off rest site written for one level stays written.
         public static string Text(string key, string english)
         {
             if (string.IsNullOrEmpty(key))
@@ -109,16 +77,11 @@ namespace FallingWizard.Core
             if (table != null && table.TryFind(key, out string translated))
                 return translated;
 
-            // The English typed on the OBJECT wins over anything filed under the same key here.
-            // Only a caller that carries its own words reaches this method, and those words are
-            // the ones a designer typed into that particular rest site - swapping in a shared
-            // string because the keys happen to collide would silently rewrite their level.
             return !string.IsNullOrEmpty(english)
                 ? english
                 : Source.TryGetValue(key, out string source) ? source : string.Empty;
         }
 
-        // Get, with the numbers dropped in.
         public static string Format(string key, params object[] values)
         {
             string pattern = Get(key);
@@ -127,16 +90,11 @@ namespace FallingWizard.Core
             if (filled != null)
                 return filled;
 
-            // The translation is broken, so fall back to the English, which is ours and is the one
-            // written against the values this caller actually passes.
             string source = Source.TryGetValue(key, out string english) ? english : pattern;
 
             return Fill(key, source, values) ?? source;
         }
 
-        // Null rather than a throw. A translator typing {2} into a line that only ever gets two
-        // values would otherwise unwind out of the middle of SkillScreen.Redraw and leave a half
-        // built screen with no button on it to get back out of.
         static string Fill(string key, string pattern, object[] values)
         {
             try
@@ -160,9 +118,6 @@ namespace FallingWizard.Core
 
         static LanguageTable FindTable(Language language)
         {
-            // English is the source and lives in this file, so it needs no asset at all. One may
-            // still be dropped in at Resources/Language/English.asset to fix a typo in a shipped
-            // build without a recompile, and it will win.
             LanguageTable found = Resources.Load<LanguageTable>(TableFolder + language);
 
             if (found == null && language != Language.English)
@@ -174,8 +129,6 @@ namespace FallingWizard.Core
             return found;
         }
 
-        // Two-letter codes, because that is what GameSettings.Language documents itself as
-        // holding and what somebody hand-editing settings.json would expect to find in it.
         static string CodeFor(Language language) => language == Language.Spanish ? "es" : "en";
 
         static Language FromCode(string code) => code == "es" ? Language.Spanish : Language.English;
@@ -185,32 +138,19 @@ namespace FallingWizard.Core
                 ? Language.Spanish
                 : Language.English;
 
-        // Alongside GameSettings.Load and Progress.Load. Every BeforeSceneLoad method has finished
-        // before the first scene's Awake runs, so a LocalizedText waking up in the main menu
-        // always finds the language already chosen.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         public static void Load()
         {
-            // The ORDER of two BeforeSceneLoad methods in one assembly is not guaranteed, and
-            // this one reads what that one loads. Asking is cheap and idempotent; guessing is a
-            // language that silently resets itself on roughly half of all launches.
             if (!GameSettings.Loaded)
                 GameSettings.Load();
 
             string saved = GameSettings.Language;
 
-            // Empty is not "English": it is "nobody has said". A Spanish machine should open in
-            // Spanish rather than be shown English once and then remembered as having asked for
-            // it.
             Language = string.IsNullOrEmpty(saved) ? FromSystem() : FromCode(saved);
 
             table = FindTable(Language);
         }
 
-        // Domain reload can be switched off in Enter Play Mode Settings, and then a static event
-        // keeps every subscriber from the LAST play session - all of them pointing at objects that
-        // were destroyed when play stopped. The first language change would throw a
-        // MissingReferenceException per dead listener before reaching any live one.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Reset()
         {
@@ -219,8 +159,6 @@ namespace FallingWizard.Core
             Warned.Clear();
         }
 
-        // The keys the C# asks for by hand. Keys that only ever get typed into an inspector field
-        // - menu.*, settings.*, pause.* - are not here, because nothing would be checking them.
         public static class Keys
         {
             public const string SkillTitle = "skill.title";
@@ -254,12 +192,6 @@ namespace FallingWizard.Core
             public const string HudWisps = "hud.wisps";
         }
 
-        // THE ENGLISH. This is the source text, not a translation of anything, and it is the list
-        // a LanguageTable is checked against. Adding a string to the game is one line here.
-        //
-        // Spell names and descriptions are deliberately absent: those live on the .asset files
-        // themselves, and Ability.Name passes them to Text() as the fallback, so there is only
-        // ever one English for a spell and it is the one in the inspector.
         static readonly Dictionary<string, string> Source = new Dictionary<string, string>
         {
             { "menu.title", "Falling Wizard" },

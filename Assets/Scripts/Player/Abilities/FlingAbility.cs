@@ -4,13 +4,6 @@ using UnityEngine;
 
 namespace FallingWizard.Player
 {
-    // Hold to wind up, aim with the stick, let go to fly. The dotted line is not decoration: the
-    // launch it draws and the launch it fires are THE SAME Vector2, computed once per step and
-    // handed to both. The moment those become two code paths the line becomes a suggestion.
-    //
-    // The flight is control-locked for exactly as long as the arc says it lasts. Without that,
-    // Run drags horizontal speed back toward the stick every step and the wizard lands well short
-    // of the drawing - which is the single thing most likely to make this spell feel broken.
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Fling", fileName = "Fling")]
     public class FlingAbility : Ability
     {
@@ -83,9 +76,6 @@ namespace FallingWizard.Player
         public override string WhyNot(PlayerLogic wizard) =>
             wizard.State == PlayerState.Normal ? null : $"you are {wizard.State}";
 
-        // Rooted is set HERE, not in OnHeld. TryCast runs before Rebuild, and Rebuild opens with
-        // stats.Reset() - so anything written during the hold is wiped on the very next line and
-        // the wizard walks away while winding up, with nothing to show why.
         public override void ModifyStats(PlayerLogic wizard, PlayerLogic.Modifiers stats)
         {
             if (wizard.spellbook.StateOf<Charge>(this).winding)
@@ -128,7 +118,6 @@ namespace FallingWizard.Player
             if (wizard.State != PlayerState.Normal || !wizard.spellbook.Fire(this))
                 return;
 
-            // The same launch the line was drawing, and the same lock the line assumed.
             Vector2 launch = Launch(wizard, charge);
 
             wizard.PredictArc(launch, Look(wizard), charge.path, out PlayerLogic.Movement.ArcEnd end);
@@ -185,7 +174,6 @@ namespace FallingWizard.Player
             if (Mathf.Abs(stick.x) > StickDeadzone)
                 charge.facing = stick.x < 0f ? -1 : 1;
 
-            // Stick up steepens, stick down flattens, dead centre sits at the rest angle.
             charge.angle = stick.y >= 0f
                 ? Mathf.Lerp(restAngle, maxAngle, stick.y)
                 : Mathf.Lerp(restAngle, minAngle, -stick.y);
@@ -240,7 +228,6 @@ namespace FallingWizard.Player
             [Min(0f)] public float maxSpeed = 14f;
             [Min(0.05f)] public float chargeTime = 0.7f;
 
-            // OnValidate does not reach into a nested class, so the block clamps itself.
             public void Validate()
             {
                 maxSpeed = Mathf.Max(0f, maxSpeed);

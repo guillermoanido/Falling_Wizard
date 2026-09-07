@@ -42,17 +42,12 @@ namespace FallingWizard.UI
 
             if (icon != null)
             {
-                // The spell decides what it looks like right now, not the slot. Telekinesis
-                // answers with whatever it is carrying, which is the only way to tell a stored
-                // slime from a stored rock without opening a menu.
                 icon.sprite = filled ? spell.Ability.IconFor(wizard) : hud.emptySlotIcon;
 
                 Color state = !filled ? hud.emptyTint
                             : spell.IsReady ? hud.readyTint
                             : hud.notReadyTint;
 
-                // MULTIPLIED, not assigned: assigning would throw away the ready/cooling state
-                // and every slot would read as available.
                 icon.color = filled ? state * spell.Ability.IconTintFor(wizard) : state;
             }
 
@@ -67,8 +62,6 @@ namespace FallingWizard.UI
             if (charge == null)
                 return;
 
-            // A spell winding up owns the meter outright - below zero means it has nothing of
-            // its own to show and the slot falls back to its lit window and its cooldown.
             float own = filled ? spell.Ability.ChargeFor(wizard) : -1f;
             bool winding = own >= 0f;
 

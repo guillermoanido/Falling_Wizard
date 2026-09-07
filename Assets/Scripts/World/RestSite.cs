@@ -8,10 +8,6 @@ namespace FallingWizard.World
     [RequireComponent(typeof(Collider2D))]
     public class RestSite : PlayerTrigger
     {
-        // Two respawn points closer together than a hundredth of a box are the
-        // same one. These are matched by position because the level is rebuilt
-        // on every death, so an id kept in a static would be pointing at a
-        // destroyed object by the time it mattered.
         const float SamePlace = 0.01f;
 
         const float MarkerRadius = 0.25f;
