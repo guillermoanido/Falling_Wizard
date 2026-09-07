@@ -1,16 +1,20 @@
 {
     "version": 1,
-    "wisps": 2,
+    "wisps": 1,
     "bonusHearts": 1,
     "loadout": [
         "staff",
-        "",
+        "vine",
         "",
         ""
     ],
     "ranks": [
         {
             "key": "staff",
+            "rank": 1
+        },
+        {
+            "key": "vine",
             "rank": 1
         }
     ],
