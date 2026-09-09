@@ -450,10 +450,7 @@ MonoBehaviour:
     dropHoldTime: 0.2
     cooldown: 0.5
     raiseHeight: 0.6
-  climbBoxes: 3
   mountSeconds: 0.18
-  carryGive: 0.06
-  carryReturn: 6
     lipClearance: 0.15
     gripHeight: 0.25
     groundLayers:
