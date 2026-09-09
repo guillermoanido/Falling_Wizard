@@ -46,19 +46,22 @@ namespace FallingWizard.Player
             switch (walk.WhyNoClimb)
             {
                 case PlayerLogic.Movement.ClimbRefusal.NotStanding:
-                    return "you are not stood on anything to prop the staff against";
+                    return wizard.movement.catchLedgesInTheAir
+                        ? "there is nothing here to raise the staff against"
+                        : "you are not stood on anything to raise the staff from";
 
                 case PlayerLogic.Movement.ClimbRefusal.NoWall:
-                    return "the staff's tip is resting on something barely off the floor - " +
-                           "aim it higher, or stand closer to what you are climbing";
+                    return $"there is nothing within {walk.climbReach:0.00} boxes in front of " +
+                           "you to raise the staff against - walk right up to it, or raise " +
+                           "Movement.climbReach";
 
                 case PlayerLogic.Movement.ClimbRefusal.NothingOnTop:
-                    return $"the staff's tip, {walk.ClimbCanReach:0.00} boxes up, has no ledge " +
-                           "under it - aim it up or down until it rests on one";
+                    return $"there is a wall ahead but nothing to stand on within the staff's " +
+                           $"{walk.ClimbCanReach:0.00} boxes of reach";
 
                 case PlayerLogic.Movement.ClimbRefusal.TooTall:
-                    return "the staff's tip is buried in the wall rather than resting on top " +
-                           "of it - aim it higher";
+                    return $"what is ahead is taller than the staff, which reaches " +
+                           $"{walk.ClimbCanReach:0.00} boxes up";
 
                 case PlayerLogic.Movement.ClimbRefusal.NoRoomOnTop:
                     return $"the top is {walk.ClimbRise:0.00} boxes up, which the staff can " +
@@ -78,21 +81,19 @@ namespace FallingWizard.Player
             if (wizard.IsOnStaff || !wizard.StaffIsFree)
                 return;
 
-            wizard.PropStaff();
-            wizard.AimStaff(wizard.Steering.Lean, fixedDeltaTime);
+            wizard.RaiseStaff();
 
-            if (!ReachingUp(wizard) && wizard.movement.IsAtEdge &&
-                wizard.TryPlantStaff(StaffMode.Ladder))
-                return;
-
-            wizard.TryClimbStaff();
-        }
-
-        static bool ReachingUp(PlayerLogic wizard)
-        {
+            float lean = wizard.Steering.Lean;
             float threshold = wizard.HasPole ? wizard.Pole.leanThreshold : DefaultLean;
 
-            return wizard.Steering.Lean > threshold;
+            if (lean > threshold)
+            {
+                wizard.TryClimbStaff();
+                return;
+            }
+
+            if (lean < -threshold && wizard.movement.IsAtEdge)
+                wizard.TryPlantStaff(StaffMode.Ladder);
         }
 
         public override void OnReleased(PlayerLogic wizard, float heldSeconds) =>

@@ -117,6 +117,8 @@ namespace FallingWizard.Player
             const float MinScale = 0.0001f;
             const float MinSlideSpeed = 0.01f;
             const float MinLengthScale = 0.1f;
+            const float MinClimbBoxes = 0.5f;
+            const int CarrySteps = 6;
             const float TipMarkerRadius = 0.12f;
 
             const float QuarterTurn = 90f;
@@ -144,8 +146,32 @@ namespace FallingWizard.Player
             [Tooltip("Seconds after the staff is released before it can be planted again.")]
             [Min(0f)] public float cooldown = 0.5f;
 
-            [Tooltip("How far the staff is lifted overhead, in boxes. Adds to climb reach.")]
+            [Tooltip("How far the staff is lifted overhead, in boxes. Picture only now - the " +
+                     "climb ceiling is Climb Boxes below.")]
             [Min(0f)] public float raiseHeight = 0.6f;
+
+            [Tooltip("How many boxes above their own feet the wizard can climb onto, at the " +
+                     "staff's starting length. This is the whole ceiling, in tiles, rather than a " +
+                     "sum of the pole, the grip and the overhead lift - those four numbers moving " +
+                     "together is what made the reach impossible to predict. Every rank of the " +
+                     "Staff spell multiplies it, so a rank 2 staff at 1.5 climbs half again as " +
+                     "high.")]
+            [Min(0.5f)] public float climbBoxes = 3f;
+
+            [Tooltip("Seconds spent stepping over the lip at the top of a climb. The wizard rises " +
+                     "clear of the edge before sliding across it, so they arc over the corner " +
+                     "instead of cutting through it - the same easing the descent uses to swing " +
+                     "onto the pole, run the other way. 0 snaps them over as it used to.")]
+            [Min(0f)] public float mountSeconds = 0.18f;
+
+            [Header("Carrying")]
+            [Tooltip("How far the carried staff is pushed back toward the wizard each step when " +
+                     "its hitbox is inside a wall. 0 lets it ghost through tiles as it used to.")]
+            [Min(0f)] public float carryGive = 0.06f;
+
+            [Tooltip("How fast the carried staff eases back to where it is held once it is clear " +
+                     "again, in boxes per second.")]
+            [Min(0f)] public float carryReturn = 6f;
 
             [Header("Planting")]
             [Tooltip("How far past the lip of the ledge the pole is driven in, so it hangs clear " +
@@ -179,6 +205,8 @@ namespace FallingWizard.Player
             [NonSerialized] float reach;
             [NonSerialized] float depth;
             [NonSerialized] float dropTimer;
+            [NonSerialized] float mountTimer = -1f;
+            [NonSerialized] Vector2 mountFrom;
 
             [NonSerialized] float readyAt;
 
@@ -286,7 +314,12 @@ namespace FallingWizard.Player
                 if (IsPlanted || wielderFacing == 0)
                     return;
 
-                facing = wielderFacing < 0 ? -1 : 1;
+                int way = wielderFacing < 0 ? -1 : 1;
+
+                if (way == facing)
+                    return;
+
+                facing = way;
                 ShoulderPole();
             }
 
@@ -340,7 +373,7 @@ namespace FallingWizard.Player
 
             public float ClimbHeight => MeasureReach() + HangBelowTip;
 
-            public float ClimbUpHeight => ClimbHeight + raiseHeight;
+            public float ClimbUpHeight => climbBoxes * lengthScale;
 
             public float MeasureReach()
             {
@@ -354,6 +387,7 @@ namespace FallingWizard.Player
             {
                 slideSpeed = Mathf.Max(MinSlideSpeed, slideSpeed);
                 raiseHeight = Mathf.Max(0f, raiseHeight);
+                climbBoxes = Mathf.Max(MinClimbBoxes, climbBoxes);
                 swingDepth = Mathf.Max(0f, swingDepth);
                 dropHoldTime = Mathf.Max(0f, dropHoldTime);
                 cooldown = Mathf.Max(0f, cooldown);
@@ -495,6 +529,7 @@ namespace FallingWizard.Player
                 reach = depth;
 
                 climbing = true;
+                mountTimer = -1f;
                 climbLanding = landing;
                 climbHangX = wielder.position.x;
 
@@ -581,13 +616,23 @@ namespace FallingWizard.Player
                 if (!IsPlanted || !HasWielder || Mode != StaffMode.Ladder)
                     return StaffHold.LetGo;
 
+                if (mountTimer >= 0f)
+                    return Mount(fixedDeltaTime);
+
                 float pull = Mathf.Abs(lean) > leanThreshold ? lean : 0f;
 
                 depth = Mathf.Clamp(depth - pull * slideSpeed * fixedDeltaTime, 0f, reach);
                 wielder.MovePosition(PositionAt(depth));
 
                 if (AtTop && lean > leanThreshold)
-                    return StaffHold.BackOnLedge;
+                {
+                    if (!climbing || mountSeconds <= Epsilon || !LandingIsClear())
+                        return StaffHold.BackOnLedge;
+
+                    mountFrom = wielder.position;
+                    mountTimer = 0f;
+                    return StaffHold.Holding;
+                }
 
                 if (AtBottom && lean < -leanThreshold)
                 {
@@ -613,6 +658,7 @@ namespace FallingWizard.Player
 
                 IsPlanted = false;
                 climbing = false;
+                mountTimer = -1f;
                 raised = false;
                 dropTimer = 0f;
 
@@ -649,8 +695,41 @@ namespace FallingWizard.Player
 
             public void HoldPolePosition()
             {
-                if (IsPlanted && pole != null)
+                if (pole == null)
+                    return;
+
+                if (IsPlanted)
+                {
                     pole.SetPositionAndRotation(plantedPosition, plantedRotation);
+                    return;
+                }
+
+                SettleCarried();
+            }
+
+            void SettleCarried()
+            {
+                if (hitbox == null || carryGive <= Epsilon)
+                    return;
+
+                var rest = new Vector3(
+                    sideOffset * facing,
+                    restPosition.y + (raised ? raiseHeight : 0f),
+                    restPosition.z);
+
+                pole.localPosition = Vector3.MoveTowards(
+                    pole.localPosition, rest, carryReturn * Time.deltaTime);
+
+                Physics2D.SyncTransforms();
+
+                for (int push = 0; push < CarrySteps; push++)
+                {
+                    if (hitbox.Overlap(GroundFilter, Overlaps) == 0)
+                        return;
+
+                    pole.localPosition -= new Vector3(carryGive * facing, 0f, 0f);
+                    Physics2D.SyncTransforms();
+                }
             }
 
             bool LandingIsClear()
@@ -673,6 +752,24 @@ namespace FallingWizard.Player
 #endif
 
                 return false;
+            }
+
+            StaffHold Mount(float fixedDeltaTime)
+            {
+                mountTimer += fixedDeltaTime;
+
+                float t = Mathf.Clamp01(mountTimer / mountSeconds);
+                float eased = t * t * (3f - 2f * t);
+
+                wielder.MovePosition(new Vector2(
+                    Mathf.Lerp(mountFrom.x, climbLanding.x, eased * eased),
+                    Mathf.Lerp(mountFrom.y, climbLanding.y, Mathf.Sqrt(eased))));
+
+                if (t < 1f)
+                    return StaffHold.Holding;
+
+                mountTimer = -1f;
+                return StaffHold.BackOnLedge;
             }
 
             public Vector2 PositionAt(float atDepth)

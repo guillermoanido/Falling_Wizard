@@ -269,8 +269,13 @@ namespace FallingWizard.Player
             if (!movement.TryFindClimb(pole.ClimbUpHeight, out Vector2 lip, out Vector2 landing))
                 return false;
 
+            bool caughtInTheAir = !movement.IsGrounded;
+
             if (!pole.PlantAsClimb(movement.Facing, lip, landing))
                 return false;
+
+            if (caughtInTheAir)
+                movement.BeginFallFrom(movement.Position.y);
 
             State = PlayerState.OnStaff;
             return true;
@@ -720,6 +725,14 @@ namespace FallingWizard.Player
                      "refuses to climb for a reason nobody can see. Keep it under Ledge Check " +
                      "Ahead.")]
             [Min(0.05f)] public float climbReach = 0.35f;
+
+            [Tooltip("Let the staff catch a ledge while the wizard is in the air, not just from " +
+                     "standing. The lip still has to be ABOVE their feet and inside the staff's " +
+                     "reach, so this catches a wall you are dropping past rather than letting you " +
+                     "climb from nothing. Catching also clears the fall you had banked - without " +
+                     "that, topping out bills the whole drop and the catch that saved you kills " +
+                     "you instead.")]
+            public bool catchLedgesInTheAir = true;
 
             [Header("Contact")]
             [Tooltip("Friction between the wizard and the world. 0 is right for a platformer: " +
@@ -1303,7 +1316,8 @@ namespace FallingWizard.Player
             {
                 faceX = 0f;
 
-                if (body == null || hull == null || !IsGrounded || highestRise <= stepHeight)
+                if (body == null || hull == null || highestRise <= stepHeight ||
+                    (!IsGrounded && !catchLedgesInTheAir))
                 {
                     WhyNoClimb = ClimbRefusal.NotStanding;
                     return false;
