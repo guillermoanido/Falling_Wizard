@@ -46,6 +46,12 @@ namespace FallingWizard.World
         [Tooltip("Can this hit a wizard who is already tumbling?")]
         public bool affectsRagdolled = false;
 
+        [Tooltip("Let a WALKING wizard pass untouched. This reads the walk button rather than a " +
+                 "speed, so it still fires on a wizard who is falling onto it or shoved into it, " +
+                 "and it cannot be fooled by Haste - which lifts a walk to the same 3 boxes a " +
+                 "second that Minimum Speed would have to sit at to tell a walk from a run.")]
+        public bool ignoresWalking = false;
+
         [NonSerialized] float readyAt;
 
         public void Disarm(float seconds) => readyAt = Time.time + Mathf.Max(0f, seconds);
@@ -75,12 +81,22 @@ namespace FallingWizard.World
             if (wizard.Logic.movement.ApproachSpeed < minimumSpeed)
                 return;
 
+            if (ignoresWalking && Walking(wizard))
+                return;
+
             readyAt = Time.time + rearmDelay;
 
             Affect(wizard.Logic);
 
             if (damage > 0)
                 wizard.Logic.Hurt(damage);
+        }
+
+        static bool Walking(PlayerCharacter wizard)
+        {
+            PlayerLogic logic = wizard.Logic;
+
+            return logic.Steering.Walk && logic.movement.IsGrounded;
         }
 
         protected bool Allowed(PlayerCharacter wizard)

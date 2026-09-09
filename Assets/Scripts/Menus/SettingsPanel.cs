@@ -12,6 +12,9 @@ namespace FallingWizard.Menus
     {
         const float AsPercent = 100f;
 
+        const float ResetButtonWidth = 260f;
+        const float ResetButtonHeight = 56f;
+
         static readonly Language[] Languages = (Language[])Enum.GetValues(typeof(Language));
 
         [SerializeField] TMP_Dropdown resolutionDropdown;
@@ -19,6 +22,11 @@ namespace FallingWizard.Menus
         [SerializeField] Slider volumeSlider;
         [SerializeField] TMP_Text volumeValueLabel;
         [SerializeField] Button backButton;
+
+        [Tooltip("Wipes every spell, wisp and heart and returns to the main menu, after asking. " +
+                 "Leave it empty and the panel builds its own beside the Back button, so the " +
+                 "Pause Menu prefab and the Main Menu scene both get one without being rewired.")]
+        [SerializeField] Button resetSaveButton;
 
         [Tooltip("The language row's dropdown. This rig exists twice - once inside the Pause Menu " +
                  "prefab and once inside the Main Menu scene - so leaving it empty is allowed and " +
@@ -43,11 +51,49 @@ namespace FallingWizard.Menus
             volumeSlider.onValueChanged.AddListener(OnVolumeChanged);
             backButton.onClick.AddListener(() => Closed?.Invoke());
 
+            EnsureResetButton();
+            resetSaveButton.onClick.AddListener(AskToResetSave);
+
             if (languageDropdown != null)
                 languageDropdown.onValueChanged.AddListener(OnLanguageChanged);
 
             foreach (GameObject row in desktopOnlyRows)
                 row.SetActive(GameSettings.DisplaySettingsSupported);
+        }
+
+        void EnsureResetButton()
+        {
+            if (resetSaveButton != null)
+                return;
+
+            resetSaveButton = UI.Ui.CreateButton(Loc.Text("settings.resetSave", "Reset Save"),
+                backButton.transform.parent, ResetButtonWidth, ResetButtonHeight);
+
+            resetSaveButton.transform.SetSiblingIndex(backButton.transform.GetSiblingIndex());
+        }
+
+        void AskToResetSave()
+        {
+            UI.ChoiceScreen screen = UI.ChoiceScreen.Open(
+                Loc.Text("settings.resetSave.title", "Reset save?"),
+                Loc.Text("settings.resetSave.blurb",
+                    "Every spell, wisp and heart you have earned is erased, and the run starts " +
+                    "again from the beginning. This cannot be undone."));
+
+            screen.Status(string.Format(
+                Loc.Text("settings.resetSave.status", "You have {0} wisps banked."),
+                Progress.Wisps));
+
+            screen.Choice(Loc.Text("settings.resetSave.confirm", "Erase everything"),
+                () => screen.CloseThen(Wipe));
+
+            screen.Choice(Loc.Text("settings.resetSave.cancel", "Keep my save"), screen.Close);
+        }
+
+        static void Wipe()
+        {
+            Progress.ResetSave();
+            Game.LoadMainMenu();
         }
 
         void OnEnable()

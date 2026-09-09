@@ -70,14 +70,18 @@ namespace FallingWizard.Core
             Save();
         }
 
-        public static bool CanAfford(int cost) => Wisps >= cost;
+        public static bool FreeSpending { get; set; }
+
+        public static bool CanAfford(int cost) => FreeSpending || Wisps >= cost;
 
         public static bool Buy(string key, int cost)
         {
-            if (string.IsNullOrEmpty(key) || Owns(key) || Wisps < cost)
+            if (string.IsNullOrEmpty(key) || Owns(key) || (!FreeSpending && Wisps < cost))
                 return false;
 
-            Wisps -= cost;
+            if (!FreeSpending)
+                Wisps -= cost;
+
             ranks[key] = 1;
             Save();
             return true;
@@ -149,10 +153,12 @@ namespace FallingWizard.Core
 
             int rank = Rank(key);
 
-            if (rank < 1 || rank >= Mathf.Max(1, cap) || Wisps < cost)
+            if (rank < 1 || rank >= Mathf.Max(1, cap) || (!FreeSpending && Wisps < cost))
                 return false;
 
-            Wisps -= cost;
+            if (!FreeSpending)
+                Wisps -= cost;
+
             ranks[key] = rank + 1;
             Save();
             return true;
@@ -256,6 +262,13 @@ namespace FallingWizard.Core
 
             found.Clear();
             ClearCheckpoint();
+        }
+
+        public static void ResetSave()
+        {
+            Clear();
+            SaveFile.Delete(FileName);
+            DeleteLegacyPlayerPrefs();
         }
 
         public static bool HasSave => SaveFile.Exists(FileName) || PlayerPrefs.HasKey(LegacyWispsKey);

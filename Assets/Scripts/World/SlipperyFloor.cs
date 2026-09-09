@@ -145,8 +145,16 @@ namespace FallingWizard.World
 
             sheet.transform.localPosition =
                 shape.offset + new Vector2(0f, (thick - shape.size.y) * 0.5f);
-            sheet.transform.localScale =
-                new Vector3(shape.size.x / unit.x, thick / unit.y, 1f);
+
+            if (sheet.drawMode == SpriteDrawMode.Simple)
+            {
+                sheet.transform.localScale =
+                    new Vector3(shape.size.x / unit.x, thick / unit.y, 1f);
+                return;
+            }
+
+            sheet.transform.localScale = Vector3.one;
+            sheet.size = new Vector2(shape.size.x, thick);
         }
 
         void WarnAboutSpeedGate()

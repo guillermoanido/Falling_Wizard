@@ -17,6 +17,11 @@ namespace FallingWizard.Player
         [Tooltip("Stick tilt needed before looking up or down counts. Raise it if a worn stick drifts.")]
         [Range(0f, 1f)] public float lookThreshold = 0.5f;
 
+        [Tooltip("Seconds down has to be held before the camera drops to look ahead. Without it " +
+                 "the camera lurches every time the stick brushes downward while walking, which " +
+                 "reads as the camera being loose rather than as looking.")]
+        [Min(0f)] public float lookHoldSeconds = 0.4f;
+
         [Header("Death")]
         [Tooltip("Reload the level when the wizard runs out of hearts.")]
         public bool restartLevelOnDeath = true;
@@ -84,7 +89,8 @@ namespace FallingWizard.Player
             logic.Died -= OnDied;
         }
 
-        void Update() => logic.Observe(controls.Read(lookThreshold), Time.deltaTime);
+        void Update() =>
+            logic.Observe(controls.Read(lookThreshold, lookHoldSeconds, Time.deltaTime), Time.deltaTime);
 
         void FixedUpdate() => logic.Simulate(Time.fixedDeltaTime);
 
@@ -137,12 +143,19 @@ namespace FallingWizard.Player
             readonly InputAction jump = Core.Controls.Player("Jump");
             readonly InputAction walk = Core.Controls.Player("Walk");
 
-            public PlayerLogic.Intent Read(float lookThreshold)
+            float heldDown;
+
+            public PlayerLogic.Intent Read(float lookThreshold, float holdSeconds, float deltaTime)
             {
                 if (Game.IsPaused)
+                {
+                    heldDown = 0f;
                     return default;
+                }
 
                 Vector2 stick = move != null ? move.ReadValue<Vector2>() : Vector2.zero;
+
+                heldDown = stick.y < -lookThreshold ? heldDown + deltaTime : 0f;
 
                 return new PlayerLogic.Intent
                 {
@@ -150,7 +163,7 @@ namespace FallingWizard.Player
                     JumpPressed = jump != null && jump.WasPressedThisFrame(),
                     JumpHeld = jump != null && jump.IsPressed(),
                     Walk = walk != null && walk.IsPressed(),
-                    LookingDown = stick.y < -lookThreshold,
+                    LookingDown = heldDown >= holdSeconds && heldDown > 0f,
                 };
             }
         }

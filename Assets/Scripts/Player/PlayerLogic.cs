@@ -42,6 +42,8 @@ namespace FallingWizard.Player
 
         public event Action Died;
 
+        [NonSerialized] public bool Invulnerable;
+
         public Staff.Pole Pole => pole;
         public bool HasPole => pole != null && pole.HasPole;
 
@@ -60,7 +62,7 @@ namespace FallingWizard.Player
         public void Attach(Rigidbody2D body, SpriteRenderer sprite, Collider2D hitbox, Staff.Pole staffPole)
         {
             movement.Attach(body, sprite, hitbox);
-            ragdoll.Attach(body, sprite != null ? sprite.transform : null);
+            ragdoll.Attach(body, sprite != null ? sprite.transform : null, hitbox, movement.groundLayers);
             vine.Attach(body);
 
             health.SetBonus(Progress.BonusHearts);
@@ -176,7 +178,7 @@ namespace FallingWizard.Player
 
         public void Hurt(int hearts)
         {
-            if (hearts <= 0 || !health.IsAlive || Stats.Shielded)
+            if (hearts <= 0 || !health.IsAlive || Invulnerable || Stats.Shielded)
                 return;
 
             health.TakeDamage(hearts);
@@ -1666,6 +1668,15 @@ namespace FallingWizard.Player
             [Tooltip("Seconds spent straightening back up.")]
             [Min(0.01f)] public float standUpDuration = 0.35f;
 
+            [Header("Walls")]
+            [Tooltip("How much sideways speed a tumbling wizard keeps when they hit a wall, as a " +
+                     "fraction of what they arrived with. 0 is a dead stop; 1 is a full rebound.")]
+            [Range(0f, 1f)] public float wallBounce = 0.55f;
+
+            [Tooltip("Slowest arrival that still bounces, in boxes per second. Below it they come " +
+                     "to rest against the wall instead of chattering off it.")]
+            [Min(0f)] public float minimumBounceSpeed = 1.5f;
+
             [NonSerialized] Rigidbody2D body;
             [NonSerialized] Transform visual;
             [NonSerialized] float angle;
@@ -1674,15 +1685,26 @@ namespace FallingWizard.Player
             [NonSerialized] float elapsed;
             [NonSerialized] float standUpTimer;
             [NonSerialized] float standUpFrom;
+            [NonSerialized] Collider2D hull;
+            [NonSerialized] LayerMask walls;
+            [NonSerialized] float bounceReadyAt;
+
+            const float BounceCooldown = 0.08f;
+            const float WallSkin = 0.04f;
+
+            static readonly RaycastHit2D[] WallHits = new RaycastHit2D[2];
 
             public bool IsStandingUp => standUpTimer >= 0f;
 
-            public void Attach(Rigidbody2D rigidbody2d, Transform sprite)
+            public void Attach(Rigidbody2D rigidbody2d, Transform sprite, Collider2D hitbox, LayerMask wallLayers)
             {
                 body = rigidbody2d;
                 visual = sprite;
+                hull = hitbox;
+                walls = wallLayers;
                 standUpTimer = -1f;
                 angle = 0f;
+                bounceReadyAt = 0f;
                 Show();
             }
 
@@ -1720,6 +1742,8 @@ namespace FallingWizard.Player
                 tumbleTimer -= fixedDeltaTime;
                 elapsed += fixedDeltaTime;
 
+                BounceOffWalls(fixedDeltaTime);
+
                 if (grounded && slideFriction > 0f)
                     body.linearVelocityX =
                         Mathf.MoveTowards(body.linearVelocityX, 0f, slideFriction * fixedDeltaTime);
@@ -1735,6 +1759,37 @@ namespace FallingWizard.Player
                 return false;
             }
 
+            void BounceOffWalls(float fixedDeltaTime)
+            {
+                if (wallBounce <= 0f || body == null || hull == null || Time.time < bounceReadyAt)
+                    return;
+
+                float speed = body.linearVelocityX;
+
+                if (Mathf.Abs(speed) < minimumBounceSpeed)
+                    return;
+
+                var way = new Vector2(speed < 0f ? -1f : 1f, 0f);
+                Bounds box = hull.bounds;
+
+                var probe = new Vector2(box.size.x * 0.5f, box.size.y * 0.7f);
+                float reach = box.extents.x * 0.5f + Mathf.Abs(speed) * fixedDeltaTime + WallSkin;
+
+                var filter = new ContactFilter2D
+                {
+                    useLayerMask = true,
+                    layerMask = walls,
+                    useTriggers = false,
+                };
+
+                if (Physics2D.BoxCast(box.center, probe, 0f, way, filter, WallHits, reach) <= 0)
+                    return;
+
+                body.linearVelocityX = -speed * wallBounce;
+                spin = -spin;
+                bounceReadyAt = Time.time + BounceCooldown;
+            }
+
             public void Cancel()
             {
                 spin = 0f;
@@ -1747,6 +1802,8 @@ namespace FallingWizard.Player
             {
                 standUpDuration = Mathf.Max(MinStandUp, standUpDuration);
                 maximumDuration = Mathf.Max(maximumDuration, minimumDuration + MinTumbleSpread);
+                wallBounce = Mathf.Clamp01(wallBounce);
+                minimumBounceSpeed = Mathf.Max(0f, minimumBounceSpeed);
 
                 if (slideFriction <= 0f && recoverSpeed < minimumLaunch)
                     Debug.LogWarning("Ragdoll.slideFriction is 0 and recoverSpeed is below " +
