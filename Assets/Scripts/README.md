@@ -14,10 +14,10 @@ Every number in the game is expressed in boxes or boxes per second:
 | | |
 | --- | --- |
 | Run / walk | 6 and 2 boxes per second |
-| Staff climb | about 1.9 boxes of wall — there is no jump |
+| Staff climb | 2 boxes of wall - there is no jump |
 | Free fall | 3 boxes |
 | Fall damage | 1 heart per box past that — so 8 boxes kills a full-health wizard |
-| Staff reach | pole height + the wizard's hand-hang, about 1.9 boxes |
+| Staff reach | 2 boxes above the feet, authored on the staff - the pole is stretched to match |
 
 The climb being under the damage floor is deliberate: going up something the staff can reach and
 coming back down it can never hurt you.
@@ -831,9 +831,12 @@ can never move again.
 
 ## The staff
 
-A child of the wizard with its own hitbox and sprite. **The hitbox's height is the mechanic** —
-the wizard travels its span and then the length of their own hand-hang past the tip, so a taller
-collider is a longer climb and nothing else has to be told about it.
+A child of the wizard with its own hitbox and sprite. **`reachAboveFeet` is the mechanic** — you
+author how far above their feet the staff can get them, in boxes, and the pole is stretched to
+whatever length produces exactly that. The hitbox and the art are derived from the reach rather
+than tuned until they happen to add up to it, so the number you type is the number the climb obeys
+and the number `WhyNot` quotes back at you. Raising `raiseHeight` or `gripHeight` spends part of
+that reach and shortens the pole to pay for it; it does not make the climb taller.
 
 **`Movement.canJump` is off**, and the staff is what replaced it. Nothing else in the game takes
 the wizard upward under their own power.

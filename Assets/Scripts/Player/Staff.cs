@@ -159,7 +159,15 @@ namespace FallingWizard.Player
             [Tooltip("Seconds after the staff is released before it can be planted again.")]
             [Min(0f)] public float cooldown = 0.5f;
 
-            [Tooltip("How far the staff is lifted overhead, in boxes. Adds to climb reach.")]
+            [Tooltip("How far above the wizard's feet the staff can get them, in boxes. This is " +
+                     "the reach itself: the pole is stretched to whatever length produces it, so " +
+                     "the hitbox and the art always agree with this number instead of being " +
+                     "tuned until they happen to add up to it. A rank multiplies it.")]
+            [Min(0.1f)] public float reachAboveFeet = 2f;
+
+            [Tooltip("How far the staff is lifted overhead, in boxes. It is part of the reach " +
+                     "above rather than added to it, so lifting it higher makes the pole itself " +
+                     "shorter and the wizard still ends up in the same place.")]
             [Min(0f)] public float raiseHeight = 0.6f;
 
             [Tooltip("Seconds spent stepping over the lip at the top of a climb. The wizard rises " +
@@ -220,6 +228,7 @@ namespace FallingWizard.Player
             [NonSerialized] Vector3 authoredVisualScale = Vector3.one;
             [NonSerialized] Vector2 authoredVisualSize = Vector2.one;
             [NonSerialized] float lengthScale = 1f;
+            [NonSerialized] float fittedScale = 1f;
 
             public bool IsPlanted { get; private set; }
 
@@ -282,6 +291,7 @@ namespace FallingWizard.Player
                 }
 
                 lengthScale = 1f;
+                fittedScale = 1f;
             }
 
             public void BindWielder(Rigidbody2D body, Collider2D bodyHitbox)
@@ -317,16 +327,29 @@ namespace FallingWizard.Player
 
             public void SetLengthScale(float scale)
             {
-                scale = Mathf.Max(MinLengthScale, scale);
+                lengthScale = Mathf.Max(MinLengthScale, scale);
 
-                if (pole == null || Mathf.Approximately(scale, lengthScale))
+                if (pole == null)
                     return;
 
-                lengthScale = scale;
+                float poleScale = PoleScaleForReach();
 
-                Stretch(hitbox as BoxCollider2D, authoredHitbox, scale);
-                Stretch(bridge as BoxCollider2D, authoredBridge, scale);
-                StretchVisual(scale);
+                if (Mathf.Approximately(poleScale, fittedScale))
+                    return;
+
+                fittedScale = poleScale;
+
+                Stretch(hitbox as BoxCollider2D, authoredHitbox, poleScale);
+                Stretch(bridge as BoxCollider2D, authoredBridge, poleScale);
+                StretchVisual(poleScale);
+            }
+
+            float PoleScaleForReach()
+            {
+                if (authoredHitbox.y <= Epsilon)
+                    return 1f;
+
+                return Mathf.Max(MinLengthScale, (ClimbHeight - HangBelowTip) / authoredHitbox.y);
             }
 
             static void Stretch(BoxCollider2D box, Vector2 authored, float scale)
@@ -377,9 +400,9 @@ namespace FallingWizard.Player
                 }
             }
 
-            public float ClimbHeight => MeasureReach() + HangBelowTip;
+            public float ClimbUpHeight => reachAboveFeet * lengthScale;
 
-            public float ClimbUpHeight => ClimbHeight + raiseHeight;
+            public float ClimbHeight => ClimbUpHeight - raiseHeight;
 
             public float MeasureReach()
             {
