@@ -126,6 +126,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::FallingWizard.Player.PlayerCharacter
   gravityScale: 3
   lookThreshold: 0.3
+  lookHoldSeconds: 0.4
   restartLevelOnDeath: 1
   respawnDelay: 1.25
   offerChoiceOnDeath: 1
@@ -162,6 +163,7 @@ MonoBehaviour:
       stepReach: 0.1
       stepClimbSpeed: 6
       climbReach: 0.35
+      catchLedgesInTheAir: 1
       surfaceFriction: 0
       windDecay: 24
     ragdoll:
@@ -450,7 +452,7 @@ MonoBehaviour:
     dropHoldTime: 0.2
     cooldown: 0.5
     raiseHeight: 0.6
-  mountSeconds: 0.18
+    mountSeconds: 0.18
     lipClearance: 0.15
     gripHeight: 0.25
     groundLayers:

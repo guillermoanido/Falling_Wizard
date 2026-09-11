@@ -838,57 +838,88 @@ collider is a longer climb and nothing else has to be told about it.
 **`Movement.canJump` is off**, and the staff is what replaced it. Nothing else in the game takes
 the wizard upward under their own power.
 
-It is a **held** button, not a pressed one, and that is not cosmetic. A press is a single instant:
-if the wall was a finger's width too far away on that instant, nothing happened and nothing said
-why. A hold asks again every physics step — raise the staff, look, and the moment the wizard
-shuffles into range they go up. Holding it with nothing in front of you is not a failure, it is the
-answer: the staff is in the air and you are still on the ground.
+It is a **held** button and a **tapped** one, and the two mean different directions. A hold is the
+staff reaching for whatever is in front of you, and it asks again every physics step — raise the
+staff, look, and the moment the wizard shuffles into range they go up. No stick input is involved:
+holding it *is* the request to climb. A tap shorter than `StaffAbility.tapSeconds` is the other
+request, reaching the pole down over a ledge instead. Holding it with nothing in front of you is not
+a failure, it is the answer: the staff is in the air and you are still on the ground.
 
-Two directions, and which one you get is decided by the ground rather than by a second button.
-Both end with the wizard hanging on the same pole, driven by the same stick.
+Two directions, then, and the **button** decides which — not the ground. Both end with the wizard
+hanging on the same pole, driven by the same stick.
 
-*Down*, at a ledge: the pole is driven in just past the lip with its top flush to the ledge, so the
-far end is where your feet will end up and you can read the drop off it. Slide down, and keep
-pushing down at the bottom to let go.
+*Down*, on a tap at a ledge: the pole is driven in just past the lip with its top flush to the
+ledge, so the far end is where your feet will end up and you can read the drop off it. Slide down,
+and keep pushing down at the bottom to let go.
 
-*Up*, against a wall: `Movement.TryFindClimb` measures the wall, `Staff.Pole.PlantAsClimb` stands
-the pole against it, and from there it is the identical ride — push up to climb, push up at the top
-to step over the lip. Releasing the button does **not** drop you off: a climb is a place you are,
-not a button you are holding.
+*Up*, on a hold against a wall: `Movement.TryFindClimb` measures the wall, `Staff.Pole.PlantAsClimb`
+stands the pole against it, and from there it is the identical ride — push up to climb, push up at
+the top to step over the lip. Releasing the button does **not** drop you off: a climb is a place you
+are, not a button you are holding.
 
-**A drop wins.** A wall and a ledge can both answer within a quarter box of each other at the lip
-of a step, and leaving that to whichever cast ran first would send the staff up or down there at
-random — so `CanClimbHere` and `TryClimbStaff` refuse outright while `IsAtEdge` is up, before the
-wall is even looked for.
+**A drop wins, and `StaffAbility` is what decides it — not the movement code.** `CanClimbHere` and
+`TryClimbStaff` do *not* test `IsAtEdge`; they look for a wall wherever the wizard is standing. The
+precedence lives in the ability: `CanCast` fires when either a ledge or a climb is there, `OnReleased`
+plants the pole downward on a tap at a ledge, and `OnHeld` asks for the climb every physics step. At
+a real ledge there is nothing in front of the toes, so the climb answers `NoWall` and the tap wins by
+default. The two reaches are not the safety net they read as, either: `climbReach` is measured from
+the toes and `ledgeCheckAhead` from the ground probe, which on the PLAYER prefab puts the wall probe
+about 0.15 boxes *further* out than the ledge probe, not nearer.
 
-### Finding the wall, and the one ray that used to miss it
+### Finding the wall: one swept box
 
-`Movement.TryFindWall` casts forward from the toes at a **fan of heights**, every quarter box from
-the step assist up to the top of the staff's reach. The nearest hit across the fan is the face.
+`Movement.TryFindWall` sweeps a single box forward from the toes — one `Physics2D.BoxCast`, 0.05
+boxes thick, as tall as the climbable band (from the top of the step assist up to the top of the
+staff's reach), travelling `climbReach` past the toes. Where it stops is the face.
 
 It used to be one ray, at one height, a hair above the step assist — and that is the whole reason
 the staff answered "no wall" while the wizard stood flush against one. A tile whose collider is
 bevelled, notched, or simply starts a few pixels up is empty at exactly that height and solid
-everywhere else. One ray, one chance, and the failure was silent.
+everywhere else. Then it was a fan of rays every quarter box, which fixed the common case and left
+the gaps between the rays. A sweep has no sample heights at all: nothing can hide between two of
+them, and nothing can get lucky by sitting on one. Nearest is now the definition of the result
+rather than a signed comparison across a loop.
 
-Taking the **nearest** hit is also what makes a staircase behave: the first tread is the closest
-thing ahead, so the top found is that tread's — a tenth of a box up, under the step assist, refused
-here and walked over instead.
+The box starts 0.02 boxes **behind** the toes and travels that much further. A wizard resting
+against a wall is allowed to sink into it by the contact offset, so a box starting exactly on the
+toes would begin *inside* the collider in the mechanic's main case and report a distance of zero.
+Backed off, the distance the box travels is the real gap, and the face is `toes + distance - 0.02`
+exactly.
+
+A forward cast that reports **distance zero** has begun inside ground, and is refused as `Blocked`
+rather than guessed at. `queriesStartInColliders` is on and the tilemap is one merged composite, so
+a zero-distance hit carries no usable point and hides the whole rest of the level behind it. Since
+the backoff rules out the wall the wizard is pressed against, the only thing that can be in that
+strip is a ceiling or an overhang right over them — which is what the message says. The fan used to
+answer this case with a face at the toes and then a `TooTall` from a down cast started inside the
+same rock.
+
+Staircases are still walked rather than climbed, and it is the **down** cast that decides it, not
+the choice of nearest hit: the down cast runs from the top of reach down to `soles + stepHeight` and
+no further, so a tread whose top is under the step assist returns no hit at all (`NothingOnTop`) and
+the assist walks it. The first tread's face is entirely below the band; the forward probe never saw
+it under the fan either.
 
 From the face, `TryFindClimb` casts **down** from as high as the staff reaches, inset past the face
-so the ray lands on the surface rather than skimming the wall it is measuring. A down-cast that
-reports **distance zero** is refused: `queriesStartInColliders` is on in this project, so a cast
-beginning inside a tall wall answers with a top at exactly the height it was asked about, which
-would make every tower in the level read as climbable right up until you were left dangling.
+so the ray lands on the surface rather than skimming the wall it is measuring. A down cast that
+reports **distance zero** is refused: a cast beginning inside a tall wall answers with a top at
+exactly the height it was asked about, which would make every tower in the level read as climbable
+right up until you were left dangling.
 
-Then two overlaps: the wizard has to fit standing on the lip, and the space **above their head**
-has to be clear all the way up. That second box is narrow — six tenths of their width, centred on
-them — because the wall is a hand's breadth away and a full-width box catches it every time. A
-full-width column check is what made the first version refuse while the wizard stood flush against
-exactly the wall it had been asked about.
+Then two overlaps: the wizard has to fit standing on the lip, and the space **above their head** has
+to be clear all the way up. That second box is narrow — six tenths of their width, centred on them —
+because the wall is a hand's breadth away and a full-width box catches it every time. A full-width
+column check is what made the first version refuse while the wizard stood flush against exactly the
+wall it had been asked about.
 
-`Movement.DrawGizmos` draws the whole fan from the toes. A wall the wizard is plainly against that
-none of those lines reaches is a wall the staff will refuse, and there is no other way to see it.
+`Movement.DrawGizmos` draws the box the probe actually swept, at the size and place it was last
+cast, red when it came back `NoWall` or `Blocked`, with a tick on the face it found. A wall the
+wizard is plainly against that the box does not reach is a wall the staff will refuse; a tick that
+lands two pixels proud of that wall is why an obvious climb was refused — the tiles are
+`ColliderType.Sprite`, so their outlines follow the sprite alpha, and switching the load-bearing
+ones to `ColliderType.Grid` is the fix. There is no other way to see either. Before play there is no
+staff to ask for a reach, so the gizmo draws only the floor of the band, `climbReach` long: that
+line is `stepHeight` and `climbReach`, the two numbers you author there.
 
 ### When it still says no
 

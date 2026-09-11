@@ -5,7 +5,11 @@ namespace FallingWizard.Player
     [CreateAssetMenu(menuName = "Falling Wizard/Abilities/Staff", fileName = "Staff")]
     public class StaffAbility : Ability
     {
-        const float DefaultLean = 0.5f;
+        [Header("Controls")]
+        [Tooltip("A tap this short reaches the staff down over a ledge instead. Hold it any " +
+                 "longer and the staff spends the whole hold trying to grab whatever is in " +
+                 "front of you.")]
+        [Min(0.01f)] public float tapSeconds = 0.2f;
 
         [Header("Ranks")]
         [Tooltip("How long the staff is at each rank, against the length you built it. Element 0 " +
@@ -71,6 +75,11 @@ namespace FallingWizard.Player
                 case PlayerLogic.Movement.ClimbRefusal.NoHeadroom:
                     return $"the top is {walk.ClimbRise:0.00} boxes up, which the staff can " +
                            "reach, but something is in the way directly above the wizard's head";
+
+                case PlayerLogic.Movement.ClimbRefusal.Blocked:
+                    return "the staff has nowhere to reach out from - something is already " +
+                           "in the way right beside the wizard, usually a ceiling or an " +
+                           "overhang directly overhead";
             }
 
             return null;
@@ -82,22 +91,17 @@ namespace FallingWizard.Player
                 return;
 
             wizard.RaiseStaff();
-
-            float lean = wizard.Steering.Lean;
-            float threshold = wizard.HasPole ? wizard.Pole.leanThreshold : DefaultLean;
-
-            if (lean > threshold)
-            {
-                wizard.TryClimbStaff();
-                return;
-            }
-
-            if (lean < -threshold && wizard.movement.IsAtEdge)
-                wizard.TryPlantStaff(StaffMode.Ladder);
+            wizard.TryClimbStaff();
         }
 
-        public override void OnReleased(PlayerLogic wizard, float heldSeconds) =>
+        public override void OnReleased(PlayerLogic wizard, float heldSeconds)
+        {
+            if (heldSeconds <= tapSeconds && wizard.StaffIsFree && wizard.movement.IsAtEdge &&
+                wizard.TryPlantStaff(StaffMode.Ladder))
+                return;
+
             wizard.LowerStaff();
+        }
 
         public override void OnChargeLost(PlayerLogic wizard) => wizard.LowerStaff();
     }

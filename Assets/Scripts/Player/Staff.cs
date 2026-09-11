@@ -86,7 +86,22 @@ namespace FallingWizard.Player
 
         void LateUpdate() => pole.HoldPolePosition();
 
-        void OnDrawGizmosSelected() => pole.DrawGizmos();
+        void OnDrawGizmosSelected()
+        {
+            if (hitbox != null)
+            {
+                Gizmos.color = new Color(0.4f, 0.8f, 1f);
+                Gizmos.DrawWireCube(hitbox.bounds.center, hitbox.bounds.size);
+            }
+
+            if (bridgeCollider != null && bridgeCollider.enabled)
+            {
+                Gizmos.color = new Color(1f, 0.6f, 0.2f);
+                Gizmos.DrawWireCube(bridgeCollider.bounds.center, bridgeCollider.bounds.size);
+            }
+
+            pole.DrawGizmos();
+        }
 
         void Bind()
         {
@@ -330,12 +345,16 @@ namespace FallingWizard.Player
                 if (visual == null)
                     return;
 
+                float growth = authoredHitbox.y * (scale - 1f);
+
                 if (visual.drawMode != SpriteDrawMode.Simple)
                 {
                     visual.transform.localScale = authoredVisualScale;
-                    visual.transform.localPosition = authoredVisualPosition;
-                    visual.size = new Vector2(authoredVisualSize.x,
-                        authoredVisualSize.y + authoredHitbox.y * (scale - 1f));
+                    visual.size = new Vector2(authoredVisualSize.x, authoredVisualSize.y + growth);
+
+                    visual.transform.localPosition =
+                        authoredVisualPosition + Vector3.up * (growth * FractionOfArtBelowPivot);
+
                     return;
                 }
 
@@ -344,6 +363,18 @@ namespace FallingWizard.Player
 
                 visual.transform.localPosition = new Vector3(authoredVisualPosition.x,
                     authoredVisualPosition.y * scale, authoredVisualPosition.z);
+            }
+
+            float FractionOfArtBelowPivot
+            {
+                get
+                {
+                    Sprite art = visual != null ? visual.sprite : null;
+
+                    return art != null && art.rect.height > 0f
+                        ? art.pivot.y / art.rect.height
+                        : 0f;
+                }
             }
 
             public float ClimbHeight => MeasureReach() + HangBelowTip;

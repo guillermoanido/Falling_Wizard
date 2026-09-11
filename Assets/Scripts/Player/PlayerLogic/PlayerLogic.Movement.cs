@@ -23,7 +23,9 @@ namespace FallingWizard.Player
 
             const float ClimbInset = 0.05f;
 
-            const float ClimbProbeStep = 0.25f;
+            const float ClimbBoxThickness = 0.05f;
+
+            const float ClimbBoxBackoff = 0.02f;
 
             const float ArcClearance = 0.15f;
 
@@ -169,10 +171,12 @@ namespace FallingWizard.Player
             [Header("Climbing")]
             [Tooltip("How far past the toes to look for a WALL to raise the staff against, in " +
                      "boxes. The wizard walks into a wall and stops flush with it, so this only " +
-                     "has to cover the sliver of daylight the physics solver leaves between them " +
-                     "- but be generous, because a probe that is a hair short is a staff that " +
-                     "refuses to climb for a reason nobody can see. Keep it under Ledge Check " +
-                     "Ahead.")]
+                     "has to cover the sliver of daylight the physics solver leaves between " +
+                     "them - but be generous, because a probe that is a hair short is a staff " +
+                     "that refuses to climb for a reason nobody can see. It is measured from " +
+                     "the toes while Ledge Check Ahead is measured from the ground probe, so " +
+                     "the two do not compare: at 0.35 the wall probe already reaches about 0.15 " +
+                     "boxes further out than the ledge probe does.")]
             [Min(0.05f)] public float climbReach = 0.35f;
 
             [Tooltip("Let the staff catch a ledge while the wizard is in the air, not just from " +
@@ -231,6 +235,7 @@ namespace FallingWizard.Player
                 TooTall,
                 NoRoomOnTop,
                 NoHeadroom,
+                Blocked,
             }
 
             public ClimbRefusal WhyNoClimb { get; private set; }
@@ -241,6 +246,10 @@ namespace FallingWizard.Player
             [NonSerialized] Vector2 standBox;
             [NonSerialized] Vector2 headBox;
             [NonSerialized] Vector2 headBoxSize;
+            [NonSerialized] Vector2 climbProbeBox;
+            [NonSerialized] Vector2 climbProbeSize;
+            [NonSerialized] float climbFaceX;
+            [NonSerialized] bool climbFaceFound;
 
             public bool IsGrounded { get; private set; }
 
@@ -471,15 +480,27 @@ namespace FallingWizard.Player
                 var ahead = new Vector2(origin.x + groundCheckOffset.x + Facing * stepReach, soles);
                 Gizmos.DrawLine(ahead, ahead + Vector2.up * stepHeight);
 
-                Gizmos.color = new Color(0.98f, 0.86f, 0.42f);
-
-                float toes = origin.x + groundCheckOffset.x + Facing * HalfWidth;
-                float top = hull != null ? hull.bounds.size.y : 1f;
-
-                for (float height = stepHeight; height <= top; height += ClimbProbeStep)
+                if (climbProbeSize.y > 0f)
                 {
-                    var from = new Vector2(toes, soles + height);
-                    Gizmos.DrawLine(from, from + new Vector2(Facing * climbReach, 0f));
+                    Gizmos.color = WhyNoClimb == ClimbRefusal.NoWall ||
+                                   WhyNoClimb == ClimbRefusal.Blocked
+                        ? Color.red
+                        : new Color(0.98f, 0.86f, 0.42f);
+
+                    Gizmos.DrawWireCube(climbProbeBox, climbProbeSize);
+
+                    if (climbFaceFound)
+                        Gizmos.DrawLine(
+                            new Vector2(climbFaceX, climbProbeBox.y - climbProbeSize.y * 0.5f),
+                            new Vector2(climbFaceX, climbProbeBox.y + climbProbeSize.y * 0.5f));
+                }
+                else
+                {
+                    Gizmos.color = new Color(0.98f, 0.86f, 0.42f);
+
+                    float toes = origin.x + groundCheckOffset.x + Facing * HalfWidth;
+                    var floor = new Vector2(toes, soles + stepHeight);
+                    Gizmos.DrawLine(floor, floor + new Vector2(Facing * climbReach, 0f));
                 }
 
                 bool measured = WhyNoClimb == ClimbRefusal.None ||
@@ -761,9 +782,23 @@ namespace FallingWizard.Player
                 return true;
             }
 
+            void ClimbProbe(float highestRise, out Vector2 start, out Vector2 size, out float toes)
+            {
+                Bounds box = hull.bounds;
+
+                toes = box.center.x + Facing * box.extents.x;
+                size = new Vector2(ClimbBoxThickness, highestRise - stepHeight);
+
+                start = new Vector2(
+                    toes - Facing * (ClimbBoxBackoff + ClimbBoxThickness * 0.5f),
+                    box.min.y + (stepHeight + highestRise) * 0.5f);
+            }
+
             public bool TryFindWall(float highestRise, out float faceX)
             {
                 faceX = 0f;
+                climbFaceFound = false;
+                climbProbeSize = Vector2.zero;
 
                 if (body == null || hull == null || highestRise <= stepHeight ||
                     (!IsGrounded && !catchLedgesInTheAir))
@@ -772,30 +807,37 @@ namespace FallingWizard.Player
                     return false;
                 }
 
-                Bounds box = hull.bounds;
-                var forward = new Vector2(Facing, 0f);
-                float toes = box.center.x + Facing * box.extents.x;
-                bool found = false;
+                ClimbProbe(highestRise, out Vector2 start, out Vector2 size, out float toes);
 
-                for (float height = stepHeight; height <= highestRise; height += ClimbProbeStep)
+                float travel = climbReach + ClimbBoxBackoff;
+
+                climbProbeBox = start + new Vector2(Facing * travel * 0.5f, 0f);
+                climbProbeSize = new Vector2(size.x + travel, size.y);
+
+                int hits = Physics2D.BoxCast(start, size, 0f, new Vector2(Facing, 0f),
+                    GroundFilter, Rays, travel);
+
+                if (hits <= 0)
                 {
-                    var from = new Vector2(toes, box.min.y + height);
-
-                    if (Physics2D.Raycast(from, forward, GroundFilter, Rays, climbReach) <= 0)
-                        continue;
-
-                    float hitX = Rays[0].point.x;
-
-                    if (!found || Facing * (hitX - faceX) < 0f)
-                        faceX = hitX;
-
-                    found = true;
+                    WhyNoClimb = ClimbRefusal.NoWall;
+                    return false;
                 }
 
-                if (!found)
-                    WhyNoClimb = ClimbRefusal.NoWall;
+                float nearest = travel;
 
-                return found;
+                for (int i = 0; i < hits; i++)
+                    nearest = Mathf.Min(nearest, Rays[i].distance);
+
+                if (nearest <= 0f)
+                {
+                    WhyNoClimb = ClimbRefusal.Blocked;
+                    return false;
+                }
+
+                faceX = toes + Facing * (nearest - ClimbBoxBackoff);
+                climbFaceX = faceX;
+                climbFaceFound = true;
+                return true;
             }
 
             void UpdateFacing(float steer)

@@ -255,15 +255,11 @@ namespace FallingWizard.Player
         public void LowerStaff() => pole?.Raise(false);
 
         public bool CanClimbHere =>
-            StaffIsFree && !movement.IsAtEdge &&
-            movement.TryFindClimb(pole.ClimbUpHeight, out _, out _);
+            StaffIsFree && movement.TryFindClimb(pole.ClimbUpHeight, out _, out _);
 
         public bool TryClimbStaff()
         {
             if (State != PlayerState.Normal || !HasPole || pole.IsPlanted || !pole.IsReady)
-                return false;
-
-            if (movement.IsAtEdge)
                 return false;
 
             if (!movement.TryFindClimb(pole.ClimbUpHeight, out Vector2 lip, out Vector2 landing))
