@@ -1,4 +1,5 @@
 using FallingWizard.Core;
+using FallingWizard.Localization;
 using FallingWizard.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;

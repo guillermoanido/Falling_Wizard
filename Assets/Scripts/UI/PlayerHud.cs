@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using FallingWizard.Core;
+using FallingWizard.Localization;
 using FallingWizard.Player;
 using TMPro;
 using UnityEngine;

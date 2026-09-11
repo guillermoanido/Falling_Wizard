@@ -1,5 +1,6 @@
 using System;
 using FallingWizard.Core;
+using FallingWizard.Localization;
 using UnityEngine;
 using UnityEngine.Serialization;
 

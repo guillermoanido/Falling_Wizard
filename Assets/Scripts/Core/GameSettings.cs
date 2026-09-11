@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FallingWizard.Localization;
 using UnityEngine;
 
 namespace FallingWizard.Core

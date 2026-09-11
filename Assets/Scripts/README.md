@@ -34,19 +34,37 @@ coming back down it can never hurt you.
 | `UI/` | `PlayerHud`, `HudSlot`, `FlingArc`, `Ui` and the two runtime screens |
 | `Menus/`, `Cutscenes/` | `MenuScreen` and the three menus; `CutsceneRunner` |
 
-### Three files hold the whole wizard
+### The wizard is one class, eight files
 
 `Movement`, `Ragdoll`, `Health`, `Modifiers`, `Vine`, `Spellbook`, `Intent` and `Command` are all
-**nested classes of `PlayerLogic`**, in `PlayerLogic.cs` with it — they are parts of a wizard and
-meaningless on their own, so they stay inside it rather than becoming eight top-level types called
-things like `Health`. `Staff.cs` likewise holds `Staff.Pole`. Nested `[Serializable]` classes
-serialize exactly like top-level ones and show up as foldouts in the inspector.
+**nested classes of `PlayerLogic`** — they are parts of a wizard and meaningless on their own, so
+they stay inside it rather than becoming eight top-level types called things like `Health`.
+`Staff.cs` likewise holds `Staff.Pole`. Nested `[Serializable]` classes serialize exactly like
+top-level ones and show up as foldouts in the inspector.
 
-They are long files and that is the trade: **one script per thing in Unity's Project window.**
-Splitting them across `partial` files was tried and taken back out — a wizard that shows up as nine
-scripts is harder to find your way around in the editor than one long file is to scroll, and Unity
-lays the inspector out in reflection order, which across `partial` files is not something the
-language promises.
+`PlayerLogic` is one `partial` class spread over `Scripts/Player/PlayerLogic/`, a file per part:
+
+| File | Holds |
+| --- | --- |
+| `PlayerLogic.cs` | the wizard's own fields, the state machine, and everything that crosses parts |
+| `PlayerLogic.Movement.cs` | `Movement`, with its `ClimbRefusal`, `ArcSettings` and `ArcEnd` |
+| `PlayerLogic.Spellbook.cs` | `Spellbook` and `Spellbook.Slot` |
+| `PlayerLogic.Vine.cs` | `Vine` and `Vine.Hold` |
+| `PlayerLogic.Ragdoll.cs` | `Ragdoll` |
+| `PlayerLogic.Health.cs` | `Health` |
+| `PlayerLogic.Modifiers.cs` | `Modifiers` |
+| `PlayerLogic.Intent.cs` | `Intent` and `Command` |
+
+The nesting did not change: every part is still `PlayerLogic.Movement` and the rest of the game
+refers to it that way, so nothing outside this folder knows the split happened. Only the file
+boundaries moved.
+
+**The rule that keeps the inspector honest: every field of `PlayerLogic` itself lives in
+`PlayerLogic.cs`.** Unity lays a component out in reflection order and C# does not promise field
+order across `partial` files — but that only bites when the *same* class declares fields in more
+than one file. Each file above adds a nested type and not one field, so the five parts and the two
+fall-damage numbers keep the order they have always had. Add a field to the wizard itself and it
+goes in `PlayerLogic.cs`; a file named for a part contains only that part.
 
 ### Rules that keep it working
 

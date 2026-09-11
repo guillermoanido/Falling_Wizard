@@ -2,7 +2,7 @@ using FallingWizard.Core;
 using TMPro;
 using UnityEngine;
 
-namespace FallingWizard.UI
+namespace FallingWizard.Localization
 {
     public class LocalizedText : MonoBehaviour
     {

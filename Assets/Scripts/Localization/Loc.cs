@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
+using FallingWizard.Core;
 using UnityEngine;
 
-namespace FallingWizard.Core
+namespace FallingWizard.Localization
 {
     public enum Language
     {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
-namespace FallingWizard.Core
+namespace FallingWizard.Localization
 {
     [CreateAssetMenu(menuName = "Falling Wizard/Language Table", fileName = "Spanish")]
     public class LanguageTable : ScriptableObject
