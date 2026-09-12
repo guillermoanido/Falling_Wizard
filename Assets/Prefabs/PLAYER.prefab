@@ -337,7 +337,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 5
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: 728a628231e9bc84a8ffe6dbb0bc167c, type: 3}
+  m_Sprite: {fileID: 21300000, guid: ab2e190b7ec89a04ab0823d4c8143905, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -451,6 +451,7 @@ MonoBehaviour:
     leanThreshold: 0.5
     dropHoldTime: 0.2
     cooldown: 0.5
+    reachAboveFeet: 2
     raiseHeight: 0.6
     mountSeconds: 0.18
     lipClearance: 0.15
