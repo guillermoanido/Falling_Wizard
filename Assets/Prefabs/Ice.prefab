@@ -99,6 +99,7 @@ MonoBehaviour:
   damage: 0
   affectsOnStaff: 0
   affectsRagdolled: 1
+  ignoresWalking: 0
   grip: 0.15
   sheet: {fileID: 2814470669}
   sheetTint: {r: 0.72, g: 0.9, b: 1, a: 0.28}
