@@ -99,6 +99,7 @@ MonoBehaviour:
   damage: 0
   affectsOnStaff: 0
   affectsRagdolled: 1
+  ignoresWalking: 0
   push: {x: -4, y: 0}
   rampup: 20
   groundScale: 0.35
